@@ -14,6 +14,9 @@ import org.anddev.andengine.opengl.texture.region.TextureRegion;
 import org.anddev.andengine.opengl.texture.region.TextureRegionFactory;
 import org.anddev.andengine.ui.activity.BaseGameActivity;
 
+import android.content.Intent;
+import android.os.Handler;
+
 public class StartActivity extends BaseGameActivity {
 
 	private static final int CAMERA_WIDTH = 480;
@@ -22,6 +25,7 @@ public class StartActivity extends BaseGameActivity {
 	private Camera mCamera;
 	private Texture mTexture;
 	private TextureRegion mSplashTextureRegion;
+	private Handler mHandler = new Handler();
 
 	@Override
 	public Engine onLoadEngine() {
@@ -56,7 +60,15 @@ public class StartActivity extends BaseGameActivity {
 
 	@Override
 	public void onLoadComplete() {
-		// TODO Auto-generated method stub
+		mHandler.postDelayed(mLaunchTask, 2000);
 	}
+
+	private Runnable mLaunchTask = new Runnable() {
+		public void run() {
+			Intent myIntent = new Intent(StartActivity.this,
+					MainMenuActivity.class);
+			StartActivity.this.startActivity(myIntent);
+		}
+	};
 
 }
