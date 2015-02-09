@@ -25,10 +25,11 @@ public class StartActivity extends BaseGameActivity {
 	private Camera mCamera;
 	private Texture mTexture;
 	private TextureRegion mSplashTextureRegion;
-	private Handler mHandler = new Handler();
+	private Handler mHandler;
 
 	@Override
 	public Engine onLoadEngine() {
+		mHandler = new Handler();
 		this.mCamera = new Camera(0, 0, CAMERA_WIDTH, CAMERA_HEIGHT);
 		return new Engine(new EngineOptions(true, ScreenOrientation.LANDSCAPE,
 				new RatioResolutionPolicy(CAMERA_WIDTH, CAMERA_HEIGHT),
