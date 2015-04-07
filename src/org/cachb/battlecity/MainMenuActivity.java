@@ -1,4 +1,5 @@
 package org.cachb.battlecity;
+
 import javax.microedition.khronos.opengles.GL10;
 
 import org.anddev.andengine.engine.Engine;
@@ -6,6 +7,8 @@ import org.anddev.andengine.engine.camera.Camera;
 import org.anddev.andengine.engine.options.EngineOptions;
 import org.anddev.andengine.engine.options.EngineOptions.ScreenOrientation;
 import org.anddev.andengine.engine.options.resolutionpolicy.RatioResolutionPolicy;
+import org.anddev.andengine.entity.modifier.ScaleAtModifier;
+import org.anddev.andengine.entity.modifier.ScaleModifier;
 import org.anddev.andengine.entity.scene.Scene;
 import org.anddev.andengine.entity.scene.menu.MenuScene;
 import org.anddev.andengine.entity.scene.menu.MenuScene.IOnMenuItemClickListener;
@@ -24,7 +27,9 @@ import org.anddev.andengine.opengl.texture.region.TextureRegion;
 import org.anddev.andengine.opengl.texture.region.TextureRegionFactory;
 import org.anddev.andengine.ui.activity.BaseGameActivity;
 
+import android.content.Intent;
 import android.graphics.Color;
+import android.os.Handler;
 import android.view.KeyEvent;
 import android.widget.Toast;
 
@@ -44,6 +49,7 @@ public class MainMenuActivity extends BaseGameActivity implements
 	protected Camera mCamera;
 
 	protected Scene mMainScene;
+	protected Handler mHandler;
 
 	private Texture mMenuBackTexture;
 	private TextureRegion mMenuBackTextureRegion;
@@ -63,6 +69,7 @@ public class MainMenuActivity extends BaseGameActivity implements
 
 	@Override
 	public Engine onLoadEngine() {
+		mHandler = new Handler();
 		this.mCamera = new Camera(0, 0, CAMERA_WIDTH, CAMERA_HEIGHT);
 		return new Engine(new EngineOptions(true, ScreenOrientation.LANDSCAPE,
 				new RatioResolutionPolicy(CAMERA_WIDTH, CAMERA_HEIGHT),
@@ -97,6 +104,15 @@ public class MainMenuActivity extends BaseGameActivity implements
 						"gfx/MainMenu/Quit_button.png", 0, 50);
 		this.mEngine.getTextureManager().loadTexture(this.mPopUpTexture);
 		popupDisplayed = false;
+	}
+
+	@Override
+	public void onResumeGame() {
+		super.onResumeGame();
+		mMainScene.registerEntityModifier(new ScaleAtModifier(0.5f, 0.0f, 1.0f,
+				CAMERA_WIDTH / 2, CAMERA_HEIGHT / 2));
+		mStaticMenuScene.registerEntityModifier(new ScaleAtModifier(0.5f, 0.0f,
+				1.0f, CAMERA_WIDTH / 2, CAMERA_HEIGHT / 2));
 	}
 
 	@Override
@@ -157,8 +173,11 @@ public class MainMenuActivity extends BaseGameActivity implements
 			this.finish();
 			return true;
 		case MENU_PLAY:
-			Toast.makeText(MainMenuActivity.this, "Play selected",
-					Toast.LENGTH_SHORT).show();
+			mMainScene.registerEntityModifier(new ScaleModifier(1.0f, 1.0f,
+					0.0f));
+			mStaticMenuScene.registerEntityModifier(new ScaleModifier(1.0f,
+					1.0f, 0.0f));
+			mHandler.postDelayed(mLaunchLevel1Task, 1000);
 			return true;
 		case MENU_SCORES:
 			Toast.makeText(MainMenuActivity.this, "Scores selected",
@@ -236,5 +255,13 @@ public class MainMenuActivity extends BaseGameActivity implements
 
 		this.mPopUpMenuScene.setOnMenuItemClickListener(this);
 	}
+
+	private Runnable mLaunchLevel1Task = new Runnable() {
+		public void run() {
+			Intent myIntent = new Intent(MainMenuActivity.this,
+					Level1Activity.class);
+			MainMenuActivity.this.startActivity(myIntent);
+		}
+	};
 
 }
