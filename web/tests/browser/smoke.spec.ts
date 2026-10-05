@@ -5,9 +5,15 @@ test('production entry, base path, single player and refresh work without errors
   const failedAssets: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('response', response => {
-    if (response.url().includes('/BattleCity/assets/') && response.status() >= 400) failedAssets.push(response.url());
+    if (new URL(response.url()).pathname.startsWith('/assets/') && response.status() >= 400) failedAssets.push(response.url());
   });
   await page.goto('./');
+  expect(new URL(page.url()).pathname).toBe('/');
+  const assetUrls = await page.locator('script[src], link[rel="stylesheet"][href], link[rel="modulepreload"][href]')
+    .evaluateAll(elements => elements.map(element =>
+      new URL(element.getAttribute('src') ?? element.getAttribute('href')!, document.baseURI).href));
+  expect(assetUrls.length).toBeGreaterThan(0);
+  expect(assetUrls.every(url => new URL(url).pathname.startsWith('/assets/'))).toBe(true);
   await expect(page).toHaveTitle('BattleCity · 坦克大战');
   await expect(page.locator('#game-canvas canvas')).toBeVisible();
   await expect(page.locator('#stage-select option')).toHaveCount(35);

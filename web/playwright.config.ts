@@ -12,7 +12,7 @@ export default defineConfig({
   workers: 1,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
-    baseURL: 'http://127.0.0.1:4173/BattleCity/',
+    baseURL: 'http://127.0.0.1:4173/',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
@@ -27,7 +27,7 @@ export default defineConfig({
     command: production
       ? 'npm run preview -- --host 127.0.0.1 --port 4173 --strictPort'
       : 'npm run bundle -- --mode test && npm run preview -- --host 127.0.0.1 --port 4173 --strictPort',
-    url: 'http://127.0.0.1:4173/BattleCity/',
+    url: 'http://127.0.0.1:4173/',
     reuseExistingServer: false,
     timeout: 120_000,
   },

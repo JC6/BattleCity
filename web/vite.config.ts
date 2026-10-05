@@ -10,7 +10,7 @@ export default defineConfig({
       this.emitFile({ type: 'asset', fileName: 'THIRD_PARTY_NOTICES.md', source: readFileSync(new URL('./THIRD_PARTY_NOTICES.md', import.meta.url)) });
     },
   }],
-  base: '/BattleCity/',
+  base: '/',
   build: {
     target: 'es2022',
     rolldownOptions: {

@@ -19,7 +19,7 @@ npm ci
 npm run dev
 ```
 
-打开终端显示的地址并使用 `/BattleCity/` 路径。
+打开终端显示的地址。
 
 在 `web` 目录检查和构建：
 
