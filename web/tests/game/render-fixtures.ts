@@ -24,7 +24,7 @@ export function entityWorld(): GameState {
     shieldTicks: index === 0 ? 10 : 0, carryingPowerUp: index === 5,
   }));
   state.bullets = Array.from({ length: 5 }, (_, index) => ({ id: 40 + index, team: 'player' as const,
-    playerIndex: 0 as const, gunSlot: index % 2,
+    playerIndex: 0 as const, gunSlot: (index % 2) as 0 | 1,
     x: index === 4 ? 120 : 24 + index * 32, y: index === 4 ? 192 : 64,
     direction: (['up', 'right', 'down', 'left'] as const)[index % 4], speed: 2, steelPower: false,
     ...(index === 4 ? { impactTicks: 5 } : {}),
@@ -55,11 +55,11 @@ export function renderFixtures(): RenderFixture[] {
   });
   result.push({ name: 'gameover', apply(scene) { scene.presentation = { kind: 'gameover' }; } });
   for (const tick of [0, 16]) result.push({ name: `entities-${tick}`, apply(scene) {
-    scene.state = entityWorld(); scene.state.tick = tick; scene.presentation = { kind: 'game' };
+    scene.state = { ...entityWorld(), tick }; scene.presentation = { kind: 'game' };
   } });
   result.push({ name: 'locked-hud', apply(scene) {
-    scene.state = entityWorld(); scene.hudState = structuredClone(scene.state);
-    scene.hudState.stage = 31; scene.hudState.spawned = 19; scene.hudState.players[0].lives = 0;
+    scene.state = entityWorld(); scene.hudState = { ...structuredClone(scene.state), stage: 31, spawned: 19 };
+    scene.hudState.players[0].lives = 0;
     scene.presentation = { kind: 'game', lossBannerProgress: 0.6, paused: true };
   } });
   result.push({ name: 'editor', apply(scene) {

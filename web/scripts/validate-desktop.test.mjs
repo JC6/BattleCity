@@ -452,17 +452,19 @@ test('passes explicitly selected runtime paths to child processes without changi
     TMPDIR: path.join(directory, 'download-tmp'),
     PLAYWRIGHT_BROWSERS_PATH: path.join(directory, 'browser-cache'),
     LD_LIBRARY_PATH: path.join(directory, 'user-libs'),
+    LP_NUM_THREADS: '1', WEBKIT_SKIA_ENABLE_CPU_RENDERING: '1', WEBKIT_SKIA_CPU_PAINTING_THREADS: '1',
     BATTLECITY_PRODUCTION: '1',
   };
   const original = { ...supplied };
   try {
-    const program = 'console.log(JSON.stringify({ paths:Object.fromEntries(["PATH","TMPDIR","PLAYWRIGHT_BROWSERS_PATH","LD_LIBRARY_PATH"].map(key=>[key,process.env[key]])),executable:process.execPath,temporaryDirectory:require("node:os").tmpdir(),production:process.env.BATTLECITY_PRODUCTION??null }));';
+    const program = 'console.log(JSON.stringify({ paths:Object.fromEntries(["PATH","TMPDIR","PLAYWRIGHT_BROWSERS_PATH","LD_LIBRARY_PATH","LP_NUM_THREADS","WEBKIT_SKIA_ENABLE_CPU_RENDERING","WEBKIT_SKIA_CPU_PAINTING_THREADS"].map(key=>[key,process.env[key]])),executable:process.execPath,temporaryDirectory:require("node:os").tmpdir(),production:process.env.BATTLECITY_PRODUCTION??null }));';
     const result = await command(directory, runtimeEnvironment(supplied), 'selected-environment', 'node', ['-e', program], 5000, { quiet: true });
     assert.equal(result.status, 'passed');
     const actual = JSON.parse(result.stdout);
     assert.equal(actual.executable, process.execPath, 'A child selected through PATH uses the current Node');
     assert.equal(actual.paths.PATH, `${path.dirname(process.execPath)}${path.delimiter}${supplied.PATH}`);
-    for (const key of ['TMPDIR', 'PLAYWRIGHT_BROWSERS_PATH', 'LD_LIBRARY_PATH']) assert.equal(actual.paths[key], supplied[key]);
+    for (const key of ['TMPDIR', 'PLAYWRIGHT_BROWSERS_PATH', 'LD_LIBRARY_PATH', 'LP_NUM_THREADS',
+      'WEBKIT_SKIA_ENABLE_CPU_RENDERING', 'WEBKIT_SKIA_CPU_PAINTING_THREADS']) assert.equal(actual.paths[key], supplied[key]);
     assert.equal(actual.temporaryDirectory, supplied.TMPDIR);
     assert.equal(actual.production, null, 'Full validation starts with the test build');
     assert.deepEqual(supplied, original, 'Preparing child environment does not mutate the terminal environment');
@@ -475,6 +477,9 @@ test('does not select browser caches or libraries that the caller did not provid
   assert.equal(environment.TMPDIR, '/selected/downloads');
   assert.equal(Object.hasOwn(environment, 'PLAYWRIGHT_BROWSERS_PATH'), false);
   assert.equal(Object.hasOwn(environment, 'LD_LIBRARY_PATH'), false);
+  for (const key of ['LP_NUM_THREADS', 'WEBKIT_SKIA_ENABLE_CPU_RENDERING', 'WEBKIT_SKIA_CPU_PAINTING_THREADS']) {
+    assert.equal(Object.hasOwn(environment, key), false);
+  }
 });
 
 test('cancellation terminates an owned child and its grandchild before returning', { skip: process.platform !== 'linux' }, async t => {

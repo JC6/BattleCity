@@ -7,6 +7,41 @@ import { protectedBattlefield } from './construction-fixture';
 // Native PCM sampling and keyboard preparation share the desktop case budget.
 test.describe.configure({ timeout: 60000 });
 
+// Fault injection deliberately closes and replaces a native AudioContext.
+// Give it its own worker/browser to isolate that device lifecycle from later
+// latency measurements. Context, trace and
+// screenshot fixtures still use the standard project configuration.
+const recoveryTest = test.extend({
+  browser: [async ({ playwright, browserName, launchOptions, headless, channel }, use) => {
+    const browser = await playwright[browserName].launch({ ...launchOptions, headless, channel });
+    try { await use(browser); } finally { await browser.close(); }
+  }, { scope: 'worker' }],
+});
+
+declare global { interface Window { __AUDIO_LOAD_FAULT__: { attempts: number; release(): void } } }
+
+async function failFirstModule(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const NativeContext = window.AudioContext;
+    const fault = window.__AUDIO_LOAD_FAULT__ = { attempts: 0, release: () => {} };
+    window.AudioContext = class extends NativeContext {
+      constructor(...args: ConstructorParameters<typeof NativeContext>) {
+        super(...args);
+        const load = this.audioWorklet.addModule.bind(this.audioWorklet);
+        this.audioWorklet.addModule = (url, options) => {
+          if (!String(url).includes('/apu-worklet-')) return load(url, options);
+          if (++fault.attempts !== 1) return load(url, options);
+          // Chromium does not expose this Worklet request to page routing.
+          // Keep native fetching/rejection and all audio clocks real; only the
+          // first URL and the moment that request is released are controlled.
+          return new Promise<void>(resolve => { fault.release = resolve; }).then(() =>
+            load(new URL('./assets/__missing-audio-module__.js', location.href).href, options));
+        };
+      }
+    };
+  });
+}
+
 function errorDetails(error: unknown): { name: string; message: string; stack?: string } {
   return error instanceof Error ? { name: error.name, message: error.message, stack: error.stack }
     : { name: 'Error', message: String(error) };
@@ -39,6 +74,37 @@ async function stageSelection(page: Page, testInfo: TestInfo, protectPlayer = fa
 async function battle(page: Page): Promise<void> {
   await expect.poll(async () => (await probeCanvas(page)).battleStage, { timeout: 12000 }).toBe(2);
 }
+
+recoveryTest('a failed Worklet load recovers on a fresh graph and resumes the current scene PCM after another gesture', async ({ page }, testInfo) => {
+  await failFirstModule(page);
+  await installPcmProbe(page);
+  await page.goto('./'); await page.bringToFront(); await waitForCanvasMenu(page);
+  await page.keyboard.press('Enter'); await page.waitForFunction(() => window.__AUDIO_LOAD_FAULT__.attempts === 1);
+  // Enter the game while initialization is pending, then fail that exact load.
+  // Recovery must seek this running scene rather than restarting its melody.
+  await page.keyboard.press('Enter'); await page.evaluate(() => window.__AUDIO_LOAD_FAULT__.release());
+  await page.waitForFunction(() => window.__AUDIO_PCM__?.context?.state === 'closed');
+  const closedAt = await page.evaluate(() => performance.now());
+  await page.waitForFunction(at => performance.now() - at >= 1100, closedAt);
+  expect(await page.evaluate(() => window.__AUDIO_LOAD_FAULT__.attempts)).toBe(1); // No autonomous retry.
+  await page.keyboard.press('ArrowUp'); await audioReady(page);
+  expect(await page.evaluate(() => window.__AUDIO_LOAD_FAULT__.attempts)).toBe(2);
+  expect(await page.evaluate(() => {
+    const pcm = window.__AUDIO_PCM__!;
+    return { oldGraphs: pcm.retiredGraphs?.length, oldState: pcm.retiredGraphs?.[0].context.state,
+      oldGain: pcm.retiredGraphs?.[0].gain?.gain.value, newState: pcm.context?.state,
+      different: pcm.context !== pcm.retiredGraphs?.[0].context,
+      reset: pcm.transport?.entries.find(entry => entry.direction === 'send' && entry.type === 'reset') };
+  })).toMatchObject({ oldGraphs: 1, oldState: 'closed', oldGain: 0, newState: 'running', different: true,
+    reset: { offset: expect.any(Number), start: expect.arrayContaining([1, 2, 3]) } });
+  expect(await page.evaluate(() => window.__AUDIO_PCM__!.transport!.entries.find(entry => entry.type === 'reset')!.offset)).toBeGreaterThan(0);
+  const recoveredAt = await audioTime(page);
+  await pcmAssert(page, recoveredAt + 0.02, recoveredAt + 0.32, [], value => {
+    expect(value.rms).toBeGreaterThan(0.001); expect(value.peak).toBeLessThan(0.5);
+  }, failure => attachPcmFailure(testInfo, failure, 'recovered current scene', { recoveredAt }));
+  await expect.poll(async () => (await probeCanvas(page)).battleStage, { timeout: 12000 }).toBe(1);
+  if (process.env.BATTLECITY_PRODUCTION === '1') expect(await page.evaluate(() => '__BATTLECITY__' in window)).toBe(false);
+});
 
 test('real game clock and AudioWorklet PCM start the three-voice stage tune with the keyboard', async ({ page }, testInfo) => {
   await stageSelection(page, testInfo);

@@ -256,12 +256,12 @@ describe('native texture presentation', () => {
   });
   it('patches damaged brick and removed forest while two water phases reuse their unchanged maps', () => {
     const { scene, textures, frame } = renderer();
-    scene.state = emptyWorld(); scene.presentation = { kind: 'game' };
+    const world = emptyWorld(); scene.state = world; scene.presentation = { kind: 'game' };
     scene.state.tiles[0] = Tile.Water; scene.state.tiles[1] = Tile.Brick; scene.state.brickMasks[1] = 15;
     scene.state.tiles[2] = Tile.Forest; scene.update(0, 0);
     const a = hashPixels(crop(frame(), 16, 16, 8, 8).data);
-    scene.state.tick = 16; scene.update(0, 0); const b = hashPixels(crop(frame(), 16, 16, 8, 8).data);
-    scene.state.tick = 32; scene.update(0, 0); expect(hashPixels(crop(frame(), 16, 16, 8, 8).data)).toBe(a); expect(b).not.toBe(a);
+    world.tick = 16; scene.update(0, 0); const b = hashPixels(crop(frame(), 16, 16, 8, 8).data);
+    world.tick = 32; scene.update(0, 0); expect(hashPixels(crop(frame(), 16, 16, 8, 8).data)).toBe(a); expect(b).not.toBe(a);
     expect(textures.get('arena-map-0')!.refreshes).toBe(1); expect(textures.get('arena-map-1')!.refreshes).toBe(1);
     scene.state.brickMasks[1] = 2; scene.state.tiles[2] = Tile.Empty; scene.update(0, 0);
     expect(textures.get('arena-map-0')!.refreshes).toBe(2); expect(textures.get('arena-map-1')!.refreshes).toBe(2);
@@ -281,16 +281,16 @@ describe('native texture presentation', () => {
     expect(textures.get('arena-hud')!.refreshes).toBe(1);
   });
   it('keeps the cached HUD tied to the authoritative final result while its world continues', () => {
-    const { scene, textures } = renderer(); scene.state = entityWorld(); scene.hudState = structuredClone(scene.state);
+    const { scene, textures } = renderer(); const world = entityWorld(); scene.state = world; scene.hudState = structuredClone(world);
     scene.presentation = { kind: 'game' }; scene.update(0, 0);
     const hud = textures.get('arena-hud')!; const initial = hashPixels(hud.canvas.data);
-    scene.state.spawned++; scene.state.players[0].lives--; scene.state.stage++; scene.update(0, 0);
+    world.spawned++; world.players[0].lives--; world.stage++; scene.update(0, 0);
     expect(hud.refreshes).toBe(1); expect(hashPixels(hud.canvas.data)).toBe(initial);
     scene.hudState = null; scene.update(0, 0); expect(hud.refreshes).toBe(2); expect(hashPixels(hud.canvas.data)).not.toBe(initial);
   });
   it('shows overwritten Construction terrain instead of the base when the draft hides its eagle', () => {
-    const { scene, frame } = renderer(); scene.draft = emptyWorld().tiles;
-    for (const index of [636, 637, 662, 663]) scene.draft[index] = Tile.Water;
+    const { scene, frame } = renderer(); const draft = emptyWorld().tiles; scene.draft = draft;
+    for (const index of [636, 637, 662, 663]) draft[index] = Tile.Water;
     scene.presentation = { kind: 'editor', baseVisible: false }; scene.update(0, 0);
     const colors = new Set<number>(); const pixels = crop(frame(), 112, 208, 16, 16).data;
     for (let index = 0; index < pixels.length; index += 4) colors.add(pixels[index] << 16 | pixels[index + 1] << 8 | pixels[index + 2]);

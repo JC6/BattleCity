@@ -7,6 +7,7 @@ const runtime = vi.hoisted(() => ({
   scene: null as null | { state: GameState | null; onFrame(delta: number): void; scale: { getParentBounds(): void; refresh(): void } },
   parent: null as null | { style: Record<string, string> },
   canvasSize: { width: 0, height: 0 },
+  destroyed: 0,
   audioEvents: [] as string[],
   audioSyncStates: [] as (GameState | null)[],
   engines: [] as { state: GameState }[],
@@ -42,6 +43,7 @@ vi.mock('phaser', () => ({
       constructor(_key: string) {}
     },
     Game: class {
+      destroy() { runtime.destroyed++; }
       constructor(config: { scene: typeof runtime.scene[] }) {
         runtime.scene = config.scene[0];
         runtime.scene!.scale.getParentBounds();
@@ -53,6 +55,7 @@ vi.mock('phaser', () => ({
 }));
 vi.mock('../../src/platform/audio', () => ({
   GameAudio: class {
+    dispose() { runtime.audioEvents.push('dispose'); return Promise.resolve(); }
     unlock() {} stopScene() { runtime.audioEvents.push('stop'); } setPaused(_paused: boolean) {}
     syncState(state: GameState | null) { runtime.audioSyncStates.push(state); }
     advanceTick() { runtime.audioEvents.push('tick'); }
@@ -72,6 +75,7 @@ interface Harness {
 }
 let events: Map<string, ((event: unknown) => void)[]>;
 let api: Harness;
+let dispose: () => Promise<void>;
 let wrapper: { style: Record<string, string> };
 function dispatch(type: string, event: unknown = {}): void { events.get(type)?.forEach(handler => handler(event)); }
 function down(code: string, repeat = false): void { dispatch('keydown', { code, repeat, preventDefault() {} }); }
@@ -96,23 +100,34 @@ function until(kind: string): void {
 }
 beforeEach(async () => {
   vi.resetModules();
-  runtime.audioEvents = [];
+  runtime.audioEvents = []; runtime.destroyed = 0;
   runtime.audioSyncStates = []; runtime.engines = []; runtime.engineOptions = []; runtime.engineFailure = null;
   events = new Map();
   const listen = (type: string, handler: (event: unknown) => void) => events.set(type, [...(events.get(type) ?? []), handler]);
   wrapper = { style: {} };
   runtime.parent = wrapper;
   const app = { innerHTML: '', querySelector: () => wrapper };
-  const fakeWindow = { innerWidth: 1280, innerHeight: 720, addEventListener: listen };
+  const unlisten = (type: string, handler: (event: unknown) => void) => events.set(type, (events.get(type) ?? []).filter(value => value !== handler));
+  const fakeWindow = { innerWidth: 1280, innerHeight: 720, addEventListener: listen, removeEventListener: unlisten };
   vi.stubGlobal('window', fakeWindow);
-  vi.stubGlobal('document', { hidden: false, hasFocus: () => true, addEventListener: listen, querySelector: () => app });
-  await import('../../src/main');
+  vi.stubGlobal('document', { hidden: false, hasFocus: () => true, addEventListener: listen, removeEventListener: unlisten, querySelector: () => app });
+  dispose = (await import('../../src/main')).application.dispose;
   api = (fakeWindow as typeof fakeWindow & { __BATTLECITY__: Harness }).__BATTLECITY__;
 // The first import also transforms the application; allow for cold filesystem I/O.
 }, 30000);
-afterEach(() => { vi.unstubAllGlobals(); runtime.scene = null; runtime.parent = null; });
+afterEach(async () => { await dispose(); vi.unstubAllGlobals(); runtime.scene = null; runtime.parent = null; });
 
 describe('keyboard application flow', () => {
+  it('disposes listeners, the test bridge, audio and Phaser exactly once', async () => {
+    const scene = runtime.scene!;
+    const done = dispose(); expect(dispose()).toBe(done); await done;
+    expect(runtime.destroyed).toBe(1);
+    expect(runtime.audioEvents.filter(event => event === 'dispose')).toHaveLength(1);
+    expect([...events.values()].every(handlers => handlers.length === 0)).toBe(true);
+    expect('__BATTLECITY__' in window).toBe(false);
+    const before = [...runtime.audioEvents]; scene.onFrame(100); down('Enter');
+    expect(runtime.audioEvents).toEqual(before);
+  });
   it('prepares a stage without installing or advancing it and starts the same tick-zero engine', () => {
     const seeds = controlledSeeds();
     const audioBeforeSelection = [...runtime.audioEvents];
@@ -198,7 +213,7 @@ describe('keyboard application flow', () => {
     expect(api.state()).toMatchObject({ tick: 0, stage: 1, phase: 'intro', rng: seeds[4] });
   });
 
-  it.each(['Enter', 'blur', 'visibilitychange'])('shows an intro paused by %s and resumes its retained progress', trigger => {
+  it.each(['Enter', 'blur', 'visibilitychange'] as const)('shows an intro paused by %s and resumes its retained progress', trigger => {
     tap('Enter'); tap('Enter'); frame(7);
     const before = api.presentation();
     expect(before.kind).toBe('intro');

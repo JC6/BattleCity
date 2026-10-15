@@ -135,7 +135,7 @@ test('texture count and image pools remain bounded across ids and scene restarts
 test('unavailable WebGL preserves every golden native pixel on its integer block', async ({ page }) => {
   await page.addInitScript(() => {
     const original = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = function (...args: Parameters<typeof original>) {
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, ...args: Parameters<typeof original>) {
       if (['webgl', 'webgl2', 'experimental-webgl'].includes(String(args[0]))) return null;
       return original.apply(this, args);
     } as typeof original;

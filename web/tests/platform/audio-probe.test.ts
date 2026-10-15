@@ -23,10 +23,11 @@ describe('deferred native audio event observation', () => {
       },
     };
     class AudioNode { connect() { return this; } }
+    class AudioDestinationNode extends AudioNode {}
     class GainNode extends AudioNode {}
     class AudioWorkletNode extends AudioNode {}
     class AudioContext {}
-    const realm = createContext({ window: browserWindow, AudioNode, GainNode, AudioWorkletNode, AudioContext });
+    const realm = createContext({ window: browserWindow, AudioNode, AudioDestinationNode, GainNode, AudioWorkletNode, AudioContext });
     const page = {
       addInitScript: vi.fn(async (source: string) => { runInContext(source, realm); }),
       evaluate: vi.fn(async (expression: () => void) => { runInContext(`(${expression.toString()})()`, realm); }),
@@ -38,7 +39,7 @@ describe('deferred native audio event observation', () => {
     const emit = (kind: string, event: { code?: string; repeat?: boolean } = {}) => {
       for (const listener of listeners.get(kind) ?? []) listener(event);
     };
-    return { page, capture, emit, AudioNode, GainNode, AudioWorkletNode };
+    return { page, capture, emit, AudioNode, AudioDestinationNode, GainNode, AudioWorkletNode, AudioContext };
   }
   async function transportFixture() {
     const clock = vi.fn((): number => { throw new Error('Transport must not read native audio time'); });
@@ -189,6 +190,23 @@ describe('deferred native audio event observation', () => {
     expect(Reflect.apply(worklet.connect, worklet, [gain])).toBe(worklet);
     expect(capture.gameReady).toBe(true);
     expect(context).not.toHaveBeenCalled();
+  });
+  it('archives a replaced graph and observes its new clock without clearing previous errors', async () => {
+    const { capture, AudioContext, AudioDestinationNode, GainNode } = await eventFixture(() => 5);
+    const old = capture.context!, packets = capture.packets, events = capture.events;
+    events.push({ kind: 'keydown', code: 'Enter', at: 5 });
+    capture.errors.push('retained diagnostic');
+    const replacement = Object.assign(new AudioContext(), { destination: new AudioDestinationNode(), sampleRate: 48000 });
+    const gain = new GainNode(); Object.defineProperty(gain, 'context', { value: replacement });
+    expect(Reflect.apply(gain.connect, gain, [replacement.destination])).toBe(gain);
+    expect(capture.retiredGraphs).toHaveLength(1);
+    expect(capture.retiredGraphs![0]).toMatchObject({ context: old, packets, events });
+    expect(capture.context).toBe(replacement); expect(capture.rate).toBe(48000);
+    expect(capture.ready).toBe(false); expect(capture.gameReady).toBe(false);
+    expect(capture.packets).toEqual([]); expect(capture.events).toEqual([]);
+    expect(capture.errors).toEqual(['retained diagnostic']);
+    Reflect.apply(gain.connect, gain, [replacement.destination]);
+    expect(capture.retiredGraphs).toHaveLength(1);
   });
 });
 

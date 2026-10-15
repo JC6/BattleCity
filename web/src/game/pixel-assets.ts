@@ -2,7 +2,7 @@ import type { Direction, EnemyKind, PowerUpKind, Tank } from '../core/types';
 
 /** Integer pixel shapes traced from the identified NES recording. RGB values are
  * approximate: the recording is cropped, scaled and compressed, not a ROM dump.
- * Source/evidence details live in the audit implementation report. */
+ * Known evidence and missing recording metadata are indexed in docs/references.md. */
 export type Bitmap = readonly string[];
 export interface PixelSurface {
   fillStyle(color: number, alpha?: number): unknown;

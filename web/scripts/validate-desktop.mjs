@@ -12,7 +12,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const scriptPath = fileURLToPath(import.meta.url);
 const webRoot = path.resolve(path.dirname(scriptPath), '..');
 const repoRoot = path.resolve(webRoot, '..');
-const expectedCases = { e2e: { chromium: 51, webkit: 51 }, production: { chromium: 11, webkit: 11 } };
+const expectedCases = { e2e: { chromium: 52, webkit: 52 }, production: { chromium: 12, webkit: 12 } };
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const validSHA256 = value => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 const exists = async filename => { try { await access(filename); return true; } catch { return false; } };
@@ -608,7 +608,9 @@ async function main(args) {
   await mkdir(runDir, { recursive: true });
   const report = { schemaVersion: 2, status: 'running', browserAcceptance: 'unverified', startedAt: new Date().toISOString(), scope: args.includes('--preflight-only') ? 'environment preflight only; no browser acceptance' : 'desktop Chromium/WebKit execution acceptance',
     runtime: { node: process.version, executable: process.execPath, platform: process.platform, architecture: process.arch,
-      browserCache: env.PLAYWRIGHT_BROWSERS_PATH ?? 'Playwright default', libraryPath: env.LD_LIBRARY_PATH ?? '' },
+      browserCache: env.PLAYWRIGHT_BROWSERS_PATH ?? 'Playwright default', libraryPath: env.LD_LIBRARY_PATH ?? '',
+      rendering: Object.fromEntries(['LP_NUM_THREADS', 'WEBKIT_SKIA_ENABLE_CPU_RENDERING', 'WEBKIT_SKIA_CPU_PAINTING_THREADS']
+        .filter(key => env[key] !== undefined).map(key => [key, env[key]])) },
     installRequested: args.includes('--install'), published: false, brandedEdgeSafari: 'unverified', checks: {} };
   const controller = new AbortController();
   const interrupt = signal => {
@@ -677,9 +679,9 @@ async function main(args) {
         if (!canBrowse) return blocked('Environment preflight blocked; no game cases executed');
         const filename = path.join(webRoot, 'test-results', `${kind}.json`);
         try { await unlink(filename); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-        // One worker runs 102 E2E or 22 production cases serially across both
-        // engines. Their existing 30/60-second budgets total 85.5/18.5 minutes;
-        // allow stage headroom for server startup, reporting and cleanup.
+        // Both engines run serially in one worker slot. Keep stage headroom
+        // beyond their individual case budgets for server startup, isolated
+        // fault-injection browsers, reporting and cleanup.
         const result = await runCommand(kind, 'npm', ['run', npmScript], kind === 'e2e' ? 6_000_000 : 1_500_000);
         let verdict;
         try { verdict = classifyPlaywrightReport(JSON.parse(await readFile(filename, 'utf8')), expectedCases[kind], result); }

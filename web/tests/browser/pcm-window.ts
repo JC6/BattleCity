@@ -17,6 +17,8 @@ export interface AudioTransportHistory {
 export interface AudioCapture {
   ready: boolean; gameReady: boolean; errors: string[]; rate: number; context?: AudioContext; gain?: GainNode; packets: PcmPacket[];
   events: AudioEvent[]; marks: AudioMark[]; recording?: boolean; recordFromFrame?: number; transport?: AudioTransportHistory;
+  retiredGraphs?: Array<{ context: AudioContext; gain?: GainNode; rate: number; packets: PcmPacket[];
+    events: AudioEvent[]; marks: AudioMark[]; transport?: AudioTransportHistory }>;
 }
 declare global { interface Window { __AUDIO_PCM__?: AudioCapture } }
 export interface PcmFeatures { rms: number; peak: number; onset: number | null; amplitudes: number[]; samples: number; rate: number; idleReady?: boolean }

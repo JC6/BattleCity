@@ -16,6 +16,7 @@ class Gain {
   failNextWrite?: Error;
   private readonly parameter: { value: number };
   connect = vi.fn();
+  disconnect = vi.fn();
   constructor() {
     const gain = this;
     this.parameter = {
@@ -39,13 +40,15 @@ class Context {
   gain = new Gain(); audioWorklet = { addModule: vi.fn(() => Context.load()) };
   constructor() { Context.instances.push(this); }
   resume = vi.fn(() => Context.resumeContext(this));
+  close = vi.fn(async () => { this.state = 'closed'; });
   createGain() { return this.gain; }
 }
 class Node {
   static instances: Node[] = [];
   messages: AudioMessage[] = [];
   connect = vi.fn();
-  port = { onmessage: null as null | ((event: { data: unknown }) => void), postMessage: (message: AudioMessage) => this.messages.push(message) };
+  disconnect = vi.fn();
+  port = { close: vi.fn(), onmessage: null as null | ((event: { data: unknown }) => void), postMessage: (message: AudioMessage) => this.messages.push(message) };
   constructor() { Node.instances.push(this); }
   acknowledge(credits = 12) {
     const frame = this.messages.findLast(message => message.type === 'frames');
@@ -97,6 +100,32 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('tick-driven Worklet audio adapter', () => {
+  it('recovers a failed module on a new graph at the latest scene offset without replaying locked attacks', async () => {
+    let now = 0;
+    Context.load = () => Promise.reject(new Error('first load failed'));
+    const audio = new GameAudio(0.3, () => now); audio.unlock();
+    for (let i = 0; i < 4; i++) await settle();
+    audio.startPresentation('gameover');
+    for (let i = 0; i < 9; i++) audio.advanceTick();
+    audio.stopScene(); audio.startPresentation('hiscore');
+    audio.play([{ type: 'fire', team: 'player', playerIndex: 0, enemyKind: null, stars: 0 }]);
+    for (let i = 0; i < 7; i++) audio.advanceTick();
+    let finish!: () => void;
+    Context.load = () => new Promise<void>(resolve => { finish = resolve; });
+    now = 1000; audio.unlock(); audio.unlock();
+    for (let i = 0; i < 4; i++) audio.advanceTick();
+    finish(); await settle();
+    expect(Context.instances).toHaveLength(2); expect(Context.instances[0].close).toHaveBeenCalledOnce();
+    expect(Node.instances).toHaveLength(1);
+    const node = Node.instances[0], context = Context.instances[1];
+    expect(node.messages.findLast(message => message.type === 'reset')).toMatchObject({
+      tick: 20, offset: 11, start: [CUE.hiscorePulse1, CUE.hiscorePulse2, CUE.hiscoreTriangle],
+    });
+    expect(context.gain.value).toBe(0); acknowledgeReset(node); expect(context.gain.value).toBe(0.3);
+    await tick(audio, node); expect(cues(node)).not.toContain(CUE.shot);
+    await audio.dispose(); await audio.dispose();
+    expect(context.close).toHaveBeenCalledOnce(); expect(node.port.close).toHaveBeenCalledOnce();
+  });
   it('writes each gain transition once across native scene and pause barriers', async () => {
     const { audio, context, node } = await enabled(), gain = context.gain;
     expect(gain.parameterReads).toBe(1);
@@ -403,7 +432,7 @@ describe('tick-driven Worklet audio adapter', () => {
     audio.advanceTick(); audio.commitFrame();
     expect(actualBatches(node)).toHaveLength(2);
     expect(node.messages.findLast(message => message.type === 'frames')).toEqual({
-      type: 'frames', generation: 0, sequence: 3, at: 1 / 60.0988,
+      type: 'frames', generation: 0, sequence: 5, at: 1 / 60.0988,
       frames: [{ tick: 2, start: [CUE.countPulse, CUE.countNoise], stop: [] }],
     });
     context.currentTime = 0.093; // The previous ACK can dispatch only after an 84ms canvas paint.
@@ -432,7 +461,7 @@ describe('tick-driven Worklet audio adapter', () => {
     expect(actualBatches(node)).toHaveLength(1);
     node.acknowledge();
     expect(node.messages.findLast(message => message.type === 'frames')).toEqual({
-      type: 'frames', generation: 0, sequence: 3, at: 1 + 12 / AUDIO_TICK_HZ,
+      type: 'frames', generation: 0, sequence: 5, at: 1 + 12 / AUDIO_TICK_HZ,
       frames: [
         { tick: 13, start: [CUE.stagePulse1, CUE.stageTriangle, CUE.stagePulse2, CUE.enemyEngine],
           stop: [CUE.playerEngine, CUE.enemyEngine] },
@@ -454,7 +483,7 @@ describe('tick-driven Worklet audio adapter', () => {
     expect(actualBatches(node)).toHaveLength(1);
     node.progress(12, 1.225);
     expect(node.messages.findLast(message => message.type === 'frames')).toEqual({
-      type: 'frames', generation: 0, sequence: 3, at: 1.225,
+      type: 'frames', generation: 0, sequence: 5, at: 1.225,
       frames: [{ tick: 13, start: [], stop: [] }],
     });
   });
@@ -479,7 +508,7 @@ describe('tick-driven Worklet audio adapter', () => {
     expect(actualBatches(node)).toHaveLength(sent);
     node.progress(12, 1.345);
     expect(node.messages.findLast(message => message.type === 'frames')).toEqual({
-      type: 'frames', generation: 1, sequence: 4, at: 1.345,
+      type: 'frames', generation: 1, sequence: 6, at: 1.345,
       frames: [{ tick: 14, start: [], stop: [] }],
     });
   });
@@ -494,7 +523,7 @@ describe('tick-driven Worklet audio adapter', () => {
     audio.advanceTick(); await Promise.resolve();
     expect(actualBatches(node)).toHaveLength(2);
     expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({
-      sequence: 3, frames: [{ tick: 10, start: [CUE.countPulse, CUE.countNoise], stop: [] }],
+      sequence: 5, frames: [{ tick: 10, start: [CUE.countPulse, CUE.countNoise], stop: [] }],
     });
   });
   it('waits at zero credits and drains pending ticks in one-credit prefixes without losing their cues', async () => {
@@ -512,13 +541,13 @@ describe('tick-driven Worklet audio adapter', () => {
     expect(actualBatches(node)).toHaveLength(1);
     node.progress(1, 1.02);
     expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({
-      sequence: 3, frames: [{ tick: 13, start: [CUE.shot], stop: [] }],
+      sequence: 5, frames: [{ tick: 13, start: [CUE.shot], stop: [] }],
     });
     node.acknowledge(0);
     expect(actualBatches(node)).toHaveLength(2);
     node.progress(1, 1.04);
     expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({
-      sequence: 4, frames: [{ tick: 14, start: [CUE.countPulse, CUE.countNoise], stop: [] }],
+      sequence: 6, frames: [{ tick: 14, start: [CUE.countPulse, CUE.countNoise], stop: [] }],
     });
     expect(actualBatches(node)).toHaveLength(3);
   });
@@ -543,13 +572,13 @@ describe('tick-driven Worklet audio adapter', () => {
     expect(actualBatches(node)).toHaveLength(3);
     context.currentTime = 1.25; node.progress(1, 1.3);
     expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({
-      sequence: 5, at: 1.3, frames: [{ tick: 13, start: [], stop: [] }],
+      sequence: 7, at: 1.3, frames: [{ tick: 13, start: [], stop: [] }],
     });
     node.acknowledge(0); node.progress(1, 1.32);
     const all = actualBatches(node);
     expect(all.map(message => message.frames.length)).toEqual([4, 4, 4, 1, 1]);
     expect(all.flatMap(message => message.frames.map(frame => frame.tick))).toEqual(Array.from({ length: 14 }, (_, index) => index + 1));
-    expect(all.at(-1)).toMatchObject({ sequence: 6, at: 1.32 });
+    expect(all.at(-1)).toMatchObject({ sequence: 8, at: 1.32 });
   });
   it('does not accept a progress credit snapshot while a new batch reception is still in flight', async () => {
     const { audio, node } = await enabled(); acknowledgeReset(node);
@@ -570,7 +599,7 @@ describe('tick-driven Worklet audio adapter', () => {
     expect(actualBatches(node)).toHaveLength(2);
     node.progress(1, 1.05);
     expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({
-      sequence: 4, at: 1.05, frames: [{ tick: 3, start: [], stop: [] }],
+      sequence: 6, at: 1.05, frames: [{ tick: 3, start: [], stop: [] }],
     });
   });
   it('isolates pre-pause acknowledgements and progress even within the same generation', async () => {
@@ -880,10 +909,11 @@ describe('tick-driven Worklet audio adapter', () => {
   });
 });
 
-// A previous short cue can finish while its scene remains active. Keep this
-// reachable history separate from a reset scene's genuinely silent lead.
+// A real cue activates the scene; a focus barrier drops its unposted attack.
+// This reachable silent scene exercises transport capacity without private edits.
 function settledActiveScene(audio: GameAudio): void {
-  Object.assign(audio as unknown as { sceneActive: boolean }, { sceneActive: true });
+  audio.play([{ type: 'fire', team: 'player', playerIndex: 0, enemyKind: null, stars: 0 }]);
+  audio.setPaused(true, 'focus'); audio.setPaused(false);
 }
 
 interface RealProcessor {

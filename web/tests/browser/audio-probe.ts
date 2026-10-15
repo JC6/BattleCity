@@ -33,6 +33,8 @@ function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOption
     window.__AUDIO_PCM__ = capture;
     capture.recording = !deferRecording;
     let attachTap: (() => void) | undefined;
+    let detachTap: (() => void) | undefined;
+    let detachScene: (() => void) | undefined;
     let observedPort: MessagePort | undefined;
     const observeTransport = (node: AudioWorkletNode) => {
       const history = capture.transport ??= { entries: [], next: 0, dropped: 0, observationErrors: 0 };
@@ -87,9 +89,20 @@ function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOption
         // Observation must not compete with the application's Worklet startup.
         attachTap?.(); attachTap = undefined;
       }
-      if (!(this instanceof GainNode) || capture.context) return result;
+      if (!(this instanceof GainNode) || !(args[0] instanceof AudioDestinationNode)) return result;
       const context = this.context;
       if (!(context instanceof AudioContext) || args[0] !== context.destination) return result;
+      if (capture.context === context) return result;
+      if (capture.context) {
+        // Native clocks restart on a new graph. Retain old evidence separately;
+        // never mix its sample labels or key timestamps into the replacement.
+        (capture.retiredGraphs ??= []).push({ context: capture.context, gain: capture.gain, rate: capture.rate,
+          packets: capture.packets, events: capture.events, marks: capture.marks, transport: capture.transport });
+        detachTap?.(); detachScene?.(); observedPort = undefined;
+        capture.ready = false; capture.gameReady = false;
+        capture.packets = []; capture.events = []; capture.marks = [];
+        capture.transport = undefined; capture.recordFromFrame = undefined;
+      }
       capture.context = context; capture.gain = this; capture.rate = context.sampleRate;
       if (observeScenes) {
         const arena = window.__BATTLECITY__?.renderScene();
@@ -121,6 +134,7 @@ function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOption
           originalFrame.call(this, delta); observe();
         };
         const detach = () => { if (arena.onFrame === observedFrame) arena.onFrame = originalFrame; };
+        detachScene = detach;
         arena.onFrame = observedFrame;
         arena.events.once('shutdown', detach);
         arena.events.once('destroy', detach);
@@ -141,10 +155,16 @@ function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOption
       attachTap = () => {
         const url = URL.createObjectURL(new Blob([module], { type: 'text/javascript' }));
         void context.audioWorklet.addModule(url).then(() => {
+          if (context !== capture.context || context.state === 'closed') return;
           const tap = new AudioWorkletNode(context, 'battlecity-test-pcm');
           const silent = context.createGain(); silent.gain.value = 0;
           Reflect.apply(connect, this, [tap]); Reflect.apply(connect, tap, [silent]); Reflect.apply(connect, silent, [context.destination]);
+          detachTap = () => {
+            tap.port.onmessage = null; tap.port.close();
+            try { tap.disconnect(); silent.disconnect(); } catch { /* The old context may already be closed. */ }
+          };
           tap.port.onmessage = (event: MessageEvent<PcmPacket>) => {
+            if (context !== capture.context) return;
             capture.ready = true;
             if (!capture.recording) return;
             if (capture.recordFromFrame !== undefined) {

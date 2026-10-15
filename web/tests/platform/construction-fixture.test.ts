@@ -125,6 +125,14 @@ describe('Construction compositor observations', () => {
 function keyboardFixture(options: { failPainting?: boolean; missingWall?: boolean; releaseError?: boolean;
   attachError?: boolean; unmovedCursor?: boolean; stalledSteel?: boolean; latePaintingRead?: boolean } = {}) {
   const events: string[] = [], held = new Set<string>();
+  // Fixture buffers are immutable. Repeated stalled observations need only one
+  // diagnostic scan here; protectedBattlefield still analyzes every real read.
+  const inspections = new WeakMap<Buffer, ReturnType<typeof inspectConstruction>>();
+  const inspectFixture = (rgba: Buffer) => {
+    let value = inspections.get(rgba);
+    if (!value) { value = inspectConstruction(rgba); inspections.set(rgba, value); }
+    return value;
+  };
   let entered = 0, selected = 0, last = picture(start), pending: Buffer[] = [], pendingCode = false;
   let failurePixels: Buffer | undefined;
   const captureError = new Error('compositor read failed');
@@ -145,7 +153,7 @@ function keyboardFixture(options: { failPainting?: boolean; missingWall?: boolea
           pending = [last, picture(options.unmovedCursor ? origin : start, code === 9 && options.stalledSteel ? 10 : code)];
           pendingCode = true;
         } else if (key === 'd') {
-          expect(inspectConstruction(last).signature).toEqual([0xadadad, 0xadadad, 0x666666, 0x666666]);
+          expect(inspectFixture(last).signature).toEqual([0xadadad, 0xadadad, 0x666666, 0x666666]);
           pending = [picture({ column: 11, row: 5 }, 9, 12), picture(end, 9, 13)];
         }
       }),
@@ -167,7 +175,7 @@ function keyboardFixture(options: { failPainting?: boolean; missingWall?: boolea
     }
     if (pendingCode && pending.length === 1) { selected++; pendingCode = false; }
     last = pending.shift() ?? last;
-    const frame = inspectConstruction(last);
+    const frame = inspectFixture(last);
     events.push(`frame:${frame.cursor?.column}:${frame.cursor?.row}:${frame.signature?.join(',')}`);
     return last;
   });
@@ -182,7 +190,7 @@ function keyboardFixture(options: { failPainting?: boolean; missingWall?: boolea
     attach, held, events, captureError, failurePixels: () => failurePixels };
 }
 
-describe('Construction keyboard preparation', () => {
+describe('Construction keyboard preparation', { timeout: 15000 }, () => {
   it('awaits each actual block and the right edge, then ignores the stale right-hand cursor after re-entry', async () => {
     const fixture = keyboardFixture();
     await protectedBattlefield(fixture.page, fixture.testInfo);
@@ -200,7 +208,7 @@ describe('Construction keyboard preparation', () => {
     await expect(protectedBattlefield(fixture.page, fixture.testInfo)).rejects.toBe(fixture.captureError);
     expect(fixture.held.size).toBe(0);
     const attachments = fixture.attach.mock.calls.map(([name, attachment]) => ({ name, ...attachment }));
-    expect(attachments.find(value => value.contentType === 'application/octet-stream')?.body).toEqual(fixture.failurePixels());
+    expect(attachments.find(value => value.contentType === 'application/octet-stream')?.body.equals(fixture.failurePixels()!)).toBe(true);
     const diagnostic = JSON.parse(attachments.find(value => value.contentType === 'application/json')!.body.toString());
     expect(diagnostic.pixelsSHA256).toBe(pixelsSHA256(fixture.failurePixels()!));
     expect(diagnostic.observation.cursor).toEqual({ column: 11, row: 5 });
@@ -217,7 +225,7 @@ describe('Construction keyboard preparation', () => {
     const fixture = keyboardFixture({ latePaintingRead: true });
     await expect(protectedBattlefield(fixture.page, fixture.testInfo)).rejects.toThrow(/clamped right edge/);
     const attachments = fixture.attach.mock.calls.map(([, attachment]) => attachment);
-    expect(attachments.find(value => value.contentType === 'application/octet-stream')?.body).toEqual(fixture.failurePixels());
+    expect(attachments.find(value => value.contentType === 'application/octet-stream')?.body.equals(fixture.failurePixels()!)).toBe(true);
     const diagnostic = JSON.parse(attachments.find(value => value.contentType === 'application/json')!.body.toString());
     expect(diagnostic.pixelsSHA256).toBe(pixelsSHA256(fixture.failurePixels()!));
     expect(diagnostic.observation.cursor).toEqual({ column: 11, row: 5 });

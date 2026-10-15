@@ -15,8 +15,12 @@ export class InputManager {
   private keys = new Set<string>();
   private blocked = new Set<string>();
   private edges = new Set<string>();
+  private readonly keydown: (event: KeyboardEvent) => void;
+  private readonly keyup: (event: KeyboardEvent) => void;
+  private disposed = false;
   constructor(start: () => void, select: () => void, gesture: () => void) {
-    window.addEventListener('keydown', event => {
+    this.keydown = event => {
+      if (this.disposed) return;
       if (!relevant.has(event.code)) return;
       event.preventDefault();
       if (event.repeat || this.keys.has(event.code) || this.blocked.has(event.code)) return;
@@ -25,11 +29,20 @@ export class InputManager {
       if (event.code === 'Enter') start();
       else if (event.code === 'ShiftRight') select();
       else this.edges.add(event.code);
-    });
-    window.addEventListener('keyup', event => {
+    };
+    this.keyup = event => {
       this.keys.delete(event.code);
       this.blocked.delete(event.code);
-    });
+    };
+    window.addEventListener('keydown', this.keydown);
+    window.addEventListener('keyup', this.keyup);
+  }
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    window.removeEventListener('keydown', this.keydown);
+    window.removeEventListener('keyup', this.keyup);
+    this.resetForFocus();
   }
   readPads(): LogicalPad[] {
     const result = layouts.map(([up, right, down, left, a, b]) => ({

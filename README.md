@@ -29,6 +29,9 @@ npm test
 npm run build
 ```
 
+`typecheck` 同时检查应用、测试和构建配置；也可分别执行 `typecheck:app`、`typecheck:tests`。
+开发边界见 [Web 架构](web/docs/architecture.md)、[应用状态与时序](web/docs/state-machine.md)、[音频协议与恢复](web/docs/audio.md) 和 [参考资料索引](web/docs/references.md)。
+
 ### 操作
 
 | 模式 | 移动 | 射击 |

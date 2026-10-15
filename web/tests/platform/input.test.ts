@@ -8,11 +8,23 @@ function key(type: string, code: string, repeat = false): void {
 }
 beforeEach(() => {
   listeners = new Map();
-  vi.stubGlobal('window', { addEventListener: (type: string, handler: (event: KeyEvent) => void) => listeners.set(type, handler) });
+  vi.stubGlobal('window', {
+    addEventListener: (type: string, handler: (event: KeyEvent) => void) => listeners.set(type, handler),
+    removeEventListener: (type: string, handler: (event: KeyEvent) => void) => { if (listeners.get(type) === handler) listeners.delete(type); },
+  });
 });
 afterEach(() => vi.unstubAllGlobals());
 
 describe('classic controller input', () => {
+  it('removes its listeners and rejects queued key events after disposal', () => {
+    const start = vi.fn(), input = new InputManager(start, vi.fn(), vi.fn());
+    key('keydown', 'KeyD');
+    const queued = listeners.get('keydown')!;
+    input.dispose(); input.dispose();
+    queued({ code: 'Enter', repeat: false, preventDefault() {} });
+    expect(listeners.size).toBe(0); expect(start).not.toHaveBeenCalled();
+    expect(input.read()[0]).toMatchObject({ right: false, firePressed: false });
+  });
   it('keeps A/B held separate from shot edges and isolates the players', () => {
     const input = new InputManager(vi.fn(), vi.fn(), vi.fn());
     for (const code of ['KeyD', 'KeyK', 'ArrowLeft', 'KeyN']) key('keydown', code);

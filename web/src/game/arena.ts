@@ -1,6 +1,7 @@
+import type { ArenaPresentation } from '../app/presentation';
 import Phaser from 'phaser';
 import { ARENA_SIZE, BASE_X, BASE_Y, GRID_SIZE, TILE_SIZE } from '../core/constants';
-import { Tile, type GameMode, type GameState } from '../core/types';
+import { Tile, type GameState } from '../core/types';
 import { ENEMY_KINDS } from '../core/rules';
 import { GAMEOVER_BRICKS, HISCORE_PALETTES, NAMCOT, PALETTE, PLAYER,
   SCORE_ENEMIES, directionalBitmap, drawBitmap, drawBrickWord, drawText, type PixelSurface } from './pixel-assets';
@@ -19,15 +20,7 @@ function menuScore(score: number): string {
   return visible === 0 ? '00' : String(visible);
 }
 
-export type ArenaPresentation =
-  | { kind: 'menu'; selection: 0 | 1 | 2; highScore: number; playerScores: number[] }
-  | { kind: 'intro'; stage: number; elapsedMs: number; paused?: boolean }
-  | { kind: 'stage-select'; stage: number; mode?: GameMode }
-  | { kind: 'game'; lossBannerProgress?: number; paused?: boolean }
-  | { kind: 'score'; state: GameState; highScore: number; elapsedMs: number }
-  | { kind: 'gameover'; highScore?: number }
-  | { kind: 'hiscore'; highScore: number; tick: number }
-  | { kind: 'editor'; cursor?: { x: number; y: number }; baseVisible?: boolean };
+export type { ArenaPresentation } from '../app/presentation';
 
 type Image = Phaser.GameObjects.Image;
 function show(image: Image, key: string, frame: string | undefined, x: number, y: number, depth: number): void {
@@ -56,10 +49,10 @@ class ImagePool {
 }
 
 export class ArenaScene extends Phaser.Scene {
-  state: GameState | null = null;
+  state: Readonly<GameState> | null = null;
   // The loss world can animate while these authoritative HUD values stay locked.
-  hudState: GameState | null = null;
-  draft: Tile[] | null = null;
+  hudState: Readonly<GameState> | null = null;
+  draft: readonly Tile[] | null = null;
   presentation: ArenaPresentation = { kind: 'menu', selection: 0, highScore: 20000, playerScores: [] };
   onFrame: (delta: number) => void = () => {};
   private atlas?: NativeAtlas;
@@ -219,7 +212,7 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
-  private syncTiles(tiles: Tile[] | undefined, masks: number[] | undefined): void {
+  private syncTiles(tiles: readonly Tile[] | undefined, masks: readonly number[] | undefined): void {
     let changed = false, forestChanged = false;
     for (let index = 0; index < this.tileKeys.length; index++) {
       const tile = tiles?.[index] ?? Tile.Empty;
