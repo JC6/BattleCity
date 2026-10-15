@@ -52,6 +52,6 @@ Gain 在当前 generation 的有效 ACK 到达前关闭。空场景在 ACK 后�
 
 ## 验证
 
-`audio-runtime.test.ts` 验证 native 资源生命周期；`audio-transport.test.ts` 通过端口验证额度与屏障；`audio.test.ts` 保留事件映射和真实 processor/driver/synth 耦合的回归。所有场景准备通过公共调用建立，不修改音频私有状态。
+`audio-runtime.test.ts` 验证 native 资源生命周期；`audio-transport.test.ts` 通过端口验证额度、ACK/progress 顺序、短音过期和暂停屏障，无需创建原生音频图；`audio.test.ts` 保留事件映射、异步恢复和真实 processor/driver/synth 耦合的回归。所有场景准备通过公共调用建立，不修改音频私有状态。
 
 浏览器 `audio-real.spec.ts` 在 Chromium 和 WebKit 中让原生 `addModule` 首次请求一个无效地址，等待旧 Context 关闭，按键触发新 Context，并测量当前场景的实际 PCM。该故障用例使用独立 worker 和原生浏览器进程，隔离设备关闭/重建对后续时延测量的影响，继续沿用项目的 context、trace 和截图配置。采样侧支只观察音频，不推进游戏或音频时间；旧图的样本、事件和传输日志独立归档，新图使用新时间轴，既有错误不会被清空。该用例也在生产构建执行。
