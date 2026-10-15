@@ -8,7 +8,7 @@ flowchart LR
   Browser --> Controller[AppController]
   Input --> Controller
   Controller --> Core[GameEngine / Construction / LossWorld]
-  Controller --> Renderer[ArenaRenderer → ArenaScene]
+  Controller --> Renderer[AppRenderer → ArenaScene]
   Controller --> Audio[GameAudio → AudioTransport → AudioRuntime]
   Audio --> Worklet[Worklet → Driver → Synth]
 ```
@@ -21,7 +21,7 @@ flowchart LR
 | [`app/controller.ts`](../src/app/controller.ts) | 页面流转、固定步进、选关预准备、Construction 草稿、会话分数；通过 `AppPorts` 注入输入、音频、渲染、随机种子和记录存储 |
 | [`app/state.ts`](../src/app/state.ts) | 可判别的 `AppState`；战斗和结算状态必须携带引擎，失败演出必须携带独立世界，定时页面携带持续时间与已过 tick |
 | [`core/`](../src/core/) | 确定性游戏规则、碰撞、敌人、关卡推进；相同种子与输入得到相同结果 |
-| [`app/arena-renderer.ts`](../src/app/arena-renderer.ts) / [`game/arena.ts`](../src/game/arena.ts) | 应用视图到 Phaser 的适配；原生像素、纹理池和动画历史 |
+| [`game/arena.ts`](../src/game/arena.ts) | 满足 `AppRenderer` 端口，由 bootstrap 直接注入；原生像素、纹理池和动画历史 |
 | [`platform/audio.ts`](../src/platform/audio.ts) | 游戏事件与音轨语义；传输和浏览器资源见 [音频文档](audio.md) |
 | [`app/test-adapter.ts`](../src/app/test-adapter.ts) | 测试快照、控制状态和单步接口，仅在 test 模式构造 |
 

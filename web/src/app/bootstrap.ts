@@ -4,7 +4,6 @@ import { GameAudio } from '../platform/audio';
 import { InputManager } from '../platform/input';
 import { storage } from '../platform/storage';
 import { AppController } from './controller';
-import { ArenaRenderer } from './arena-renderer';
 
 /** Owns browser resources and their listeners for exactly one mounted game. */
 export function mountBattleCity(app: HTMLElement) {
@@ -12,7 +11,7 @@ export function mountBattleCity(app: HTMLElement) {
     'aria-label="Battle City。Enter：Start，右 Shift：Select。1P：WASD、J/K。2P：方向键、N/M。"></div></div></main>';
   const scene = new ArenaScene(), audio = new GameAudio(0.3);
   const input = new InputManager(() => controller.startKey(), () => controller.selectKey(), () => audio.unlock());
-  const controller = new AppController({ input, audio, render: new ArenaRenderer(scene), records: storage,
+  const controller = new AppController({ input, audio, render: scene, records: storage,
     seed: () => crypto.getRandomValues(new Uint32Array(1))[0] });
   scene.onFrame = delta => controller.frame(delta, !document.hidden && document.hasFocus());
   const resize = () => {
