@@ -36,6 +36,9 @@ export function moveEnemy(state: GameState, tank: Tank): void {
     // Enemies evolve from random roaming to following a player and finally
     // the base as the stage's frame counter crosses its two thresholds.
     chooseEnemyDirection(state, tank);
+    // DC93 chooses a direction and returns; translation starts on a later tick.
+    tank.moving = false;
+    return;
   }
   if (!moveTank(state, tank)) {
     tank.aiTicks++;

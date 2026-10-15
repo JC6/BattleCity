@@ -1,7 +1,7 @@
 import { GRID_SIZE, normalizeStage } from './constants';
 import type { CoreContext } from './context';
 import { moveEnemy } from './ai';
-import { destroyEnemy, enemyFire, fireBullet, updateBullets, updateEffects } from './combat';
+import { advanceBullets, destroyEnemy, enemyFire, fireBullet, resolveBulletHits, tankSlot, updateEffects } from './combat';
 import { movePlayer } from './movement';
 import { collectPowerUp, updatePowerUpTimers } from './powerups';
 import { EXTRA_LIFE_SCORE, INTRO_TICKS, OUTRO_TICKS } from './rules';
@@ -68,21 +68,31 @@ export class GameEngine {
     updatePowerUpTimers(this.context);
     updateTankTimers(this.context);
     if (state.pendingOutcome !== 'lost') {
-      updateSpawning(this.context);
-      for (const tank of state.tanks) {
+      // DBF1 advances fixed tank slots 7→0, even after a respawn changes array order.
+      for (const tank of [...state.tanks].sort((a, b) => tankSlot(b) - tankSlot(a))) {
         tank.moving = false;
         if (tank.spawnTicks > 0) continue;
         if (tank.team === 'player') {
           const input = inputs[tank.playerIndex!] ?? EMPTY_INPUT;
           movePlayer(state, tank, input);
-          if (input.firePressed) fireBullet(this.context, tank);
         } else {
           moveEnemy(state, tank);
-          enemyFire(this.context, tank);
         }
       }
     }
-    updateBullets(this.context);
+    advanceBullets(this.context);
+    if (state.pendingOutcome !== 'lost') {
+      // Firing follows old-shot movement: a new shot can collide now, but
+      // remains at the barrel until the next frame. Players are checked 2P first.
+      for (let index = state.players.length - 1; index >= 0; index--) {
+        const tank = state.tanks.find(candidate => candidate.team === 'player' && candidate.playerIndex === index);
+        if (tank && inputs[index]?.firePressed) fireBullet(this.context, tank);
+      }
+      for (const tank of state.tanks.filter(candidate => candidate.team === 'enemy')
+        .sort((a, b) => b.enemySlot! - a.enemySlot!)) enemyFire(this.context, tank);
+      updateSpawning(this.context);
+    }
+    resolveBulletHits(this.context);
     if (state.pendingOutcome !== 'lost') collectPowerUp(this.context,
       (tank, index) => destroyEnemy(this.context, tank, index));
     this.updateOutcome();

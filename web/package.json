@@ -14,7 +14,9 @@
     "bundle": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test:e2e": "playwright test",
-    "test:deploy": "node scripts/test-production.mjs"
+    "test:deploy": "node scripts/test-production.mjs",
+    "test:acceptance": "node --test --test-isolation=none scripts/validate-desktop.test.mjs",
+    "validate:desktop": "node scripts/validate-desktop.mjs"
   },
   "dependencies": { "phaser": "4.2.1" },
   "devDependencies": {

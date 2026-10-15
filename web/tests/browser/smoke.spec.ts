@@ -1,34 +1,49 @@
 import { expect, test } from '@playwright/test';
+import type {} from './helpers';
+import { controllerKey, probeCanvas, readyCanvasWithClock, renderedStageTwo, waitForCanvasMenu } from './visual-probes';
 
-test('production entry, base path, single player and refresh work without errors', async ({ page, isMobile }) => {
+test('production entry loads assets and responds to controller keys without errors', async ({ page }) => {
+  test.setTimeout(60000);
   const errors: string[] = [];
   const failedAssets: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('response', response => {
     if (new URL(response.url()).pathname.startsWith('/assets/') && response.status() >= 400) failedAssets.push(response.url());
   });
-  await page.goto('./');
-  expect(new URL(page.url()).pathname).toBe('/');
+  const menu = await readyCanvasWithClock(page);
+  await expect(page).toHaveTitle('BattleCity · 坦克大战');
+  const canvas = page.locator('#game-canvas canvas');
+  await expect(canvas).toBeVisible();
+  await expect(page.locator('button, select, input')).toHaveCount(0);
   const assetUrls = await page.locator('script[src], link[rel="stylesheet"][href], link[rel="modulepreload"][href]')
     .evaluateAll(elements => elements.map(element =>
       new URL(element.getAttribute('src') ?? element.getAttribute('href')!, document.baseURI).href));
   expect(assetUrls.length).toBeGreaterThan(0);
   expect(assetUrls.every(url => new URL(url).pathname.startsWith('/assets/'))).toBe(true);
-  await expect(page).toHaveTitle('BattleCity · 坦克大战');
-  await expect(page.locator('#game-canvas canvas')).toBeVisible();
-  await expect(page.locator('#stage-select option')).toHaveCount(35);
-  await page.getByRole('button', { name: /单人出击/ }).click();
-  await expect(page.locator('.stage-intro')).toBeHidden({ timeout: 8000 });
-  await expect(page.locator('#stage-label')).toHaveText('01');
-  await page.locator('#pause').click();
-  await expect(page.getByRole('heading', { name: '战斗暂停' })).toBeVisible();
-  await page.getByRole('button', { name: /继续战斗/ }).click();
-  await expect(page.getByRole('heading', { name: '战斗暂停' })).toBeHidden();
-  if (isMobile) {
-    await expect(page.getByRole('button', { name: '射击', exact: true })).toBeVisible();
-    const sizes = await page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth }));
-    expect(sizes.scroll).toBeLessThanOrEqual(sizes.width + 1);
-  }
+
+  await controllerKey(page, 'Enter');
+  expect((await probeCanvas(page)).stageSelect).toBe(1);
+  await controllerKey(page, 'j');
+  const stageTwo = await probeCanvas(page);
+  expect(stageTwo.stageSelect).toBe(2);
+  // A frozen selection or opaque intro must not satisfy the battle probe.
+  expect(stageTwo.battleStage).toBeNull();
+  expect(stageTwo.player).toBeNull();
+  await controllerKey(page, 'Enter');
+  const battle = await renderedStageTwo(page);
+  expect(battle.player).toMatchObject({ x: 81, y: 210, width: 13, height: 13 });
+  expect(battle.bullet, 'The empty shot corridor is a negative bullet sample').toBe(false);
+  await controllerKey(page, 'w', 320);
+  const moved = await probeCanvas(page);
+  expect(moved.battleStage).toBe(2);
+  expect(moved.player).not.toBeNull();
+  expect(moved.player!.x).toBe(battle.player!.x);
+  const travelled = battle.player!.y - moved.player!.y;
+  expect(travelled).toBeGreaterThanOrEqual(12);
+  expect(travelled).toBeLessThanOrEqual(16);
+  expect(moved.bullet, 'Movement alone must not look like a shot').toBe(false);
+  await controllerKey(page, 'j', 100);
+  expect((await probeCanvas(page)).bullet, 'J must render an upward projectile in the empty corridor').toBe(true);
   if (process.env.BATTLECITY_PRODUCTION === '1') {
     expect(await page.evaluate(() => typeof window.__BATTLECITY__)).toBe('undefined');
     const scripts = await page.locator('script[src]').evaluateAll(elements => elements.map(element => (element as HTMLScriptElement).src));
@@ -42,170 +57,95 @@ test('production entry, base path, single player and refresh work without errors
     const notices = await page.request.get('THIRD_PARTY_NOTICES.md');
     expect(notices.ok()).toBe(true);
     expect(await notices.text()).toContain('Arnout Kazemier');
+  } else {
+    expect(await page.evaluate(() => window.__BATTLECITY__!.state())).toMatchObject({ stage: 2, phase: 'playing' });
   }
+  await page.clock.resume();
   await page.reload();
-  await expect(page.getByRole('button', { name: /单人出击/ })).toBeVisible();
+  await page.bringToFront();
+  await expect(canvas).toBeVisible();
+  await waitForCanvasMenu(page);
+  await page.clock.pauseAt(new Date('2026-01-01T02:00:00Z'));
+  await page.clock.runFor(34);
+  const refreshed = await probeCanvas(page);
+  expect(refreshed.menu).toBe(true);
+  expect(refreshed.pixelsSHA256).toBe(menu.pixelsSHA256);
   expect(errors).toEqual([]);
   expect(failedAssets).toEqual([]);
 });
 
-test('Construction opens and can start a custom battlefield', async ({ page }) => {
-  await page.goto('./');
-  await page.getByRole('button', { name: /地图编辑/ }).click();
-  await expect(page.getByRole('button', { name: '绘制砖墙' })).toBeVisible();
-  await page.getByRole('button', { name: /单人试玩/ }).click();
-  await expect(page.locator('#machine-status')).toHaveText('CUSTOM BATTLE');
-  await page.locator('#pause').click();
-  await page.getByRole('button', { name: '返回编辑' }).click();
-  await expect(page.getByRole('button', { name: '绘制钢墙' })).toBeVisible();
+test('Construction can be entered, edited and left entirely with the keyboard', async ({ page }) => {
+  test.setTimeout(60000);
+  const menu = await readyCanvasWithClock(page);
+  await controllerKey(page, 'ShiftRight');
+  await controllerKey(page, 'ShiftRight');
+  const selectedMenu = await probeCanvas(page);
+  expect(selectedMenu.menu).toBe(true);
+  expect(selectedMenu.editorOrigin, 'A menu cursor change must not count as entering Construction').toBe(false);
+  await controllerKey(page, 'Enter');
+  expect((await probeCanvas(page)).editorOrigin).toBe(true);
+  for (const key of ['d', 'd', 's', 's']) await controllerKey(page, key);
+  expect((await probeCanvas(page)).halfSteel, 'The unpainted block is a negative steel sample').toBe(false);
+  for (let i = 0; i < 6; i++) await controllerKey(page, 'j');
+  await controllerKey(page, 'd'); // Expose the painted block without the cursor.
+  const painted = await probeCanvas(page);
+  expect(painted.editorPaintCursor).toBe(true);
+  expect(painted.halfSteel, 'J must paint the right half of block (2, 2) with steel').toBe(true);
+  await controllerKey(page, 'Enter');
+  const returned = await probeCanvas(page);
+  expect(returned.menu).toBe(true);
+  expect(returned.pixelsSHA256).toBe(menu.pixelsSHA256);
 });
 
-test('desktop cooperative play starts with two players', async ({ page, isMobile }) => {
-  test.skip(isMobile, 'Same-machine cooperative mode is a desktop acceptance target.');
+test('desktop resizing recalculates integer scale without clipping the canvas', async ({ page }) => {
   await page.goto('./');
-  await page.getByRole('button', { name: /双人合作/ }).click();
-  await expect(page.locator('#machine-status')).toHaveText('CO-OP MISSION');
-  await expect(page.locator('#p2-score')).toHaveText('000000');
+  const canvas = page.locator('#game-canvas canvas');
+  await expect(canvas).toBeVisible();
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 320, height: 240 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    const scale = Math.floor(Math.min(viewport.width / 256, viewport.height / 240));
+    await expect.poll(async () => {
+      const box = (await canvas.boundingBox())!;
+      return { width: Math.round(box.width), height: Math.round(box.height) };
+    }).toEqual({ width: 256 * scale, height: 240 * scale });
+    const box = (await canvas.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(-1);
+    expect(box.y).toBeGreaterThanOrEqual(-1);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
+    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
+  }
 });
 
 for (const size of [
-  { name: 'short screen', width: 560, height: 320 },
+  { name: 'short desktop', width: 560, height: 320 },
   { name: 'desktop', width: 1280, height: 720 },
-  { name: 'phone portrait', width: 390, height: 844 },
+  { name: 'narrow desktop', width: 390, height: 844 },
 ]) {
-  // Firefox fullscreen uses its real headless screen, configured before launch.
-  const fullscreenTest = test.extend({
-    launchOptions: {
-      env: {
-        ...process.env,
-        MOZ_HEADLESS_WIDTH: String(size.width),
-        MOZ_HEADLESS_HEIGHT: String(size.height),
-      },
-    },
-  });
-  fullscreenTest.describe(`native fullscreen on ${size.name}`, () => {
-    const viewport = { width: size.width, height: size.height };
-    fullscreenTest.use({ viewport, contextOptions: { screen: viewport } });
-
-    fullscreenTest('keeps the canvas ratio, reaches controls and paints editor coordinates', async ({ page, isMobile, browserName }) => {
-      const errors: string[] = [];
-      page.on('pageerror', error => errors.push(error.message));
-      // Desktop Firefox's native window cannot be narrower than 500px.
-      // Mobile-capable projects retain the 390px portrait viewport.
-      const actualViewport = browserName === 'firefox' && size.name === 'phone portrait'
-        ? { ...viewport, width: 500 } : viewport;
-      if (actualViewport !== viewport) await page.setViewportSize(actualViewport);
-      await page.goto('./');
-      const supported = await page.evaluate(() => document.fullscreenEnabled &&
-        typeof document.querySelector<HTMLElement>('.arcade')?.requestFullscreen === 'function');
-      fullscreenTest.skip(!supported, 'Native Fullscreen API is unavailable or disabled in this browser context.');
-
-      const canvas = page.locator('#game-canvas canvas');
-      const fullscreen = page.locator('#fullscreen');
-      const touch = isMobile && browserName === 'chromium';
-      const expectRatio = async () => {
-        await expect.poll(async () => {
-          const box = await canvas.boundingBox();
-          return box && box.height > 0 ? Math.abs(box.width / box.height - 256 / 240) : Infinity;
-        }).toBeLessThan(0.01);
-      };
-      const paintImmediately = (action: 'editor' | 'edit-return' | null, tile: number, resizeDuringDrag = false, touch = false) =>
-        page.evaluate(({ action, tile, resizeDuringDrag, touch }) => {
-          // UI changes and input share one task, before Phaser's next bounds poll.
-          if (action) document.querySelector<HTMLButtonElement>(`[data-action="${action}"]`)!.click();
-          document.querySelector<HTMLButtonElement>(`[data-action="brush-${tile}"]`)!.click();
-          const canvas = document.querySelector<HTMLCanvasElement>('#game-canvas canvas')!;
-          const wrap = document.querySelector<HTMLElement>('.screen-wrap')!;
-          canvas.scrollIntoView({ block: 'center' });
-          const originalWidth = wrap.style.width;
-          const pointer = (type: 'down' | 'move' | 'up', logicalX: number) => {
-            const box = canvas.getBoundingClientRect();
-            const clientX = box.x + logicalX / 256 * box.width;
-            const clientY = box.y + 88 / 240 * box.height;
-            if (touch) {
-              const point = new Touch({
-                identifier: 1, target: canvas, clientX, clientY,
-                pageX: clientX + scrollX, pageY: clientY + scrollY,
-              });
-              canvas.dispatchEvent(new TouchEvent(type === 'down' ? 'touchstart' : type === 'move' ? 'touchmove' : 'touchend', {
-                bubbles: true, cancelable: true, changedTouches: [point],
-                touches: type === 'up' ? [] : [point], targetTouches: type === 'up' ? [] : [point],
-              }));
-            } else {
-              canvas.dispatchEvent(new MouseEvent(`mouse${type}`, {
-                bubbles: true, cancelable: true, clientX, clientY, button: 0, buttons: type === 'up' ? 0 : 1,
-              }));
-            }
-          };
-          try {
-            pointer('down', 80);
-            if (resizeDuringDrag) {
-              wrap.style.width = '50%';
-              pointer('move', 112);
-            }
-            const map = JSON.parse(localStorage.getItem('battlecity.web.v1') ?? '{}').map;
-            return (resizeDuringDrag ? [8, 12] : [8]).map(x =>
-              [8 * 26 + x, 8 * 26 + x + 1, 9 * 26 + x, 9 * 26 + x + 1].map(index => map?.[index]));
-          } finally {
-            pointer('up', resizeDuringDrag ? 112 : 80);
-            wrap.style.width = originalWidth;
-          }
-        }, { action, tile, resizeDuringDrag, touch });
-      await expect(canvas).toBeVisible();
-      await fullscreen.click();
-      // Fullscreen and viewport resizing share the previous two 5s polling budgets.
-      await expect.poll(() => page.evaluate(() => ({
-        fullscreen: document.fullscreenElement === document.querySelector('.arcade'),
-        width: innerWidth,
-        height: innerHeight,
-      })), { timeout: 10_000 }).toEqual({ fullscreen: true, ...actualViewport });
-      await expectRatio();
-
-      expect(await paintImmediately('editor', 2, false, touch)).toEqual([[2, 2, 2, 2]]);
-      const water = page.getByRole('button', { name: '绘制水面' });
-      await water.scrollIntoViewIfNeeded();
-      await expect(water).toBeInViewport();
-      await water.click();
-      await canvas.scrollIntoViewIfNeeded();
-      await expectRatio();
-      const box = (await canvas.boundingBox())!;
-      // Original canvas offset (8,16), then macro-block (4,4)'s center.
-      await page.mouse.click(box.x + 80 / 256 * box.width, box.y + 88 / 240 * box.height);
-      await expect.poll(() => page.evaluate(() => {
-        const map = JSON.parse(localStorage.getItem('battlecity.web.v1') ?? '{}').map;
-        return [8 * 26 + 8, 8 * 26 + 9, 9 * 26 + 8, 9 * 26 + 9].map(index => map?.[index]);
-      })).toEqual([3, 3, 3, 3]);
-
-      const play = page.getByRole('button', { name: /单人试玩/ });
-      await play.scrollIntoViewIfNeeded();
-      await expect(play).toBeInViewport();
-      await play.click();
-      await expect(page.locator('#machine-status')).toHaveText('CUSTOM BATTLE');
-      await expectRatio();
-      if (isMobile || size.width <= 780) {
-        const fire = page.getByRole('button', { name: '射击', exact: true });
-        await expect(fire).toBeVisible();
-        await fire.scrollIntoViewIfNeeded();
-        await expect(fire).toBeInViewport();
-        if (isMobile) await fire.tap();
-        else await fire.click();
-      }
-      const pause = page.locator('#pause');
-      await pause.scrollIntoViewIfNeeded();
-      await pause.click();
-      await expect(page.getByRole('heading', { name: '战斗暂停' })).toBeVisible();
-
-      expect(await paintImmediately('edit-return', 4, false, touch)).toEqual([[4, 4, 4, 4]]);
-      if (size.name === 'desktop') {
-        // Hold the pointer across another layout change to exercise move events.
-        expect(await paintImmediately(null, 5, true, touch)).toEqual([[5, 5, 5, 5], [5, 5, 5, 5]]);
-      }
-
-      await fullscreen.scrollIntoViewIfNeeded();
-      await fullscreen.click();
-      await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
-      await expectRatio();
-      expect(errors).toEqual([]);
+  for (const deviceScaleFactor of [1, 2]) {
+    test.describe(`${size.name}, DPR ${deviceScaleFactor}`, () => {
+      test.use({ viewport: { width: size.width, height: size.height }, deviceScaleFactor });
+      test('retains the native pixel ratio and keeps the whole canvas in the viewport', async ({ page }) => {
+        await page.goto('./');
+        const canvas = page.locator('#game-canvas canvas');
+        await expect(canvas).toBeVisible();
+        const dimensions = await canvas.evaluate(element => {
+          const canvas = element as HTMLCanvasElement;
+          const rect = canvas.getBoundingClientRect();
+          return { width: rect.width, height: rect.height, x: rect.x, y: rect.y,
+            backingWidth: canvas.width, backingHeight: canvas.height,
+            scrollWidth: document.documentElement.scrollWidth,
+            scrollHeight: document.documentElement.scrollHeight };
+        });
+        expect(dimensions.width / dimensions.height).toBeCloseTo(256 / 240, 3);
+        expect(dimensions.backingWidth / dimensions.backingHeight).toBeCloseTo(256 / 240, 3);
+        expect(dimensions.width / 256).toBeCloseTo(Math.round(dimensions.width / 256), 3);
+        expect(dimensions.x).toBeGreaterThanOrEqual(-1);
+        expect(dimensions.y).toBeGreaterThanOrEqual(-1);
+        expect(dimensions.x + dimensions.width).toBeLessThanOrEqual(size.width + 1);
+        expect(dimensions.y + dimensions.height).toBeLessThanOrEqual(size.height + 1);
+        expect(dimensions.scrollWidth).toBeLessThanOrEqual(size.width + 1);
+        expect(dimensions.scrollHeight).toBeLessThanOrEqual(size.height + 1);
+      });
     });
-  });
+  }
 }

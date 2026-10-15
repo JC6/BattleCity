@@ -1,186 +1,396 @@
 import Phaser from 'phaser';
 import { ARENA_SIZE, BASE_X, BASE_Y, GRID_SIZE, TILE_SIZE } from '../core/constants';
-import { Tile, type GameState, type Tank } from '../core/types';
+import { Tile, type GameMode, type GameState } from '../core/types';
+import { ENEMY_KINDS } from '../core/rules';
+import { GAMEOVER_BRICKS, HISCORE_PALETTES, NAMCOT, PALETTE, PLAYER,
+  SCORE_ENEMIES, directionalBitmap, drawBitmap, drawBrickWord, drawText, type PixelSurface } from './pixel-assets';
+import { TankAnimation } from './animation';
+import { scoreTimeline } from './score-timeline';
+import { NativeAtlas, tankFrame, tileFrame } from './atlas';
+import { NativeTexture } from './textures';
 
 export const CANVAS_WIDTH = 256;
 export const CANVAS_HEIGHT = 240;
-const ARENA_OFFSET = { x: 8, y: 16 };
+export const ARENA_OFFSET = { x: 16, y: 16 };
+
+// Title fields start at score + 1 in the original seven-digit counter.
+function menuScore(score: number): string {
+  const visible = score % 1_000_000;
+  return visible === 0 ? '00' : String(visible);
+}
+
+export type ArenaPresentation =
+  | { kind: 'menu'; selection: 0 | 1 | 2; highScore: number; playerScores: number[] }
+  | { kind: 'intro'; stage: number; elapsedMs: number; paused?: boolean }
+  | { kind: 'stage-select'; stage: number; mode?: GameMode }
+  | { kind: 'game'; lossBannerProgress?: number; paused?: boolean }
+  | { kind: 'score'; state: GameState; highScore: number; elapsedMs: number }
+  | { kind: 'gameover'; highScore?: number }
+  | { kind: 'hiscore'; highScore: number; tick: number }
+  | { kind: 'editor'; cursor?: { x: number; y: number }; baseVisible?: boolean };
+
+type Image = Phaser.GameObjects.Image;
+function show(image: Image, key: string, frame: string | undefined, x: number, y: number, depth: number): void {
+  if (image.texture.key !== key || (frame !== undefined && image.frame.name !== frame)) image.setTexture(key, frame);
+  image.setPosition(x, y).setVisible(true);
+  if (image.depth !== depth) image.setDepth(depth);
+}
+
+/** Slots grow only to simultaneous demand; cumulative core ids never allocate images. */
+class ImagePool {
+  private images: Image[] = [];
+  private used = 0;
+  constructor(private scene: Phaser.Scene, private atlas: NativeAtlas) {}
+  begin(): void { this.used = 0; }
+  draw(frame: string, x: number, y: number, depth: number): void {
+    let image = this.images[this.used];
+    if (!image) {
+      image = this.scene.add.image(0, 0, this.atlas.key, frame).setOrigin(0);
+      this.images.push(image);
+    }
+    show(image, this.atlas.key, frame, x, y, depth); this.used++;
+  }
+  finish(): void { for (let i = this.used; i < this.images.length; i++) this.images[i].setVisible(false); }
+  hide(): void { this.begin(); this.finish(); }
+  destroy(): void { for (const image of this.images) image.destroy(); this.images = []; this.used = 0; }
+}
 
 export class ArenaScene extends Phaser.Scene {
   state: GameState | null = null;
+  // The loss world can animate while these authoritative HUD values stay locked.
+  hudState: GameState | null = null;
   draft: Tile[] | null = null;
+  presentation: ArenaPresentation = { kind: 'menu', selection: 0, highScore: 20000, playerScores: [] };
   onFrame: (delta: number) => void = () => {};
-  onPaint: (x: number, y: number) => void = () => {};
-  private graphics!: Phaser.GameObjects.Graphics;
-  private label!: Phaser.GameObjects.Text;
-  private pointsLabels: Phaser.GameObjects.Text[] = [];
+  private atlas?: NativeAtlas;
+  private maps: NativeTexture[] = [];
+  private forest!: NativeTexture;
+  private hud!: NativeTexture;
+  private staticPage!: NativeTexture;
+  private hiscorePages: NativeTexture[] = [];
+  private ownedTextures: NativeTexture[] = [];
+  private fixedImages: Image[] = [];
+  private background!: Image;
+  private mapImage!: Image;
+  private forestImage!: Image;
+  private hudImage!: Image;
+  private pageImage!: Image;
+  private baseImage!: Image;
+  private itemImage!: Image;
+  private cursorImage!: Image;
+  private pauseImage!: Image;
+  private lossImage!: Image;
+  private covers: Image[] = [];
+  private tanks!: ImagePool;
+  private bullets!: ImagePool;
+  private explosions!: ImagePool;
+  private points!: ImagePool;
+  private tileKeys = new Int16Array(GRID_SIZE * GRID_SIZE).fill(-1);
+  private hudKey: string | null = null;
+  private staticKey: string | null = null;
+  private hiscoreKeys: (number | null)[] = [null, null, null, null];
+  private animation = new TankAnimation();
   constructor() { super('arena'); }
+
   create(): void {
-    this.graphics = this.add.graphics();
-    this.label = this.add.text(225, 154, '', { fontFamily: 'monospace', fontSize: '8px', color: '#182015', lineSpacing: 5 });
-    this.pointsLabels = Array.from({ length: 8 }, () => this.add.text(0, 0, '', {
-      fontFamily: 'monospace', fontSize: '8px', color: '#fff0b0',
-      stroke: '#101712', strokeThickness: 1,
-    }).setOrigin(0.5).setVisible(false));
-    this.input.on('pointerdown', this.paint, this);
-    this.input.on('pointermove', this.paint, this);
+    // Canvas batchSprite expands images by 0.5px when camera.roundPixels is true.
+    // Origins, positions and sizes below already use the native integer grid.
+    if (this.game.renderer.type === Phaser.CANVAS) this.cameras.main.roundPixels = false;
+    this.atlas = new NativeAtlas(this, 'arena-atlas');
+    this.ownedTextures = [this.atlas];
+    const texture = (key: string, width: number, height: number) => {
+      const result = new NativeTexture(this, key, width, height); this.ownedTextures.push(result); return result;
+    };
+    const page = (key: string) => {
+      const result = NativeTexture.createPage(this, key, CANVAS_WIDTH, CANVAS_HEIGHT); this.ownedTextures.push(result); return result;
+    };
+    this.maps = [0, 1].map(phase => texture(`arena-map-${phase}`, ARENA_SIZE, ARENA_SIZE));
+    this.maps.forEach(map => map.clear(PALETTE.black));
+    this.forest = texture('arena-forest', ARENA_SIZE, ARENA_SIZE);
+    this.hud = texture('arena-hud', 32, ARENA_SIZE);
+    this.staticPage = page('arena-page');
+    this.hiscorePages = [0, 1, 2, 3].map(phase => page(`arena-hiscore-${phase}`));
+    const image = (key: string, frame?: string) => {
+      const result = this.add.image(0, 0, key, frame).setOrigin(0).setVisible(false);
+      this.fixedImages.push(result); return result;
+    };
+    this.background = image(this.atlas.key, 'gray').setDisplaySize(CANVAS_WIDTH, CANVAS_HEIGHT);
+    this.mapImage = image(this.maps[0].key); this.forestImage = image(this.forest.key);
+    this.hudImage = image(this.hud.key); this.pageImage = image(this.staticPage.key);
+    this.baseImage = image(this.atlas.key, 'base:alive'); this.itemImage = image(this.atlas.key, 'item:star');
+    this.cursorImage = image(this.atlas.key, 'player:0:0:up:0');
+    this.pauseImage = image(this.atlas.key, 'pause'); this.lossImage = image(this.atlas.key, 'loss');
+    this.covers = [image(this.atlas.key, 'gray'), image(this.atlas.key, 'gray')];
+    this.tanks = new ImagePool(this, this.atlas); this.bullets = new ImagePool(this, this.atlas);
+    this.explosions = new ImagePool(this, this.atlas); this.points = new ImagePool(this, this.atlas);
+    this.tileKeys.fill(-1); this.hudKey = this.staticKey = null; this.hiscoreKeys.fill(null);
+    this.events.once('shutdown', this.releaseResources, this);
+    this.events.once('destroy', this.releaseResources, this);
   }
+  observeStep(state: GameState): void { this.animation.observe(state); }
+  resetAnimation(): void { this.animation.reset(); }
+
   update(_time: number, delta: number): void {
     this.onFrame(delta);
-    if (!this.graphics) return;
-    const g = this.graphics;
-    const state = this.state;
-    const tick = state?.tick ?? Math.floor(_time / 90);
-    g.clear();
-    g.fillStyle(0xa5a894).fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    g.fillStyle(0x101712).fillRect(ARENA_OFFSET.x, ARENA_OFFSET.y, ARENA_SIZE, ARENA_SIZE);
-    const tiles = this.draft ?? state?.tiles;
-    if (tiles) {
-      tiles.forEach((tile, index) => { if (tile !== Tile.Forest) this.tile(tile, index, state?.brickMasks[index] ?? 15, tick); });
+    if (!this.atlas) return;
+    for (const image of this.fixedImages) image.setVisible(false);
+    const presentation = this.presentation;
+    const isPage = ['menu', 'stage-select', 'score', 'gameover', 'hiscore'].includes(presentation.kind);
+    if (isPage || (presentation.kind === 'intro' && presentation.elapsedMs < 1000)) {
+      this.tanks.hide(); this.bullets.hide(); this.explosions.hide(); this.points.hide();
+    }
+    if (isPage) {
+      this.renderPage(presentation); return;
+    }
+    if (presentation.kind === 'intro' && presentation.elapsedMs < 1000) {
+      // An opaque intro has no visible world. Simulation and animation history
+      // continue above, and the first revealed frame synchronizes current tiles.
+      this.renderStage(presentation.stage);
     } else {
-      for (let index = 0; index < GRID_SIZE * GRID_SIZE; index++) {
-        const x = index % GRID_SIZE, y = Math.floor(index / GRID_SIZE);
-        if ((x < 4 || x > 21) && y % 5 < 3) this.tile(Tile.Brick, index, 15, tick);
-        if ((y === 3 || y === 22) && x % 4 < 2) this.tile(Tile.Steel, index, 15, tick);
+      this.renderWorld();
+      if (presentation.kind === 'intro') {
+        const cover = Math.max(0, Math.ceil(120 * (2000 - presentation.elapsedMs) / 1000));
+        if (cover > 0) this.covers.forEach((image, index) => {
+          show(image, this.atlas!.key, 'gray', 0, index ? CANVAS_HEIGHT - cover : 0, 800 + index);
+          image.setDisplaySize(CANVAS_WIDTH, cover);
+        });
       }
     }
+    if ((presentation.kind === 'game' || presentation.kind === 'intro') && presentation.paused) {
+      show(this.pauseImage, this.atlas.key, 'pause', 88, 112, 1000);
+    }
+  }
+
+  private renderWorld(): void {
+    const atlas = this.atlas!;
+    const state = this.state, tick = state?.tick ?? 0;
+    const tiles = this.draft ?? state?.tiles;
+    this.syncTiles(tiles, this.draft ? undefined : state?.brickMasks);
+    show(this.background, atlas.key, 'gray', 0, 0, 0);
+    show(this.mapImage, this.maps[Math.floor(tick / 16) % 2].key, undefined, 16, 16, 1);
+    show(this.forestImage, this.forest.key, undefined, 16, 16, 400);
+    const presentation = this.presentation;
+    if (presentation.kind !== 'editor' || presentation.baseVisible !== false) {
+      show(this.baseImage, atlas.key, state?.baseAlive === false ? 'base:dead' : 'base:alive',
+        ARENA_OFFSET.x + BASE_X, ARENA_OFFSET.y + BASE_Y, 10);
+    }
+    this.tanks.begin(); this.bullets.begin(); this.explosions.begin(); this.points.begin();
     if (state) {
-      state.tanks.forEach(tank => this.tank(tank, tick));
-      g.fillStyle(0xfff8d4);
-      state.bullets.forEach(bullet => {
-        if (!bullet.impactTicks) g.fillRect(ARENA_OFFSET.x + Math.round(bullet.x) - 2, ARENA_OFFSET.y + Math.round(bullet.y) - 2, 4, 4);
+      state.tanks.forEach((tank, index) => {
+        const x = ARENA_OFFSET.x + Math.round(tank.x), y = ARENA_OFFSET.y + Math.round(tank.y);
+        if (tank.spawnTicks > 0) {
+          const phase = Math.floor((28 - Math.min(28, tank.spawnTicks)) / 3) % 3;
+          this.tanks.draw(`spawn:${phase}`, x, y, 20 + index * 2);
+        } else {
+          this.tanks.draw(tankFrame(tank, this.animation.frame(tank), tick), x, y, 20 + index * 2);
+          if (tank.shieldTicks > 0 && tick % 12 < 7) this.tanks.draw('shield', x, y, 21 + index * 2);
+        }
       });
-      if (state.powerUp && tick % 32 < 24) this.powerUp(state.powerUp.x, state.powerUp.y, state.powerUp.kind);
+      state.bullets.forEach((bullet, index) => {
+        const impact = bullet.impactTicks;
+        this.bullets.draw(impact ? `impact:${Math.min(2, Math.floor((9 - impact) / 3))}` : `bullet:${bullet.direction}`,
+          ARENA_OFFSET.x + Math.round(bullet.x) - (impact ? 4 : 2),
+          ARENA_OFFSET.y + Math.round(bullet.y) - (impact ? 4 : 2), 100 + index);
+      });
+      if (state.powerUp && tick % 32 < 24) show(this.itemImage, atlas.key, `item:${state.powerUp.kind}`,
+        ARENA_OFFSET.x + state.powerUp.x, ARENA_OFFSET.y + state.powerUp.y, 200);
+      let explosions = 0, glyphs = 0;
       state.effects.forEach(effect => {
         if (effect.kind === 'explosion') {
-          const radius = 4 + (24 - Math.min(24, effect.remainingTicks)) / 2;
-          const x = effect.x + ARENA_OFFSET.x, y = effect.y + ARENA_OFFSET.y;
-          g.fillStyle(0xcc5a3b).fillRect(x - radius, y - radius / 2, radius * 2, radius);
-          g.fillStyle(0xefc45b).fillRect(x - radius / 2, y - radius, radius, radius * 2);
-          g.fillStyle(0xfff0b0).fillRect(x - 3, y - 3, 6, 6);
+          const phase = Math.min(2, Math.floor((24 - Math.min(24, effect.remainingTicks)) / 8));
+          const frame = `explosion:${effect.explosionVariant === 'base' ? Math.max(1, phase) : phase}`;
+          const size = atlas.frames.get(frame)!;
+          this.explosions.draw(frame, ARENA_OFFSET.x + Math.round(effect.x) - size.width / 2,
+            ARENA_OFFSET.y + Math.round(effect.y) - size.height / 2, 300 + explosions++);
+        } else {
+          const text = String(effect.value ?? 0);
+          [...text].forEach((char, index) => this.points.draw(`glyph:${char}`,
+            ARENA_OFFSET.x + Math.round(effect.x) - text.length * 4 + index * 8,
+            ARENA_OFFSET.y + Math.round(effect.y) - 4, 500 + glyphs++));
         }
       });
     }
-    this.base(state?.baseAlive ?? true);
-    if (tiles) tiles.forEach((tile, index) => { if (tile === Tile.Forest) this.tile(tile, index, 15, tick); });
-    this.pointsLabels.forEach(label => label.setVisible(false));
-    state?.effects.filter(effect => effect.kind === 'points').slice(0, this.pointsLabels.length).forEach((effect, index) => {
-      this.pointsLabels[index]
-        .setText(String(effect.value ?? 0))
-        .setPosition(ARENA_OFFSET.x + Math.round(effect.x), ARENA_OFFSET.y + Math.round(effect.y))
-        .setVisible(true);
-    });
-    if (this.draft) {
-      g.fillStyle(0x354131);
-      for (let i = 0; i <= 13; i++) {
-        g.fillRect(ARENA_OFFSET.x + Math.min(i * 16, ARENA_SIZE - 1), ARENA_OFFSET.y, 1, ARENA_SIZE);
-        g.fillRect(ARENA_OFFSET.x, ARENA_OFFSET.y + Math.min(i * 16, ARENA_SIZE - 1), ARENA_SIZE, 1);
-      }
-      g.fillStyle(0x8a7b4d);
-      for (const [x, y] of [[0, 0], [96, 0], [192, 0], [64, 192], [128, 192]]) {
-        const sx = ARENA_OFFSET.x + x + 2, sy = ARENA_OFFSET.y + y + 2;
-        g.fillRect(sx, sy, 12, 1).fillRect(sx, sy + 11, 12, 1).fillRect(sx, sy, 1, 12).fillRect(sx + 11, sy, 1, 12);
-      }
+    this.tanks.finish(); this.bullets.finish(); this.explosions.finish(); this.points.finish();
+    if (this.draft && presentation.kind === 'editor' && presentation.cursor) show(this.cursorImage, atlas.key, 'player:0:0:up:0',
+      ARENA_OFFSET.x + presentation.cursor.x * TILE_SIZE, ARENA_OFFSET.y + presentation.cursor.y * TILE_SIZE, 600);
+    this.renderHud(this.hudState ?? state);
+    if (presentation.kind === 'game' && presentation.lossBannerProgress !== undefined) {
+      show(this.lossImage, atlas.key, 'loss', 96, Math.round(208 - Math.max(0, Math.min(1, presentation.lossBannerProgress)) * 104), 900);
     }
+  }
+
+  private syncTiles(tiles: Tile[] | undefined, masks: number[] | undefined): void {
+    let changed = false, forestChanged = false;
+    for (let index = 0; index < this.tileKeys.length; index++) {
+      const tile = tiles?.[index] ?? Tile.Empty;
+      const mask = tile === Tile.Brick ? (masks?.[index] ?? 15) & 15 : 0;
+      const key = tile * 16 + mask;
+      const previous = this.tileKeys[index];
+      if (previous === key) continue;
+      const x = index % GRID_SIZE * TILE_SIZE, y = Math.floor(index / GRID_SIZE) * TILE_SIZE;
+      this.maps.forEach((map, phase) => {
+        map.pixels.fillStyle(PALETTE.black).fillRect(x, y, TILE_SIZE, TILE_SIZE);
+        const frame = tile !== Tile.Forest ? tileFrame(tile, mask, phase) : null;
+        if (frame) this.atlas!.draw(map, frame, x, y);
+      });
+      if (tile === Tile.Forest || (previous >= 0 && Math.floor(previous / 16) === Tile.Forest)) {
+        this.forest.texture.context.clearRect(x, y, TILE_SIZE, TILE_SIZE);
+        if (tile === Tile.Forest) this.atlas!.draw(this.forest, 'forest', x, y);
+        forestChanged = true;
+      }
+      this.tileKeys[index] = key; changed = true;
+    }
+    if (changed) this.maps.forEach(map => map.refresh());
+    if (forestChanged) this.forest.refresh();
+  }
+
+  private renderHud(state: GameState | null): void {
     const remaining = state ? Math.max(0, state.enemyQueue.length - state.spawned) : 20;
-    for (let i = 0; i < remaining; i++) {
-      const x = 227 + i % 2 * 11, y = 20 + Math.floor(i / 2) * 10;
-      g.fillStyle(0x283224).fillRect(x, y, 2, 7).fillRect(x + 6, y, 2, 7).fillRect(x + 2, y + 1, 4, 5).fillRect(x + 3, y - 1, 2, 4);
+    const players = state?.players ?? [{ lives: 2 }];
+    const stage = state?.stage ?? 1;
+    const key = JSON.stringify([remaining, players.map(player => player.lives), stage]);
+    if (key !== this.hudKey) {
+      this.hud.clear();
+      const g = this.hud.pixels;
+      for (let i = 0; i < remaining; i++) this.atlas!.draw(this.hud, 'enemy-icon', 8 + i % 2 * 8, 8 + Math.floor(i / 2) * 8);
+      players.forEach((player, index) => {
+        const y = 120 + index * 24;
+        drawText(g, index ? 'II' : 'IP', 8, y, PALETTE.black);
+        this.atlas!.draw(this.hud, `life:${index}`, 8, y + 8);
+        drawText(g, String(player.lives), 16, y + 8, PALETTE.black);
+      });
+      this.atlas!.draw(this.hud, 'flag', 8, 168);
+      const label = String(stage); drawText(g, label, 24 - label.length * 8, 184, PALETTE.black);
+      this.hud.refresh(); this.hudKey = key;
     }
-    const p1 = state?.players[0];
-    const p2 = state?.players[1];
-    this.label.setText(`I  ${p1?.lives ?? 2}\n${p2 ? `II ${p2.lives}` : ''}\n\n${this.draft ? 'EDIT' : 'STG'}\n${String(state?.stage ?? 1).padStart(2, '0')}`);
-    if (state?.phase === 'intro') {
-      g.fillStyle(0x101712, 0.92).fillRect(ARENA_OFFSET.x, ARENA_OFFSET.y, ARENA_SIZE, ARENA_SIZE);
-      g.fillStyle(0xefc45b).fillRect(88, 109, 48, 3);
+    show(this.hudImage, this.hud.key, undefined, 224, 16, 700);
+  }
+
+  private renderStage(stage: number): void {
+    const key = `stage:${stage}`;
+    if (this.staticKey !== key) {
+      this.staticPage.paint(g => {
+        g.fillStyle(PALETTE.gray); g.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        const label = `STAGE ${stage}`;
+        drawText(g, label, Math.floor((CANVAS_WIDTH - label.length * 8) / 2), 120, PALETTE.black);
+      });
+      this.staticKey = key;
     }
+    show(this.pageImage, this.staticPage.key, undefined, 0, 0, 800);
   }
-  private paint(pointer: Phaser.Input.Pointer): void {
-    if (!this.draft || !pointer.leftButtonDown()) return;
-    const x = Math.floor((pointer.x - ARENA_OFFSET.x) / TILE_SIZE);
-    const y = Math.floor((pointer.y - ARENA_OFFSET.y) / TILE_SIZE);
-    if (x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE) this.onPaint(x, y);
-  }
-  private tile(tile: Tile, index: number, mask: number, tick: number): void {
-    const x = ARENA_OFFSET.x + index % GRID_SIZE * TILE_SIZE;
-    const y = ARENA_OFFSET.y + Math.floor(index / GRID_SIZE) * TILE_SIZE;
-    const g = this.graphics;
-    if (tile === Tile.Brick) {
-      for (let q = 0; q < 4; q++) {
-        if (!(mask & 1 << q)) continue;
-        const qx = x + q % 2 * 4, qy = y + Math.floor(q / 2) * 4;
-        g.fillStyle(0xab6745).fillRect(qx, qy, 4, 4);
-        g.fillStyle(0xd09360).fillRect(qx, qy, 4, 1).fillRect(qx, qy + 2, 2, 1);
-        g.fillStyle(0x663b2c).fillRect(qx + 3, qy + 1, 1, 3).fillRect(qx, qy + 3, 3, 1);
+
+  private renderPage(presentation: ArenaPresentation): void {
+    if (presentation.kind === 'stage-select') { this.renderStage(presentation.stage); return; }
+    if (presentation.kind === 'hiscore') {
+      // Direct or unusually brief transitions still finish any unprepared pages.
+      for (let phase = 0; phase < 4; phase++) this.prepareHiscorePage(presentation.highScore, phase);
+      show(this.pageImage, this.hiscorePages[presentation.tick & 3].key, undefined, 0, 0, 800); return;
+    }
+    const key = presentation.kind === 'menu' ? JSON.stringify(['menu', presentation.selection,
+      menuScore(presentation.highScore), menuScore(presentation.playerScores[0] ?? 0),
+      presentation.playerScores.length > 1 ? menuScore(presentation.playerScores[1] ?? 0) : null]) : presentation.kind === 'gameover' ? 'gameover' :
+      presentation.kind === 'score' ? JSON.stringify(['score', presentation.state.stage, presentation.highScore,
+        scoreTimeline(presentation.state, presentation.elapsedMs), presentation.state.players.map(player => [player.index, player.score])]) : null;
+    if (key === null) return;
+    if (key !== this.staticKey) {
+      this.staticPage.paint(g => {
+        if (presentation.kind === 'menu') this.menu(g, presentation);
+        else if (presentation.kind === 'score') this.score(g, presentation);
+        else if (presentation.kind === 'gameover') {
+          g.fillStyle(PALETTE.black); g.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+          drawBrickWord(g, 'GAME', 60, 72, false, 4, GAMEOVER_BRICKS);
+          drawBrickWord(g, 'OVER', 60, 124, false, 4, GAMEOVER_BRICKS);
+        }
+      });
+      this.staticKey = key;
+    } else if (presentation.kind === 'gameover' && presentation.highScore !== undefined && this.state) {
+      const highScore = Math.max(presentation.highScore, ...this.state.players.map(player => player.score));
+      // Only a beaten record enters HISCORE. Prepare at most one invisible page
+      // per later GAME OVER render, leaving its first paint and music untouched.
+      if (highScore > presentation.highScore) {
+        const phase = this.hiscoreKeys.findIndex(score => score !== highScore);
+        if (phase !== -1) this.prepareHiscorePage(highScore, phase);
       }
-    } else if (tile === Tile.Steel) {
-      g.fillStyle(0x68766e).fillRect(x, y, 8, 8);
-      g.fillStyle(0xc4cec0).fillRect(x, y, 7, 1).fillRect(x, y, 1, 7).fillRect(x + 2, y + 2, 4, 4);
-      g.fillStyle(0x35443b).fillRect(x + 7, y, 1, 8).fillRect(x, y + 7, 8, 1);
-    } else if (tile === Tile.Water) {
-      g.fillStyle(0x285679).fillRect(x, y, 8, 8);
-      const shift = Math.floor(tick / 16) % 2 * 2;
-      g.fillStyle(0x7faeb0).fillRect(x + shift, y + 2, 4, 1).fillRect(x + 2 - shift, y + 6, 4, 1);
-    } else if (tile === Tile.Forest) {
-      g.fillStyle(0x245537).fillRect(x, y, 8, 8);
-      g.fillStyle(0x467647).fillRect(x, y, 3, 3).fillRect(x + 4, y + 3, 4, 3);
-      g.fillStyle(0x7e985a).fillRect(x + 2, y + 1, 3, 1).fillRect(x + 1, y + 5, 2, 2);
-    } else if (tile === Tile.Ice) {
-      g.fillStyle(0x9ebdb6).fillRect(x, y, 8, 8);
-      g.fillStyle(0xd3e7d6).fillRect(x + 1, y + 2, 5, 1).fillRect(x + 4, y + 5, 4, 1);
     }
+    show(this.pageImage, this.staticPage.key, undefined, 0, 0, 800);
   }
-  private tank(tank: Tank, tick: number): void {
-    const g = this.graphics;
-    const x = ARENA_OFFSET.x + Math.round(tank.x), y = ARENA_OFFSET.y + Math.round(tank.y);
-    if (tank.spawnTicks > 0) {
-      const radius = 3 + Math.floor(tick / 4) % 4;
-      g.fillStyle(0xf0d976).fillRect(x + 7, y + 8 - radius, 2, radius * 2).fillRect(x + 8 - radius, y + 7, radius * 2, 2);
-      return;
+
+  private prepareHiscorePage(highScore: number, phase: number): void {
+    if (this.hiscoreKeys[phase] === highScore) return;
+    const page = this.hiscorePages[phase], label = String(highScore);
+    page.paint(g => {
+      g.fillStyle(PALETTE.black); g.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      drawBrickWord(g, 'HISCORE', 16, 48, false, 4, HISCORE_PALETTES[phase]);
+      drawBrickWord(g, label, Math.floor((CANVAS_WIDTH - label.length * 32) / 2), 104, false, 4, HISCORE_PALETTES[phase]);
+    });
+    this.hiscoreKeys[phase] = highScore;
+  }
+
+  private releaseResources(): void {
+    if (!this.atlas) return;
+    this.events.off('shutdown', this.releaseResources, this);
+    this.events.off('destroy', this.releaseResources, this);
+    this.tanks.destroy(); this.bullets.destroy(); this.explosions.destroy(); this.points.destroy();
+    for (const image of this.fixedImages) image.destroy();
+    for (const texture of this.ownedTextures) this.textures.remove(texture.key);
+    this.fixedImages = []; this.ownedTextures = []; this.maps = []; this.hiscorePages = []; this.covers = [];
+    // A stopped scene can stay in SceneManager. Drop canvas contexts and pooled
+    // texture references as well as their TextureManager registrations.
+    this.forest = this.hud = this.staticPage = undefined!;
+    this.background = this.mapImage = this.forestImage = this.hudImage = this.pageImage = undefined!;
+    this.baseImage = this.itemImage = this.cursorImage = this.pauseImage = this.lossImage = undefined!;
+    this.tanks = this.bullets = this.explosions = this.points = undefined!;
+    this.atlas = undefined; this.tileKeys.fill(-1); this.hudKey = this.staticKey = null; this.hiscoreKeys.fill(null);
+    this.animation.reset();
+  }
+  private menu(g: PixelSurface, presentation: Extract<ArenaPresentation, { kind: 'menu' }>): void {
+    g.fillStyle(PALETTE.black); g.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    const playerScore = menuScore(presentation.playerScores[0] ?? 0), highScore = menuScore(presentation.highScore);
+    drawText(g, 'I-', 16, 24); drawText(g, playerScore, 80 - playerScore.length * 8, 24);
+    drawText(g, 'HI-', 88, 24); drawText(g, highScore, 160 - highScore.length * 8, 24);
+    if (presentation.playerScores.length > 1) {
+      const playerTwoScore = menuScore(presentation.playerScores[1] ?? 0);
+      drawText(g, 'Ⅱ-', 168, 24); drawText(g, playerTwoScore, 232 - playerTwoScore.length * 8, 24);
     }
-    let color = tank.team === 'player' ? (tank.playerIndex === 0 ? 0xefc45b : 0xa7bfe0) : ({ basic: 0xc8cbb9, fast: 0xd76d48, power: 0x93b9bd, armor: tank.hp > 2 ? 0x78965d : 0xc4b277 })[tank.kind];
-    if (tank.carryingPowerUp && tick % 20 < 10) color = 0xe87b64;
-    const rotation = ['up', 'right', 'down', 'left'].indexOf(tank.direction);
-    const rect = (rx: number, ry: number, w: number, h: number, c: number): void => {
-      let ox = rx, oy = ry, rw = w, rh = h;
-      if (rotation === 1) { ox = 16 - ry - h; oy = rx; rw = h; rh = w; }
-      if (rotation === 2) { ox = 16 - rx - w; oy = 16 - ry - h; }
-      if (rotation === 3) { ox = ry; oy = 16 - rx - w; rw = h; rh = w; }
-      g.fillStyle(c).fillRect(x + ox, y + oy, rw, rh);
-    };
-    rect(1, 3, 3, 12, 0x4b5041); rect(12, 3, 3, 12, 0x4b5041);
-    const offset = tank.moving ? Math.floor(tick / 4) % 2 : 0;
-    for (let i = offset; i < 11; i += 3) { rect(1, 4 + i, 3, 1, color); rect(12, 4 + i, 3, 1, color); }
-    rect(4, 4, 8, 10, color); rect(5, 5, 6, 1, 0xf4e5b7);
-    rect(6, 6, 5, 6, 0x716645); rect(6, 6, 4, 4, color);
-    rect(7, 0, 2, 8, color); rect(8, 1, 1, 5, 0xf4e5b7);
-    if (tank.stars) rect(5, 12, Math.min(6, tank.stars * 2), 1, 0xfff1b4);
-    if (tank.shieldTicks > 0 && tick % 12 < 7) {
-      g.lineStyle(1, 0xeaeab9).strokeRect(x - 1, y - 1, 18, 18);
-      g.lineStyle(1, 0x98bdce).strokeRect(x - 3, y - 3, 22, 22);
-    }
+    drawBrickWord(g, 'BATTLE', 24, 48); drawBrickWord(g, 'CITY', 64, 88, true);
+    ['1 PLAYER', '2 PLAYERS', 'CONSTRUCTION'].forEach((text, i) => drawText(g, text, 88, 136 + i * 16));
+    drawBitmap(g, directionalBitmap(PLAYER, 'right'), 64, 132 + presentation.selection * 16, { Y: PALETTE.yellow, D: PALETTE.olive });
+    drawBitmap(g, NAMCOT, 88, 184, { '1': PALETTE.red });
+    drawText(g, '©', 32, 200); drawText(g, '1980 1985 NAMCO LTD.', 48, 200); drawText(g, 'ALL RIGHTS RESERVED', 48, 216);
   }
-  private base(alive: boolean): void {
-    const g = this.graphics;
-    const x = ARENA_OFFSET.x + BASE_X, y = ARENA_OFFSET.y + BASE_Y;
-    g.fillStyle(0x101712).fillRect(x, y, 16, 16);
-    g.fillStyle(alive ? 0xd8cc9b : 0x726752);
-    g.fillRect(x + 6, y + 4, 4, 9).fillRect(x + 7, y + 1, 4, 4);
-    for (let i = 0; i < 3; i++) g.fillRect(x + i, y + 3 + i * 2, 5 - i, 2).fillRect(x + 11 + i, y + 3 + i * 2, 5 - i, 2);
-    g.fillRect(x + 4, y + 12, 8, 2);
-    if (!alive) g.fillStyle(0x101712).fillRect(x + 4, y + 5, 8, 3).fillRect(x + 6, y, 3, 12);
-  }
-  private powerUp(px: number, py: number, kind: string): void {
-    const g = this.graphics;
-    const x = ARENA_OFFSET.x + px, y = ARENA_OFFSET.y + py;
-    g.fillStyle(0xe7d6a0).fillRect(x, y, 16, 16);
-    g.fillStyle(0x303b2e).fillRect(x + 1, y + 1, 14, 14);
-    g.fillStyle(0xe7d6a0);
-    if (kind === 'star') { g.fillRect(x + 7, y + 3, 2, 10).fillRect(x + 3, y + 6, 10, 3).fillRect(x + 5, y + 5, 6, 6); }
-    else if (kind === 'helmet') { g.fillRect(x + 4, y + 4, 8, 6).fillRect(x + 2, y + 10, 12, 2); }
-    else if (kind === 'timer') { g.lineStyle(1, 0xe7d6a0).strokeCircle(x + 8, y + 8, 5); g.fillRect(x + 8, y + 4, 1, 5).fillRect(x + 8, y + 8, 4, 1); }
-    else if (kind === 'shovel') { g.fillRect(x + 6, y + 3, 5, 5).fillRect(x + 8, y + 8, 1, 6); }
-    else if (kind === 'grenade') { g.fillRect(x + 5, y + 5, 6, 8).fillRect(x + 6, y + 2, 4, 2); }
-    else { g.fillRect(x + 3, y + 6, 10, 7).fillRect(x + 7, y + 2, 2, 6); }
+  private score(g: PixelSurface, presentation: Extract<ArenaPresentation, { kind: 'score' }>): void {
+    const state = presentation.state;
+    const timeline = scoreTimeline(state, presentation.elapsedMs);
+    g.fillStyle(PALETTE.black); g.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    drawText(g, 'HI-SCORE', 64, 24, PALETTE.red); drawText(g, String(presentation.highScore), 152, 24, PALETTE.yellow);
+    const stage = `STAGE ${state.stage}`;
+    drawText(g, stage, Math.floor((256 - stage.length * 8) / 2), 40);
+    state.players.forEach((player, index) => {
+      const right = index === 1, color = right ? PALETTE.green : PALETTE.red;
+      drawText(g, right ? 'II-PLAYER' : 'I-PLAYER', right ? 160 : 24, 56, color);
+      const totalScore = String(player.score);
+      drawText(g, totalScore, right ? 232 - totalScore.length * 8 : 88 - totalScore.length * 8, 72, PALETTE.yellow);
+      ENEMY_KINDS.forEach((_kind, row) => {
+        const y = 104 + row * 24;
+        const value = timeline.rows[row].points[index];
+        const points = String(value ?? 0);
+        // Labels are already present before each row's numbers are revealed.
+        drawText(g, 'PTS', right ? 200 : 64, y);
+        if (value === null) return;
+        drawText(g, points, right ? 160 : 56 - points.length * 8, y);
+        const count = String(timeline.rows[row].counts[index]);
+        drawText(g, count, right ? 144 : 112 - count.length * 8, y);
+      });
+      drawText(g, 'TOTAL', right ? 160 : 48, 192);
+      if (timeline.totalVisible) {
+        drawText(g, String(timeline.totals[index]), right ? 144 : 104, 192);
+      }
+    });
+    SCORE_ENEMIES.forEach((sprite, row) => {
+      const y = 100 + row * 24;
+      drawBitmap(g, sprite, 120, y, { W: PALETTE.white, S: PALETTE.light, C: PALETTE.cyan });
+      drawBitmap(g, ['....1...', '...11...', '..111111', '.1111111', '..111111', '...11...', '....1...', '........'], 112, y + 4, { '1': PALETTE.white });
+    });
+    g.fillStyle(PALETTE.white); g.fillRect(96, 189, 64, 2);
   }
 }

@@ -1,91 +1,59 @@
-import { EMPTY_INPUT, type Direction, type GameMode, type PlayerInput } from '../core/types';
+import { EMPTY_INPUT, type PlayerInput } from '../core/types';
 
-const movement = ['up', 'right', 'down', 'left'] as const;
-const arrows = ['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'];
-const letters = ['KeyW', 'KeyD', 'KeyS', 'KeyA'];
-const relevant = new Set([...arrows, ...letters, 'KeyJ', 'Space', 'Enter']);
-type TouchControl = Direction | 'fire';
+export interface LogicalPad {
+  up: boolean; right: boolean; down: boolean; left: boolean;
+  a: boolean; b: boolean; aPressed: boolean; bPressed: boolean;
+}
+const layouts = [
+  ['KeyW', 'KeyD', 'KeyS', 'KeyA', 'KeyJ', 'KeyK'],
+  ['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'KeyN', 'KeyM'],
+] as const;
+const relevant = new Set<string>([...layouts[0], ...layouts[1], 'Enter', 'ShiftRight']);
 
+/** Two Famicom pads. Scene changes require release; focus loss invalidates old keys. */
 export class InputManager {
-  active = false;
-  mode: GameMode = 'single';
   private keys = new Set<string>();
-  private pressed = [false, false];
-  private pointers = new Map<number, TouchControl | null>();
-  private touchButtons: HTMLElement[] = [];
-  constructor(private pause: () => void, private gesture: () => void, private canPause: () => boolean) {
+  private blocked = new Set<string>();
+  private edges = new Set<string>();
+  constructor(start: () => void, select: () => void, gesture: () => void) {
     window.addEventListener('keydown', event => {
-      if (event.target instanceof HTMLElement && event.target.matches('input, select, textarea')) return;
-      if (event.code === 'Escape') {
-        if (this.canPause()) { event.preventDefault(); if (!event.repeat) { this.gesture(); this.pause(); } }
-        return;
-      }
-      if (!this.active || !relevant.has(event.code)) return;
+      if (!relevant.has(event.code)) return;
       event.preventDefault();
-      if (event.repeat && !this.keys.has(event.code)) return;
-      this.gesture();
-      if (!event.repeat && !this.keys.has(event.code)) {
-        if (event.code === 'KeyJ' || (this.mode === 'single' && event.code === 'Space')) this.pressed[0] = true;
-        if (this.mode === 'coop' && event.code === 'Enter') this.pressed[1] = true;
-      }
+      if (event.repeat || this.keys.has(event.code) || this.blocked.has(event.code)) return;
       this.keys.add(event.code);
+      gesture();
+      if (event.code === 'Enter') start();
+      else if (event.code === 'ShiftRight') select();
+      else this.edges.add(event.code);
     });
-    window.addEventListener('keyup', event => { this.keys.delete(event.code); });
-  }
-  attachTouch(root: HTMLElement): void {
-    this.touchButtons = [...root.querySelectorAll<HTMLElement>('[data-control]')];
-    root.addEventListener('pointerdown', event => {
-      const button = (event.target as HTMLElement).closest<HTMLElement>('[data-control]');
-      if (!button || !this.active) return;
-      event.preventDefault();
-      this.gesture();
-      button.setPointerCapture(event.pointerId);
-      const control = button.dataset.control! as TouchControl;
-      this.pointers.set(event.pointerId, control);
-      button.classList.add('held');
-      if (control === 'fire') this.pressed[0] = true;
+    window.addEventListener('keyup', event => {
+      this.keys.delete(event.code);
+      this.blocked.delete(event.code);
     });
-    root.addEventListener('pointermove', event => {
-      const current = this.pointers.get(event.pointerId);
-      if (!this.pointers.has(event.pointerId) || current === 'fire') return;
-      const button = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-control]');
-      const control = button && root.contains(button) ? button.dataset.control as TouchControl : null;
-      const next = control && control !== 'fire' ? control : null;
-      if (next !== current) {
-        this.pointers.set(event.pointerId, next);
-        this.paintTouch();
-      }
-    });
-    const release = (event: PointerEvent) => { this.pointers.delete(event.pointerId); this.paintTouch(); };
-    root.addEventListener('pointerup', release);
-    root.addEventListener('pointercancel', release);
-    root.addEventListener('lostpointercapture', release);
   }
-  read(): PlayerInput[] {
-    const touch = new Set(this.pointers.values());
-    const inputs = [this.player(0, touch), this.player(1, touch)];
-    this.pressed = [false, false];
-    return inputs;
-  }
-  clear(): void {
-    this.keys.clear(); this.pointers.clear(); this.pressed = [false, false];
-    this.touchButtons.forEach(button => button.classList.remove('held'));
-  }
-  private player(index: 0 | 1, touch: Set<TouchControl | null>): PlayerInput {
-    const result = { ...EMPTY_INPUT };
-    if (!this.active) return result;
-    movement.forEach((direction, position) => {
-      result[direction] = index === 0
-        ? this.keys.has(letters[position]) || (this.mode === 'single' && this.keys.has(arrows[position])) || touch.has(direction)
-        : this.keys.has(arrows[position]);
-    });
-    result.firePressed = this.pressed[index];
+  readPads(): LogicalPad[] {
+    const result = layouts.map(([up, right, down, left, a, b]) => ({
+      up: this.keys.has(up), right: this.keys.has(right),
+      down: this.keys.has(down), left: this.keys.has(left),
+      a: this.keys.has(a), b: this.keys.has(b),
+      aPressed: this.edges.has(a), bPressed: this.edges.has(b),
+    }));
+    this.edges.clear();
     return result;
   }
-  private paintTouch(): void {
-    const touch = new Set(this.pointers.values());
-    this.touchButtons.forEach(button => {
-      button.classList.toggle('held', touch.has(button.dataset.control! as TouchControl));
-    });
+  read(): PlayerInput[] {
+    return this.readPads().map(pad => ({ ...EMPTY_INPUT,
+      up: pad.up, right: pad.right, down: pad.down, left: pad.left,
+      firePressed: pad.aPressed || pad.bPressed,
+    }));
+  }
+  clear(): void {
+    for (const key of this.keys) this.blocked.add(key);
+    this.keys.clear(); this.edges.clear();
+  }
+  resetForFocus(): void {
+    // A key released in another window never sends this page its keyup.
+    // Repeated held events remain ignored, but the next fresh press must work.
+    this.keys.clear(); this.blocked.clear(); this.edges.clear();
   }
 }

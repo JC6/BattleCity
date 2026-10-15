@@ -1,10 +1,9 @@
-import { expect, test } from '@playwright/test';
-import { begin, ready, snapshot } from './helpers';
+import { expect, test, type Page } from '@playwright/test';
+import { readyWithClock, snapshot, startWithKeyboard } from './helpers';
 
-async function inputField(page: Parameters<typeof snapshot>[0], mode: 'single' | 'coop' = 'single'): Promise<void> {
-  await begin(page, mode);
-  // Input acceptance needs room for a shot to remain observable, rather
-  // than starting beside the fortress where a correct shot vanishes quickly.
+async function inputField(page: Page, mode: 'single' | 'coop' = 'single'): Promise<void> {
+  // Follow the normal menu lifecycle before isolating the controller fixture.
+  await startWithKeyboard(page, mode);
   await page.evaluate(() => {
     const api = window.__BATTLECITY__!;
     const players = api.state()!.tanks.filter(tank => tank.team === 'player');
@@ -14,142 +13,120 @@ async function inputField(page: Parameters<typeof snapshot>[0], mode: 'single' |
   });
 }
 
-test('keyboard supports moving and firing together', async ({ page }) => {
-  await ready(page);
-  await inputField(page);
-  const before = (await snapshot(page))!;
-  const x = before.tanks.find(tank => tank.playerIndex === 0)!.x;
-  await page.keyboard.down('d');
-  await page.keyboard.down('j');
-  await expect.poll(async () => (await snapshot(page))!.tanks.find(tank => tank.playerIndex === 0)!.x).toBeGreaterThan(x);
-  await expect.poll(async () => (await snapshot(page))!.bullets.filter(bullet => bullet.team === 'player').length).toBeGreaterThan(0);
-  await page.keyboard.up('j');
-  await page.keyboard.up('d');
-});
-
-for (const key of ['Enter', 'Space']) {
-  test(`paused buttons resume with native ${key} without rearming held input`, async ({ page, isMobile }) => {
-    await ready(page);
-    await inputField(page, key === 'Enter' && !isMobile ? 'coop' : 'single');
-    const before = (await snapshot(page))!;
-    const initialX = before.tanks.find(tank => tank.playerIndex === 0)!.x;
-    await page.keyboard.down('d');
-    await expect.poll(async () => (await snapshot(page))!.tanks.find(tank => tank.playerIndex === 0)!.x).toBeGreaterThan(initialX);
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('heading', { name: '战斗暂停' })).toBeVisible();
-    await page.getByRole('button', { name: /继续战斗/ }).focus();
-    await page.keyboard.down(key);
-    if (key === 'Space') {
-      // A native button activates Space on release; repetition while paused stays native.
-      await page.keyboard.down(key);
-      await page.keyboard.up(key);
+for (const fire of ['j', 'k']) {
+  test(`1P can move and fire with ${fire.toUpperCase()}`, async ({ page }) => {
+    await readyWithClock(page);
+    await inputField(page);
+    try {
+      await page.keyboard.down('d');
+      await page.keyboard.down(fire);
+      await page.clock.runFor(100);
+      const state = (await snapshot(page))!;
+      expect(state.tanks.find(tank => tank.playerIndex === 0)!.x).toBeGreaterThan(32);
+      expect(state.bullets.some(bullet => bullet.playerIndex === 0)).toBe(true);
+    } finally {
+      await page.keyboard.up(fire);
+      await page.keyboard.up('d');
     }
-    await expect(page.getByRole('heading', { name: '战斗暂停' })).toBeHidden();
-    const resumed = (await snapshot(page))!;
-    const resumedX = resumed.tanks.find(tank => tank.playerIndex === 0)!.x;
-    await page.keyboard.down('d'); // Native repeat of the key that was held before pausing.
-    if (key === 'Enter') await page.keyboard.down(key);
-    await page.waitForTimeout(150);
-    const after = (await snapshot(page))!;
-    expect(after.phase).toBe('playing');
-    expect(after.tanks.find(tank => tank.playerIndex === 0)!.x).toBe(resumedX);
-    expect(after.bullets.filter(bullet => bullet.team === 'player')).toHaveLength(0);
-    await page.keyboard.up('d');
-    if (key === 'Enter') await page.keyboard.up(key);
-    await page.keyboard.press('j');
-    await expect.poll(async () => (await snapshot(page))!.bullets.filter(bullet => bullet.team === 'player').length).toBeGreaterThan(0);
   });
 }
 
-test('Escape resumes while game input is inactive and repeated Escape does not toggle twice', async ({ page }) => {
-  await ready(page);
-  await inputField(page);
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('heading', { name: '战斗暂停' })).toBeVisible();
-  await page.keyboard.down('Escape');
-  await expect(page.getByRole('heading', { name: '战斗暂停' })).toBeHidden();
-  await page.keyboard.down('Escape');
-  await page.waitForTimeout(100);
-  expect((await snapshot(page))!.phase).toBe('playing');
-  await page.keyboard.up('Escape');
-});
+for (const fire of ['n', 'm']) {
+  test(`both players can move and fire together with 2P ${fire.toUpperCase()}`, async ({ page }) => {
+    await readyWithClock(page);
+    await inputField(page, 'coop');
+    const keys = ['d', 'ArrowLeft', 'j', fire];
+    try {
+      for (const key of keys) await page.keyboard.down(key);
+      await page.clock.runFor(100);
+      const state = (await snapshot(page))!;
+      expect(state.tanks.find(tank => tank.playerIndex === 0)!.x).toBeGreaterThan(32);
+      expect(state.tanks.find(tank => tank.playerIndex === 1)!.x).toBeLessThan(160);
+      expect(new Set(state.bullets.filter(bullet => bullet.team === 'player').map(bullet => bullet.playerIndex)))
+        .toEqual(new Set([0, 1]));
+    } finally {
+      for (const key of keys) await page.keyboard.up(key);
+    }
+  });
+}
 
-test('a direction finger becomes neutral at the center or outside and can slide back while firing', async ({ page, browserName, isMobile, context }) => {
-  test.skip(browserName !== 'chromium' || !isMobile, 'Uses native Chromium touch points on a phone viewport.');
-  await ready(page);
+test('Enter pauses and resumes once per press, keeping held movement and fire neutral', async ({ page }) => {
+  await readyWithClock(page);
   await inputField(page);
-  const initialX = (await snapshot(page))!.tanks.find(tank => tank.playerIndex === 0)!.x;
-  const right = (await page.getByRole('button', { name: '向右', exact: true }).boundingBox())!;
-  const fire = (await page.getByRole('button', { name: '射击', exact: true }).boundingBox())!;
-  const center = (await page.locator('.pad-center').boundingBox())!;
-  const outside = (await page.locator('.touch-caption').boundingBox())!;
-  const point = (rect: typeof right) => ({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
-  const session = await context.newCDPSession(page);
-  const move = (rect: typeof right) => session.send('Input.dispatchTouchEvent', {
-    type: 'touchMove', touchPoints: [{ id: 1, ...point(rect) }, { id: 2, ...point(fire) }],
-  });
-  await session.send('Input.dispatchTouchEvent', {
-    type: 'touchStart', touchPoints: [{ id: 1, ...point(right) }, { id: 2, ...point(fire) }],
-  });
-  await expect.poll(async () => (await snapshot(page))!.tanks.find(tank => tank.playerIndex === 0)!.x).toBeGreaterThan(initialX);
-  await expect.poll(async () => (await snapshot(page))!.bullets.filter(bullet => bullet.team === 'player').length).toBeGreaterThan(0);
-  for (const neutral of [center, outside]) {
-    await move(neutral);
-    await expect(page.getByRole('button', { name: '向右', exact: true })).not.toHaveClass(/held/);
-    await expect(page.getByRole('button', { name: '射击', exact: true })).toHaveClass(/held/);
-    const stoppedX = (await snapshot(page))!.tanks.find(tank => tank.playerIndex === 0)!.x;
-    await page.waitForTimeout(120);
-    expect((await snapshot(page))!.tanks.find(tank => tank.playerIndex === 0)!.x).toBe(stoppedX);
-    await move(right);
-    await expect(page.getByRole('button', { name: '向右', exact: true })).toHaveClass(/held/);
-    await expect.poll(async () => (await snapshot(page))!.tanks.find(tank => tank.playerIndex === 0)!.x).toBeGreaterThan(stoppedX);
+  try {
+    await page.keyboard.down('d');
+    await page.clock.runFor(34);
+    expect((await snapshot(page))!.tanks[0].x).toBeGreaterThan(32);
+    await page.keyboard.press('Enter');
+    const paused = (await snapshot(page))!;
+    expect(paused.phase).toBe('paused');
+    await page.clock.runFor(150);
+    expect((await snapshot(page))!.tick).toBe(paused.tick);
+    await page.keyboard.down('j');
+    await page.keyboard.down('Enter');
+    await page.keyboard.down('Enter');
+    await page.clock.runFor(150);
+    const resumed = (await snapshot(page))!;
+    expect(resumed.phase).toBe('playing');
+    expect(resumed.tick).toBeGreaterThan(paused.tick);
+    expect(resumed.tanks[0].x).toBe(paused.tanks[0].x);
+    expect(resumed.bullets.filter(bullet => bullet.team === 'player')).toHaveLength(0);
+  } finally {
+    for (const key of ['Enter', 'd', 'j']) await page.keyboard.up(key);
   }
-  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await expect(page.getByRole('button', { name: '射击', exact: true })).not.toHaveClass(/held/);
+  const resumedX = (await snapshot(page))!.tanks[0].x;
+  try {
+    await page.keyboard.down('d');
+    await page.clock.runFor(34);
+    expect((await snapshot(page))!.tanks[0].x).toBeGreaterThan(resumedX);
+  } finally {
+    await page.keyboard.up('d');
+  }
 });
 
-test('both cooperative players can move and fire on the same keyboard', async ({ page, isMobile }) => {
-  test.skip(isMobile, 'Cooperative acceptance is desktop only.');
-  await ready(page);
-  await inputField(page, 'coop');
-  await page.keyboard.down('d');
-  await page.keyboard.down('ArrowLeft');
-  await page.keyboard.down('j');
-  await page.keyboard.down('Enter');
-  await expect.poll(async () => {
-    const state = (await snapshot(page))!;
-    return {
-      p1: state.tanks.find(tank => tank.playerIndex === 0)!.x > 32,
-      p2: state.tanks.find(tank => tank.playerIndex === 1)!.x < 160,
-      shooters: new Set(state.bullets.filter(bullet => bullet.team === 'player').map(bullet => bullet.playerIndex)).size,
-    };
-  }).toEqual({ p1: true, p2: true, shooters: 2 });
-  for (const key of ['d', 'ArrowLeft', 'j', 'Enter']) await page.keyboard.up(key);
-});
-
-test('loss of focus pauses and releases held input until explicit resume', async ({ page }) => {
-  await ready(page);
+test('single player arrows, Space and Escape do not act as controller aliases', async ({ page }) => {
+  await readyWithClock(page);
   await inputField(page);
-  await page.keyboard.down('d');
-  const paused = await page.evaluate(() => {
-    window.dispatchEvent(new Event('blur'));
-    return window.__BATTLECITY__!.state()!;
-  });
-  expect(paused.phase).toBe('paused');
-  await page.waitForTimeout(1000);
-  expect((await snapshot(page))!.tick).toBe(paused.tick);
-  const resumed = await page.evaluate(() => {
-    document.querySelector<HTMLButtonElement>('[data-action="resume"]')!.click();
-    const state = window.__BATTLECITY__!.state()!;
-    return { tick: state.tick, x: state.tanks.find(tank => tank.playerIndex === 0)!.x, time: performance.now() };
-  });
-  await page.waitForTimeout(150);
-  const after = await page.evaluate(() => {
-    const state = window.__BATTLECITY__!.state()!;
-    return { tick: state.tick, x: state.tanks.find(tank => tank.playerIndex === 0)!.x, time: performance.now() };
-  });
-  expect(after.x).toBe(resumed.x);
-  expect(after.tick - resumed.tick).toBeGreaterThan(0);
-  expect(after.tick - resumed.tick).toBeLessThanOrEqual(Math.ceil((after.time - resumed.time) * 60.0988 / 1000) + 6);
-  await page.keyboard.up('d');
+  for (const key of ['ArrowRight', 'Space', 'Escape']) {
+    const before = (await snapshot(page))!;
+    try {
+      await page.keyboard.down(key);
+      await page.clock.runFor(100);
+      const after = (await snapshot(page))!;
+      expect(after.phase).toBe('playing');
+      expect(after.tanks.map(({ x, y }) => ({ x, y }))).toEqual(before.tanks.map(({ x, y }) => ({ x, y })));
+      expect(after.bullets.filter(bullet => bullet.team === 'player')).toHaveLength(0);
+      expect(after.tick).toBeGreaterThan(before.tick);
+    } finally {
+      await page.keyboard.up(key);
+    }
+    await page.clock.runFor(34);
+  }
+});
+
+test('loss of focus pauses and releases held input until explicit Start', async ({ page }) => {
+  await readyWithClock(page);
+  await inputField(page);
+  try {
+    await page.keyboard.down('d');
+    await page.clock.runFor(34);
+    expect((await snapshot(page))!.tanks[0].x).toBeGreaterThan(32);
+    const paused = await page.evaluate(() => {
+      window.dispatchEvent(new Event('blur'));
+      return window.__BATTLECITY__!.state()!;
+    });
+    expect(paused.phase).toBe('paused');
+    await page.clock.runFor(300);
+    expect((await snapshot(page))!.tick).toBe(paused.tick);
+    await page.keyboard.press('Enter');
+    const resumed = (await snapshot(page))!;
+    await page.clock.runFor(150);
+    const after = (await snapshot(page))!;
+    expect(after.phase).toBe('playing');
+    expect(after.tanks[0].x).toBe(resumed.tanks[0].x);
+    expect(after.tick).toBeGreaterThan(resumed.tick);
+    expect(after.bullets.filter(bullet => bullet.team === 'player')).toHaveLength(0);
+  } finally {
+    await page.keyboard.up('d');
+  }
 });

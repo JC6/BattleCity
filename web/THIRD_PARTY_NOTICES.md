@@ -1,6 +1,12 @@
 # Third-party notices
 
-This Web implementation retains the repository's existing GPL-2.0 project license. Dependency licenses are listed below. Original Battle City ROM, image and audio assets are not included.
+This Web implementation retains the repository's existing GPL-2.0 project license. Dependency licenses are listed below. ROM binaries and reference recordings are not included.
+
+## Audio reference
+
+Battle City (1985) is the original NAMCO game. The numeric sound sequences in `src/platform/audio-cues.ts` are transcribed from `bank_FF.asm` (ED36–EF74) in [NES-Games-Disassembly, revision df2c8e55e7f13e5792482527db9e7c9e4a84c6e1](https://github.com/cyneprepou4uk/NES-Games-Disassembly/tree/df2c8e55e7f13e5792482527db9e7c9e4a84c6e1/Battle%20City). The source bank's SHA-256 is `372dcd0e10a7f7d2244bd271f98539d186ff4faae51eb08d8ce23b3619193721`.
+
+The Web runtime generates PCM from these sequences. Its four-channel model follows the [NESdev APU documentation](https://www.nesdev.org/wiki/APU); analog filtering is approximate.
 
 ## Game runtime: Phaser 4.2.1
 

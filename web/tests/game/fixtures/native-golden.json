@@ -1,0 +1,1450 @@
+{
+  "provenance": {
+    "kind": "Frozen pre-texture native RGBA baseline",
+    "sources": {
+      "game/arena.ts": "ecc86b5bf8ac7a5029b478a7fea235c6b3a55ca1ac21f7674500a64b448c0597",
+      "game/pixel-assets.ts": "f5f5fda5736b2ee3fa88de75aff1cfb970f8219f47864c50cc70a062c7a4590e",
+      "game/animation.ts": "08e761d7859e80624d3c553a16e2df2d93a450c562819b36242d74552a2daba0",
+      "game/score-timeline.ts": "b0e24e4bf003032bd7484c29c3128271afdb6907cc287ae1014986195c021d78"
+    },
+    "scoreTiming": "Frozen renderer with independently corrected countMs=9*TICK_MS from CD10+CDD8 instruction waits; no texture-renderer output used",
+    "hiscore": "bank_FF.asm tbl_D565 palettes 05..08: brick $0F/$12/$00/$30; edge $06; mortar $00",
+    "menuHeaders": {
+      "kind": "Explicit expected strings placed at original nametable columns using independently frozen glyph masks; no renderer output used",
+      "chrSource": "https://github.com/cyneprepou4uk/NES-Games-Disassembly/blob/df2c8e55e7f13e5792482527db9e7c9e4a84c6e1/Battle%20City/CHR_ROM.chr",
+      "chrSha256": "a5d5a10b0fbe9b1a8b8806a06af2634d25ed993b3659131d01acdf86de9c00e9",
+      "romanTwo": "Background tile $5F, CHR file $15F0: 3E14141414143E00 in each bitplane",
+      "bounds": [
+        16,
+        24,
+        216,
+        8
+      ],
+      "numberRightEdges": [
+        80,
+        160,
+        232
+      ]
+    }
+  },
+  "frames": {
+    "brick:0": {
+      "width": 8,
+      "height": 8,
+      "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1"
+    },
+    "brick:1": {
+      "width": 8,
+      "height": 8,
+      "sha256": "0c5b516886d00f8cdc511b43929a27d6b345e666594ea553ce03b3d9d483cf5a"
+    },
+    "brick:2": {
+      "width": 8,
+      "height": 8,
+      "sha256": "b0afeaccb76acbcbb950ade4c4947544ced90be617af668b2d1a2915e815442d"
+    },
+    "brick:3": {
+      "width": 8,
+      "height": 8,
+      "sha256": "fba6a83996bafb038c10536e5022181dd2ba5ad5a9cbc218b5257da167f1adde"
+    },
+    "brick:4": {
+      "width": 8,
+      "height": 8,
+      "sha256": "c2f3823bb2d59a9edfa7780088cb378c6e36adc55606152f9b25da069d4aee0d"
+    },
+    "brick:5": {
+      "width": 8,
+      "height": 8,
+      "sha256": "9f95dbc56b468e703573384c2545707a56b495b863049f856bee4f171797164f"
+    },
+    "brick:6": {
+      "width": 8,
+      "height": 8,
+      "sha256": "a7e748e3583a5211bfffc21bb1a83bc88dd9b758725912d3989e53a4791cf02f"
+    },
+    "brick:7": {
+      "width": 8,
+      "height": 8,
+      "sha256": "52e012846808de804a7ab937b8a90e5f5dd6d7f8ec2cf21eda7201d2cf65bcd9"
+    },
+    "brick:8": {
+      "width": 8,
+      "height": 8,
+      "sha256": "d6b9fdce6392bc4beac264819354bcf143306721fda5f4d26b50fa5877f32364"
+    },
+    "brick:9": {
+      "width": 8,
+      "height": 8,
+      "sha256": "d154882f30ce426fbab323aa354e4ac7b81032f04a93dd9b4aa52499013f6b82"
+    },
+    "brick:10": {
+      "width": 8,
+      "height": 8,
+      "sha256": "6cef64183de5b87e4c3d75b23247229afbaa3601e23fda6bc30d4cc7dd03da72"
+    },
+    "brick:11": {
+      "width": 8,
+      "height": 8,
+      "sha256": "bf4cb15f4bceae6bdf88bd24bedaeda593ff32bc83c17d769cc5a60e839ccde3"
+    },
+    "brick:12": {
+      "width": 8,
+      "height": 8,
+      "sha256": "5b43353d8502d9f6d7b727cba270a98f670daeeff024deea24c1cbdf7d5e131b"
+    },
+    "brick:13": {
+      "width": 8,
+      "height": 8,
+      "sha256": "9d4b5c9678f0b977c33ad546ee0819accc67edf07a37e0bc46609d8e64fd61c6"
+    },
+    "brick:14": {
+      "width": 8,
+      "height": 8,
+      "sha256": "679817b51975118cb3243f684474e019c468cd4e9301658ebb23f64d98b1cafb"
+    },
+    "brick:15": {
+      "width": 8,
+      "height": 8,
+      "sha256": "c62879dfa0df6d7d92a60cd24c42913ceacfeed84b16eb8da33e73afcdf7e399"
+    },
+    "steel": {
+      "width": 8,
+      "height": 8,
+      "sha256": "07b114d60864f295793090225c862b6df0e97cfcb37cb79f9f99d021dc2d203c"
+    },
+    "water:0": {
+      "width": 8,
+      "height": 8,
+      "sha256": "3924419f0981bd99c2009d95cd53b467285cfff604634ead8113da747b01aed5"
+    },
+    "water:1": {
+      "width": 8,
+      "height": 8,
+      "sha256": "46997c905e646eba5c1770de23940919f9823872349a0420e2e6986d63057467"
+    },
+    "forest": {
+      "width": 8,
+      "height": 8,
+      "sha256": "45fa1a8cd78e777ec3ddc23cde8db3cb39277d0fc9940f1042123b7152b71509"
+    },
+    "ice": {
+      "width": 8,
+      "height": 8,
+      "sha256": "26433f1bebec19802b015a4de1b90c65445ba53463020d3bfbed58300989ebf5"
+    },
+    "base:alive": {
+      "width": 16,
+      "height": 16,
+      "sha256": "6391a40c84bf4df1b0e4b85458a343357c4cf92eb7a0ecacb18451faf29898de"
+    },
+    "base:dead": {
+      "width": 16,
+      "height": 16,
+      "sha256": "105b92ba08271051885c4be8349306368635fecc642d31eb5200e7caf0526920"
+    },
+    "player:0:0:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "53513a444324f45da10d65f1fe50d707121cb0b6cccef8675e0967c2577a18f8"
+    },
+    "player:0:0:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "316c7a1ac738953a0e64f46e7030d38cf467cc1f4b13432ac78f7a64210dec7c"
+    },
+    "player:0:0:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "00a99b1265e3678b458fc908f6e004f1c964e95d1a4a3d72599d7cf74d159148"
+    },
+    "player:0:0:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "a16b87921e1600203386b26de3f8763226a70726770905d4d8870370dd2c0cff"
+    },
+    "player:0:0:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "98986492e23ea88470435d5b315afce4563b3c9b017271f650c71e8c3cb12290"
+    },
+    "player:0:0:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "96d70c068a1f05adfdb2807353cd201a03d32c0eea72b89eb4bf3b9ad0cafdde"
+    },
+    "player:0:0:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "a63b77136f0967bb7e52d445782af0e1cca1cdccb8ba88f4e3aed20b76d0ece8"
+    },
+    "player:0:0:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "de7ee85e0131d162ab51274d0b525ed93039fd5eade9fb108090c70cf92cb8f3"
+    },
+    "player:0:1:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "3f6cb2d5dd8210ef1f2d6709db8ebda5b009a3af2a265a0480c3e86b9ce160e8"
+    },
+    "player:0:1:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "717da776168d604b4807e5099f5ac68918c3581e0f4fb3c77edc0243e7b23db2"
+    },
+    "player:0:1:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "7386868e3581f77a7962536be006601126b5b0ff813e203fc2fcd94f28f8f85b"
+    },
+    "player:0:1:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "3cb3a51ae05f5ab5936881530bb8c7c00680effcd302d2d4156e8aa4c2e517fb"
+    },
+    "player:0:1:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "53e87ff72d5b8bc9617526991d5ff0aef9d413f8bd006196948f991424df244d"
+    },
+    "player:0:1:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "c3d13bd050670439290cc9f14e754e4e26c319be8305aa3c57864de715b92876"
+    },
+    "player:0:1:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "54cce65623bbf2d0396418f67d8a13d636a61d4edb1cf267bcb9f77fde98d175"
+    },
+    "player:0:1:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "52f5f83d11eab3d5a0a2c76ff91ee8d1e83bedd2e607a7f7d56494c8a7c34548"
+    },
+    "player:0:2:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "e87901a19e1a1251579961290ca83984be31dcb9d0fa52c134ec90c8d58f7650"
+    },
+    "player:0:2:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "9daf5236ec226f937cbc73496d9abc184f3c98bc30a6f825e08c63fb03db1eca"
+    },
+    "player:0:2:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "145d9b5fe94892c8378e4f74cbdba6634cf0d81d18806020e02870914461ede4"
+    },
+    "player:0:2:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "42f6ffcf08610c3a59c97f9ccfb559cc2e42e73cabdcae5828c6454dcdfd0e85"
+    },
+    "player:0:2:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "661f3e91c11aecaab479de3d69ab01d32d7160918acaf10add4215d821ee8775"
+    },
+    "player:0:2:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "83446cba65c5e82ccc9eaafc6864396482ad5ab4f7771da2b8358e1d8fd0f9a0"
+    },
+    "player:0:2:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "8e806806248801de13ed9879e91cd03df8dccd01b48a694bad4ed3d00824361a"
+    },
+    "player:0:2:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "b3e785a72e1fd5c465dea18592790680e9f6f6bec6811f0f82d91b2920f8a22f"
+    },
+    "player:0:3:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "83e52fdbcd1098c27ed09379323e3405b6d7f4d15d3a4c0ad91666acda29ea17"
+    },
+    "player:0:3:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "e0dac115bcb58ab8cf75cb1f17c189e27b7795677b3f9ead3ecf1c4227522213"
+    },
+    "player:0:3:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "3e281af34f4882c4e55359db5892506925af85eac9ac5108e7513d84effbe3e0"
+    },
+    "player:0:3:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "6544f1156d432be01f5194d08277726d44c8c78dcc1ca5c87cdea6dc4f838321"
+    },
+    "player:0:3:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "51e391cf087b3521557f25d56423aa67e3ad6719c8b3b9d5fe8a52d0471226b8"
+    },
+    "player:0:3:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "50be4ad923d631e46372a887d04dba22f710e0bb6b81afa0b3921fbe90d4c6d5"
+    },
+    "player:0:3:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "1778294438f9e4c505250fb0336390dafa392441541edbe573d0aa005bb2ac0e"
+    },
+    "player:0:3:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "ffe9aaf12fec18f8145961bddd44d614e8ecbd5deb520f66eb89c641a6c04632"
+    },
+    "player:1:0:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "40830f29fb8912042f8f2081df02fe0bfeb48c2e0884a503d129330e9e43d15d"
+    },
+    "player:1:0:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "c220f1216a77830d37e16709ea3d06c4ce32bebca81fd2fe3b55148751f98e2e"
+    },
+    "player:1:0:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "c1fc0e303f14d3cc77303f5352758e292d372fbc0dae9da9fdd511c9cf186768"
+    },
+    "player:1:0:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "80766f1da1e43bbf71d7ea83eefa6dbd74237233ba010d0f049afc2d80ab14ab"
+    },
+    "player:1:0:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "4214b14d70c43abcd4e3083d83d3d835a7b2695399624d7590fc29321d683bda"
+    },
+    "player:1:0:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "6e4f2a790287cdbb6b80435a37550fa31b643e3b945154c583ae699e28f2b9ef"
+    },
+    "player:1:0:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "8456386c894181da2b5d061c2ab3649a4d8af911a9055f624b15fb4c5c4bffd4"
+    },
+    "player:1:0:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "640af9ddf170acc7fd0fd7a29eb698e901c73d27f3a673d7fbbf1923ab1d9499"
+    },
+    "player:1:1:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "ea3ff2478ed4329a0aff9c12289ced0e4db04e7f79a6758e112b09a69f732b0e"
+    },
+    "player:1:1:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "ee74f0c4d6b48af59984e1ada86f3d1f5b3d96abe3b7628c0d07f93acd826ee0"
+    },
+    "player:1:1:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "d65f7834b729763d91acafe52263c3d4dc23421df53c9c2ed62f822c403b121b"
+    },
+    "player:1:1:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "d16d7c36bab384f264555b117e7d595c33b6ccdcc135d0e2bf4137dd99c2210a"
+    },
+    "player:1:1:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "7112a1ca5f994926e6ea61754475ec7de858f79d01a6b1b16ce543209c378725"
+    },
+    "player:1:1:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "57653e96da2adb8c4a36c959508163d4939194137e1e2aac08617112a2dfd386"
+    },
+    "player:1:1:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "2ba26632008c97b6c5c6178c06226a8a460446649fc10fce7d6ba25957d2d5f1"
+    },
+    "player:1:1:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "67902e21e9447f08f5cc34a07cd336e8926c6989b1c56b47520020a9712d2f49"
+    },
+    "player:1:2:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "9058eb9e2026bfd7b9ebc90dec75d6cac5a8c71c4a3417d2c3ed0d8a95d60e86"
+    },
+    "player:1:2:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "a6ee7f6605a193da21417782ae4ef453ac75b6dff5586a75940dfb8e25934c45"
+    },
+    "player:1:2:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "3dbfc7878eb836b543d0b1b9bd0233e27bcb702c6bba1edbf7822ed96103cf83"
+    },
+    "player:1:2:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "e860160e09bfde14686be93c6a3c12fd9495d044d81241689cdc769d22474081"
+    },
+    "player:1:2:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "69b59a9282c3b2ea13a3cf55cfaeb4e36fc67b7ea384f8c29dad5443218145ee"
+    },
+    "player:1:2:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "7623876d58a4df19130ffd0d79a3c11145e3ce7f0e3b95044570691d13b70e17"
+    },
+    "player:1:2:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "7e4c40eaf45b4dca2edf0b8cc1af025b77ea274a5b6f33db924db16519d933fc"
+    },
+    "player:1:2:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "d9693ecb731828ca117ab35f15328c55eff1a7502495a1a5ed71e6058a45753c"
+    },
+    "player:1:3:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "4e7e41b2f924ab3002d9b7370017744f39d3481ba6b54c90f8ea7830d75d9216"
+    },
+    "player:1:3:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "96dad7984187549a85058268430649a1e8cae7802819895eab9a27e9dd525104"
+    },
+    "player:1:3:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "5c9e522a5f69381c1e85fd63bdc01215f829032d53038cfa2fc69bcd74ffd52b"
+    },
+    "player:1:3:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "27ac93363aa816f0980b016147ab6c379cdd3be26cf96883a8c559704979a226"
+    },
+    "player:1:3:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "e92c8d6b1287a0c82c9bf142f30c773575fc0f17f0d51a27b83b0c0489e76a74"
+    },
+    "player:1:3:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "32b4a2aa6aa51df1b240d17f15aeb593b871fdf3392bd15df2fdec18726b3aba"
+    },
+    "player:1:3:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "bfff03512cdceb48dd2e9748de2e1d2c2e27c48300e8316123ebddaf9ae4c17c"
+    },
+    "player:1:3:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "d7c3ab2950ce093f55aebbc69f800f9e14984764d547c37124959ae76b76ce13"
+    },
+    "enemy:basic:flash:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "9db5904bbf7315caa8ef721c34823a6448b7bd91492fedc2e7aca8762bafd958"
+    },
+    "enemy:basic:flash:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "631b6b5dbb8658aceeb35bca7e4eb7cd69563a4692d11f5e45bcb10baf4cc443"
+    },
+    "enemy:basic:flash:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "51f80541eec4ec657f64fb88b8563034a4bb2a3ad80db9f9d41050ec263dcc3a"
+    },
+    "enemy:basic:flash:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "e72d07ac8efe82dbe62b5921d7c7458e34945ed83e5296b3cc00a8339067db13"
+    },
+    "enemy:basic:flash:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "a281bd69602031e8bec915b984c9aaaff3d06c1f8e504080a38e0b97c57684fb"
+    },
+    "enemy:basic:flash:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "667b2ddc6fad27f5b30af4717dfdd12fe43cec5102fa7036695e50006623d9c2"
+    },
+    "enemy:basic:flash:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "2a42c6a62dfd380982cf24b118d30acf5f1b2c726f0753f92ba4c671d4b194e4"
+    },
+    "enemy:basic:flash:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "6e54810dd9c3c0c5730e1f67e0754af71a120dd5e7646ca4af5ef3f8c6988594"
+    },
+    "enemy:basic:normal:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "b7a40d5ca78228c2ec5ebe06202dc46db9493d7381cc583269fb5a4f56b7c106"
+    },
+    "enemy:basic:normal:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "ef5a5e74b9ddfceaa05c632f39901215e8440fceafb642eecd035e4739fd77ee"
+    },
+    "enemy:basic:normal:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "93401ca6ccbab5dbe5f857a7e5fe6483625642e1fe7489b56b7672655df9bee4"
+    },
+    "enemy:basic:normal:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "2052001e7a217915ed79978bc52a056095b3884e39da35fee12372910d4cbe02"
+    },
+    "enemy:basic:normal:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "325a9ce40e9a06001f27c6059f390459ec1f1f1256d38e0b0e19bd04390eb560"
+    },
+    "enemy:basic:normal:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "df90098503377b6eb5324b82e41cbec10ab1f20619a66528dce38e6a97f8f3b5"
+    },
+    "enemy:basic:normal:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "e37b5b81694a68b4c59818d3259e6761106be30b54f8ccbe588680bdd74ab188"
+    },
+    "enemy:basic:normal:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "ab8b5f653aad1fa0f4494bd4abbd99b5d3d5f09797b1c5648929bda27f78e3ef"
+    },
+    "enemy:fast:flash:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "649242e2d85e79746b3d52eed2b3c81c5c1fa6851855eabb0295f5699110d961"
+    },
+    "enemy:fast:flash:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "3fb402dfc676fbad9d576c27ea91f9ea97d69d6df7cfdd0b0c20e63805da0657"
+    },
+    "enemy:fast:flash:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "a9e78ae03ac1746e6223c0798f86a9e81d5491209b79967e6bc674ac5dfce6a1"
+    },
+    "enemy:fast:flash:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "367f126280a213d73b2c6883038d7f4d91cee64d0931eff63d2b13f8b7de9cc0"
+    },
+    "enemy:fast:flash:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "b00300d1ce3f030793604bc827aed6126f6cfd5cb6b5bd8b03d3f0fe6bce1645"
+    },
+    "enemy:fast:flash:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "8b3cc226ab85843e0aa63c57d024b6389cf34a2ec9b08d68d6aa4848370b0162"
+    },
+    "enemy:fast:flash:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "e79ea94b49ecbd773f895560fad28df1696eb52996dfdbc0a510ea31b8297cd0"
+    },
+    "enemy:fast:flash:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "c505217e7207e3f68599374eb3bc7362a007083e2847b7fb1ac09f977933a777"
+    },
+    "enemy:fast:normal:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "0094ef5735a7d7f5cd308a631ca0cd35eb0950b77031f16b1d49c41977d5dab7"
+    },
+    "enemy:fast:normal:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "7813433c83441534dffa5aca717f3b13506201436a7d01db43167f90e42f1cb6"
+    },
+    "enemy:fast:normal:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "7e56b634d4003bd2f0a8f26d245f2fd9345b57cc2a0ba298531690a525f6ccca"
+    },
+    "enemy:fast:normal:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "d33751285db52334802b4231a26813bc6371d31a0647a14be9fd75a593288b92"
+    },
+    "enemy:fast:normal:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "42d8da650f21a613db1a64626499ad05174779d34e4ffd652f357be9cc8e82d8"
+    },
+    "enemy:fast:normal:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "6b080b655947b87b86af7d17f14c5e27a4fd8cf639a6f527561e5547d7f53230"
+    },
+    "enemy:fast:normal:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "872c00bff75815910ce30edd9e84336d42d6fe7d79cc20f0443faa2933ac517a"
+    },
+    "enemy:fast:normal:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "fd15e9ef282082b8a960e663878ea42ce7164b3041ea23466bb7d73dd4474a1a"
+    },
+    "enemy:power:flash:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "76b883cb6193615511c929f511d4dcb7a32f1461cd8d8b808123d844482df4c3"
+    },
+    "enemy:power:flash:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "1ba92e92317dc9ee9cc9fdbe71a7186bd89a61cf0a24a1a1168765f3f478a960"
+    },
+    "enemy:power:flash:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "2b1ac687b6dedabb91c1815737d3cbfa205ed51a9ce13b671924d20ee845b903"
+    },
+    "enemy:power:flash:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "b76d73037c8745a388ae34d805018ff0eea68af319158dbca71a76bc1b78e0f8"
+    },
+    "enemy:power:flash:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "b45478f54f61b51f72aa8fd02d9fe68467a0e8c366599bd81729a00dfb6c5ac8"
+    },
+    "enemy:power:flash:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "47e1d4ffeff6885a5a4a137a853491ffab29628f4b751a73692b28fdfd63a432"
+    },
+    "enemy:power:flash:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "2036cc0deec21d7610b5c8b19a8aa0e7139062518d00c670fdd393df23b04c3b"
+    },
+    "enemy:power:flash:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "338e605bc4bfe2f5fefe3bd87a865aaeb4799e9cda14d28820c0590c845ddf76"
+    },
+    "enemy:power:normal:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "296b69b16c06d1a2ecb879e7ba679038693a86c5fc2e1f0fb91957de596f2719"
+    },
+    "enemy:power:normal:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "5bf4814954f098ee383bee698b987e3b8331e7cd5be20f5516311212705b45c8"
+    },
+    "enemy:power:normal:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "bf8ad5feabc5bdcd9eac4d6dd2bc7693438d11004948747e8caa783fc08fa410"
+    },
+    "enemy:power:normal:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "c5c0f5bf53f5f8cb579a0dbb40ae50540f9c883a4420209d55777cd4edac0675"
+    },
+    "enemy:power:normal:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "e2d9e932a07e493460ff423c246554224bc3601deeb474ba9814018a3c480969"
+    },
+    "enemy:power:normal:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "25697516f4446020d35e7e0dd1e048ab48b69cc8d883ed7ae81f28b3c373346f"
+    },
+    "enemy:power:normal:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "b54f45e2edbc33e272f2635bda2f66a20755e4c89ff136ee51dabb5b65827003"
+    },
+    "enemy:power:normal:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "9697f45cef5c91b3f04a09c6bf8b2d557527f8f95fc5bbedba517d77bd68ec6f"
+    },
+    "enemy:armor:flash:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "25f5c146de0313ac05589b9c1ed564f67393c20dedf90558fbdd2b802edc2550"
+    },
+    "enemy:armor:flash:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "2f391f1bc35a69775500c616b79f48f2f63023b3766551e34716877e4b45c900"
+    },
+    "enemy:armor:flash:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "f1a44fc74459ea49cdd42a33ae5d8403aa6b02d2039d17ad682d6d0a6a68b403"
+    },
+    "enemy:armor:flash:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "c3908af53b105b5fd51280e3ed0cb24dbc20c5607101636e2bc792d8ec30c74e"
+    },
+    "enemy:armor:flash:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "2c8094276f2ba1226aa7fd1e62e0bfeae0b7b5ed4bdb6a5187c4088848fd8f74"
+    },
+    "enemy:armor:flash:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "8f5a360703868ec7101bb8f07fa9318cb08bbb8415b1c8dbb2a1808dbfab298a"
+    },
+    "enemy:armor:flash:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "5b8101fcf4c9993d2b3c801f635c2d633fa5fb6f780eb03a417f4767b7bdabba"
+    },
+    "enemy:armor:flash:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "9de908b8b9f1d55daa81b6538ff155169d9fa4bda7f27858ef14b9b7b55de1a5"
+    },
+    "enemy:armor:hp1:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "2c873ec2108935d01362b0cecef4ff4b7e0eaf15515e6cbb8c34f8bfc25fe3c1"
+    },
+    "enemy:armor:hp1:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "c177532b2f4f1a8ff7f4f79d28391d33ebb87a213485b1d1c6308b886810b2e5"
+    },
+    "enemy:armor:hp1:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "f4041e0900fb9415acda7abe72a2fd8cb957f8875fc574729203f6c446b1227d"
+    },
+    "enemy:armor:hp1:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "7c88258646a34e4d6c230ee0e6f737be1a6302a22ff89fa2731499ab33a7a76e"
+    },
+    "enemy:armor:hp1:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "6ac84a21ed2e99850be52f03a58574a6fc06d14bd320765ac851472d4477c948"
+    },
+    "enemy:armor:hp1:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "b4ce88d2bf7f7b6cd1d88686cf19ba94396f9ff3ae4d2098b4da271c71a5ca4a"
+    },
+    "enemy:armor:hp1:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "6f5516bcbe5a29993b814bf619c13e887015d2df888eb6080be7ea2d5377819b"
+    },
+    "enemy:armor:hp1:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "9ad94123b204bc740818729945f97f6cd24c9012b14de82eeac706f7b3eb018e"
+    },
+    "enemy:armor:hp2:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "12c73611599b5af70fed680c4b3d48687dbae7942129611dea009d76bf69fa59"
+    },
+    "enemy:armor:hp2:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "eef381825afaf500e1b753c2668bda49b7ddfaf2c9bb17013abf03cc82c9e5e2"
+    },
+    "enemy:armor:hp2:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "ac28ac3de12714cd8261c1d69f49a483b1a46f17326446e94740a166ed78e765"
+    },
+    "enemy:armor:hp2:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "90bbca1aa8109ffd5c5c0d6079bff4dbb8a1e96a8274aaf3814d0662a5e63f6d"
+    },
+    "enemy:armor:hp2:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "539eb32f7a92598a4b463d01830a2e6d2748d559ed54b5055d0f74ad97ff8145"
+    },
+    "enemy:armor:hp2:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "17a380260f31528f5c95787222f4f27cf4bb4704f91ab06df2951f76155c591a"
+    },
+    "enemy:armor:hp2:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "46f40de8b32562f7c6d213b3af0c1d1e91c8ce3d6972b302fc0e24ffb4c38c58"
+    },
+    "enemy:armor:hp2:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "772fc1d79f5cb914043c3e6852cba3dbb37c7d5f570d9d6105cabfc54315d4e7"
+    },
+    "enemy:armor:hp3:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "c21f8d1cf8803ccfa2ac745b33aa294dbf194984efcaa7d562821e41e74dc62e"
+    },
+    "enemy:armor:hp3:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "49f0cf676c5d6b4a30d1c68cea440a769b59b701d768980f0ef6fb8937e64aa4"
+    },
+    "enemy:armor:hp3:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "86e284b7ffd734ae4c0395fc897f1e0e9c3f924a687219bbb536fd9eeb76ed36"
+    },
+    "enemy:armor:hp3:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "52516ce7ff62477a353fb6ec0a7ff4a35b3c523f254d41e679c6691a4292af6f"
+    },
+    "enemy:armor:hp3:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "5c821dcf968343bf4851bcd0a633738037c0ef322c0c38a842e49b411143e744"
+    },
+    "enemy:armor:hp3:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "aa7267150e4e6f56f52f13ec64ed2fef493f9f84036011600ef0c641979f16d8"
+    },
+    "enemy:armor:hp3:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "b14f80519ab18f384fcdccc26c01ed2b13fceb2b162563949ccc9b3c4609bef4"
+    },
+    "enemy:armor:hp3:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "ad1a2a7ee137f0c2b8bc10f19c7072b45d9a28a1818377e8494fcffa3eccd7c6"
+    },
+    "enemy:armor:hp4:up:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "4210e4adfa725ddbcfab25c3d91956b1e212d4bbec3751c3017d2d9e487378f2"
+    },
+    "enemy:armor:hp4:up:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "b99ce25617582a02a421e3f160eb088667d04c0a29600e104dd2511705c6c829"
+    },
+    "enemy:armor:hp4:right:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "f4a2e0fd65f0ccea37f4e33696fcd4ce08d626831dbeb5ef03fff0e2a6b2bb86"
+    },
+    "enemy:armor:hp4:right:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "170f6afdffa1256daa5f76a8207aa76af59be4ed8a6ddb0e7359bce67b94de09"
+    },
+    "enemy:armor:hp4:down:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "525bf71b27af34226499f1a6ed0412ec18128bb695f989f873ac24c06b4426ad"
+    },
+    "enemy:armor:hp4:down:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "9a7f8b446ea3c16b703cc90b905e86f250cfad94f400c3b680d0ba6fe9411b00"
+    },
+    "enemy:armor:hp4:left:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "8a8abbf48e84b5ce97b0b465bd2b0bc1784f977c5842e3c715944649a2f1a53d"
+    },
+    "enemy:armor:hp4:left:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "8b28a2687319b259e3098a23eaa5cd3fd7d1965cd64fae9cdfec057ea9edc3ba"
+    },
+    "spawn:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "4b3ec890c25d326099321b5f2db7cf45c8a88ab00130ae23a9f3a861e38beba9"
+    },
+    "spawn:1": {
+      "width": 16,
+      "height": 16,
+      "sha256": "8b773edb14867d67b4f29222a5f34909a15e19db9820265af0778411e7b13072"
+    },
+    "spawn:2": {
+      "width": 16,
+      "height": 16,
+      "sha256": "679a9108582eb270ab92896988b529396612b562be17119ee117ab3f74b1dc86"
+    },
+    "shield": {
+      "width": 16,
+      "height": 16,
+      "sha256": "c09ce222313b90f2ebbd3319b8944413f7a900f4bba525e8314dffbf4aa31095"
+    },
+    "bullet:up": {
+      "width": 4,
+      "height": 4,
+      "sha256": "66d1ae8e26eeb7402dd74281df8843c549d0d9393e1dbae8af7fa2f79c004edd"
+    },
+    "bullet:right": {
+      "width": 4,
+      "height": 4,
+      "sha256": "1c2ddc2ca7c6fd11c9b1f52cceb96a25563b0777a499be2054308a41070a0b68"
+    },
+    "bullet:down": {
+      "width": 4,
+      "height": 4,
+      "sha256": "bf0f13bf472506c82ef84df62e9f23a9e18f8707f62d12dbebde3e16d0140a57"
+    },
+    "bullet:left": {
+      "width": 4,
+      "height": 4,
+      "sha256": "c8d21e917138a84c8fadc5d06c1111e5c1d0f9cb2e8495379cba704951b7e54b"
+    },
+    "impact:0": {
+      "width": 8,
+      "height": 8,
+      "sha256": "a97dd5da4097cb556cf393bf2afb9a6455308410b534f3f8fdfcd393fe3b2d75"
+    },
+    "impact:1": {
+      "width": 8,
+      "height": 8,
+      "sha256": "95cd3bb7e69b01f059509e70c5207c871b9702c1cca58e4a208a6576ce07ba7b"
+    },
+    "impact:2": {
+      "width": 8,
+      "height": 8,
+      "sha256": "d24fa1250db540346f5a8bd9db1f6bdcf6f332a13b127ca3479cb3a4b0d7fd37"
+    },
+    "explosion:0": {
+      "width": 16,
+      "height": 16,
+      "sha256": "9485979a8c2826cb9eb28ff47dba0fb31e0f115137800498977ae2f8f35d0ff3"
+    },
+    "explosion:1": {
+      "width": 24,
+      "height": 24,
+      "sha256": "fc27ffe87169b1fd905ebce6a6e96c0a949b5ed68bc75c7f83b720136b38fbc8"
+    },
+    "explosion:2": {
+      "width": 32,
+      "height": 32,
+      "sha256": "cf07426b75cf4aaf2ab624d1b91f6d54e44a2f463a539ad26f685bf201455367"
+    },
+    "item:star": {
+      "width": 16,
+      "height": 16,
+      "sha256": "e9962559b87eb28cd9a35279fdb9414159f7024a0368bf1eee6bfb2e1bb28180"
+    },
+    "item:helmet": {
+      "width": 16,
+      "height": 16,
+      "sha256": "051767259ea892164d8028cbc521fd5afe99ce378b51d7a4b1ce42343f6040ac"
+    },
+    "item:timer": {
+      "width": 16,
+      "height": 16,
+      "sha256": "75e3dd3c8a4b6fe9c96a7c5552ef7faebe6bc48bf87f6371f6dac62b6c698f77"
+    },
+    "item:shovel": {
+      "width": 16,
+      "height": 16,
+      "sha256": "3d8b1468817365347688273a7d1220834e70e0ac2a9862ac795db82942952679"
+    },
+    "item:grenade": {
+      "width": 16,
+      "height": 16,
+      "sha256": "456540105471a13c602917da0303bd79974939eb9b4365730c63ba699eda5801"
+    },
+    "item:tank": {
+      "width": 16,
+      "height": 16,
+      "sha256": "b1fe18527b8eee7fe5e2b6ad561b83214d393c6890d3653cc272af9c1dc0c9be"
+    },
+    "glyph:0": {
+      "width": 8,
+      "height": 8,
+      "sha256": "eb2d2dda2e30aa65c72af18e7e92862a93637130c8c7661f66542ec545860d63"
+    },
+    "glyph:1": {
+      "width": 8,
+      "height": 8,
+      "sha256": "e26e1074cb4e1805d3a2731a4a609e01427a66c2ec37a29bf8886cfbb6090668"
+    },
+    "glyph:2": {
+      "width": 8,
+      "height": 8,
+      "sha256": "e6df86f4b2d9aad620ca5971c4b0bfe2db8f22d9e15c149b2cbf29ac547e11af"
+    },
+    "glyph:3": {
+      "width": 8,
+      "height": 8,
+      "sha256": "a89c1fe442434d0bbcbf35a5dc9394e009efef289eb36eead7fbe763222805fa"
+    },
+    "glyph:4": {
+      "width": 8,
+      "height": 8,
+      "sha256": "5a438d4de071e758acdece3b9fa42352f5753cddc49d5687427e6a745ccff05a"
+    },
+    "glyph:5": {
+      "width": 8,
+      "height": 8,
+      "sha256": "4b276f185d2616800aef74135b7d68ce66a60f20f26fb2718cd82058f8e2b6b4"
+    },
+    "glyph:6": {
+      "width": 8,
+      "height": 8,
+      "sha256": "3360e8d28df4c930e3f5f5864e5c96dd860e518a3eb78dd0a129c7fd21dbd6e0"
+    },
+    "glyph:7": {
+      "width": 8,
+      "height": 8,
+      "sha256": "33e96fe6975bbeef76eb3b060ea219a74f38766f897350a2fe8291609cd2b7be"
+    },
+    "glyph:8": {
+      "width": 8,
+      "height": 8,
+      "sha256": "6faf68478e10e701c9623bb5ad3cb1658e02c25a116b360e99693d9c72e0322f"
+    },
+    "glyph:9": {
+      "width": 8,
+      "height": 8,
+      "sha256": "58261a3e9d94ee6d918079ebb590dc3ae6f57b66281610d0d0851b62415901c2"
+    },
+    "glyph: ": {
+      "width": 8,
+      "height": 8,
+      "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1"
+    },
+    "glyph:A": {
+      "width": 8,
+      "height": 8,
+      "sha256": "ebc96be50476612fcd529b97256d76b25fe098a251e6b8a00cb5518869750c88"
+    },
+    "glyph:B": {
+      "width": 8,
+      "height": 8,
+      "sha256": "f5b988a44c8475afab73368c024ba48b3e4acb98091f4ffa7b94d12449b99474"
+    },
+    "glyph:C": {
+      "width": 8,
+      "height": 8,
+      "sha256": "5b033a4e7793c28217bd98532e2cc036bc3a7798314815aa163207e9da745a87"
+    },
+    "glyph:D": {
+      "width": 8,
+      "height": 8,
+      "sha256": "52ae02b872001577d5f3dec617a86e8b77d7e2cefcd1553017925255d4943b27"
+    },
+    "glyph:E": {
+      "width": 8,
+      "height": 8,
+      "sha256": "3aacc3e017b7f6abcb57e5754c44427ee958d54e9bf362b9e4d81564d87eafe2"
+    },
+    "glyph:F": {
+      "width": 8,
+      "height": 8,
+      "sha256": "59c8681fdf6c64a585bafe6d2980d9f8c526ef977a1a1ace39229cfad94af4f8"
+    },
+    "glyph:G": {
+      "width": 8,
+      "height": 8,
+      "sha256": "e4fd7730316cb68a6634d6c6e9622962265999730cd02f9d6e5eda953ec73b4b"
+    },
+    "glyph:H": {
+      "width": 8,
+      "height": 8,
+      "sha256": "434493206edfe4bfab0d6465ef4959afdb8e2396c06883dab21996cd68efa950"
+    },
+    "glyph:I": {
+      "width": 8,
+      "height": 8,
+      "sha256": "87f65724877fc43623d87780d6e852462429e5cc28de163dcf1d85f77caf0fdb"
+    },
+    "glyph:J": {
+      "width": 8,
+      "height": 8,
+      "sha256": "68dd304f93a5819afc9ca1ce48ea5881b87fe5688b7e5be050964b0dfd29ea4e"
+    },
+    "glyph:K": {
+      "width": 8,
+      "height": 8,
+      "sha256": "997695469191c9c7fcb9d4a075dbfb8e80d8a7464aaf6c3947916a2a354e2fdb"
+    },
+    "glyph:L": {
+      "width": 8,
+      "height": 8,
+      "sha256": "1e3edafe484f0bcc42b740a95d35de4d8eccd930b2d28be60f0cd1e4c6417156"
+    },
+    "glyph:M": {
+      "width": 8,
+      "height": 8,
+      "sha256": "652cae30d1265dcf3ebf41960f56a33dc7ce1ad2c07e4e62689c99805ebc239f"
+    },
+    "glyph:N": {
+      "width": 8,
+      "height": 8,
+      "sha256": "383466e89bdd4357ee7427a21e2a4d652851f410ef861160754a47a8381700e3"
+    },
+    "glyph:O": {
+      "width": 8,
+      "height": 8,
+      "sha256": "908ac081f8c7ec1ca2b4754447171865325ddbbc7f5f6203c0ea6c27b67ca5ec"
+    },
+    "glyph:P": {
+      "width": 8,
+      "height": 8,
+      "sha256": "ed5591430e87166756575442b5f46a364db4c32086009c452561c817d648280c"
+    },
+    "glyph:Q": {
+      "width": 8,
+      "height": 8,
+      "sha256": "99936a63fb464c1e8c0b7a715c6ff58358858cfc58a7c1afc4dda5a90434d04a"
+    },
+    "glyph:R": {
+      "width": 8,
+      "height": 8,
+      "sha256": "6f9f8c199fc889e13cf6297b689258be5e59b42aae708d996c3a976b467622fa"
+    },
+    "glyph:S": {
+      "width": 8,
+      "height": 8,
+      "sha256": "feba97e9ef6f5b4971d831b160f6ebbac27ca1f005f76f305c13874c5192902c"
+    },
+    "glyph:T": {
+      "width": 8,
+      "height": 8,
+      "sha256": "08cf86dbad1b4323a549c0ed8b246eb97f6d61bac63a3889ceb1d2242eba720a"
+    },
+    "glyph:U": {
+      "width": 8,
+      "height": 8,
+      "sha256": "be936ce86dab53462e9e45c104ddd8239f3df7120a7449275974afe3f116e98a"
+    },
+    "glyph:V": {
+      "width": 8,
+      "height": 8,
+      "sha256": "125f5d29fd3176b9a22f6b1520893fc68d267ce328433bfc69f570a86ab85d33"
+    },
+    "glyph:W": {
+      "width": 8,
+      "height": 8,
+      "sha256": "2d2462fae3aee133f4dc86ea76d9a9203c4607c52be420c6f5247495904309b3"
+    },
+    "glyph:X": {
+      "width": 8,
+      "height": 8,
+      "sha256": "a806b52a7d8569b2e790e6e8295d37db9fb43722ebf0bc68f398fb402ac9dc9a"
+    },
+    "glyph:Y": {
+      "width": 8,
+      "height": 8,
+      "sha256": "fa59c98804e6823eac22cef8b36e86a5a001174fa32494cafd328f7e6eac62b1"
+    },
+    "glyph:Z": {
+      "width": 8,
+      "height": 8,
+      "sha256": "7bab7ff16e49c76ce168c788471f4c8da2b8df9be4d0c6179544bc9018b6318a"
+    },
+    "glyph:-": {
+      "width": 8,
+      "height": 8,
+      "sha256": "03441c623a73d7380c7fc0ec1ce576d4220b0c461bbc6f92c9f33903d2f290a6"
+    },
+    "glyph:.": {
+      "width": 8,
+      "height": 8,
+      "sha256": "c87ef7a7e7950843c737064414b7643d2db0d7cfdac960aca90be98ea4337b15"
+    },
+    "glyph:©": {
+      "width": 8,
+      "height": 8,
+      "sha256": "bdcbd2f7a329721efa03403cb4d881cf5e6fe61f7832a042817951454d3e8b95"
+    },
+    "enemy-icon": {
+      "width": 8,
+      "height": 8,
+      "sha256": "3c80ec5a62e9d855f6a35c861cc0742064e5411bf89bfe27d3585666d1449228"
+    },
+    "life:0": {
+      "width": 8,
+      "height": 8,
+      "sha256": "e3ccb68cb6d4d7115584e015533a596392b0acc79fb4d8d8e8f2a38eb0ba6d10"
+    },
+    "life:1": {
+      "width": 8,
+      "height": 8,
+      "sha256": "a1fc15db87a6606ddd3a783fde31afce4d3812e043ee045d159fbe9160c048ef"
+    },
+    "flag": {
+      "width": 16,
+      "height": 16,
+      "sha256": "4ae0947102b263a2615d23890f3f6be43271c7e53eca8ed23a60108dd60bb557"
+    },
+    "gray": {
+      "width": 1,
+      "height": 1,
+      "sha256": "80752de9e9ed586a87302881822fc971b3722902cfa191dadcc6b5810324a499"
+    },
+    "pause": {
+      "width": 56,
+      "height": 16,
+      "sha256": "4f9a28083f540bd7525ab45b9ec20c8040ff454c9a27dcd983d546cf5bf1e4b1"
+    },
+    "loss": {
+      "width": 32,
+      "height": 16,
+      "sha256": "132959ae35f2783d8aa510ca402be8eb2e2ae47506f1e0323278813eb4deac84"
+    },
+    "glyph:Ⅱ": {
+      "width": 8,
+      "height": 8,
+      "sha256": "04ce36128b2c1a97ee2e74c6ad516070d9108ec595d55c6de459c3183321417a"
+    }
+  },
+  "scenes": {
+    "menu-0": "3ca8b1c6a53efdb3c7d9a31f4ee0a4478b60a6c321ca24e097e093f50f27b474",
+    "menu-1": "167e628de48996a91f341fe56f1a904c92f65465d184ed817c69218d7be3d46c",
+    "menu-2": "e5334ec61b7b19be2582a177073912ccdce8a21248193f6be0b36f1dae7c1788",
+    "stage-35": "dfeeeae5fe9c500f0a6cdc432e50dfa6a84135878eec1dfb2d743462abafabcd",
+    "intro-0-false": "a1dbcf00854220c3b284f59f01d34ff5687615d75aa6cd044fac575b37eb3e0a",
+    "intro-0-true": "ded2ee6a2b0803c24891e38f81c17f001a6ad5ebdda1f8c889d8ca6cb3b88eae",
+    "intro-500-false": "a1dbcf00854220c3b284f59f01d34ff5687615d75aa6cd044fac575b37eb3e0a",
+    "intro-500-true": "ded2ee6a2b0803c24891e38f81c17f001a6ad5ebdda1f8c889d8ca6cb3b88eae",
+    "intro-1000-false": "3ede8320a64868feb851b2ecae664440c3bf0f12e906cd9d14807331b4514428",
+    "intro-1000-true": "563874f32166e23c8c16f08d0b4d526d7a6933e71e1b59b227b645357d2f4bae",
+    "intro-1500-false": "7bb03d688ba3b8b18012e3ea96a83fb6c4743239aaab865a253b956f5456feb9",
+    "intro-1500-true": "fb193f8dc12414288430d85afd289ef48795f2f6145d71a003e344296c45fada",
+    "intro-2000-false": "d5aabdca1297bd7d33e1e4470760ee9538a40b65df4a0f455b3ac86668c1ccd4",
+    "intro-2000-true": "8b84f1a1c798a4c1b2a9f2f2408043e517bb488d07163e7a983ccea5e8592a83",
+    "score-single-0": "e941be0a6dd33d6ff3bd75936dd94fb547442c44096066e88359a0b3ae53f207",
+    "score-single-600": "4d279a709e82bbc9def1d3723fd6933da95a221861915bc5b6c380087242522e",
+    "score-single-1600": "5ea5a9f7af094f7d605d30286e509f5807c5bbe79a188527645455d934368796",
+    "score-single-6000": "84ccafbca49233fc035298df6c0cc698bbb39dc85c35365795e95213cc42887d",
+    "score-coop-0": "3810f989df868e01ca5b567ecbb910fb8e26261b8f1adc019dd1e357f1b02ff3",
+    "score-coop-600": "a4c3eacf4d16ab4a8ced655ca914a5d585a5811ab187e30c70150f468af69438",
+    "score-coop-1600": "928a2b03591831710ed0de7346df333bdfcbf83179fc1ef8d903576c4e79e41d",
+    "score-coop-6000": "025b60ecd59b1fe266fe826592c919963a5b75b27b573e5aeaf5968020561100",
+    "gameover": "325251a8c2632a167dc3d7261d75522b72da535168a1ac9aa17283e994d1c8ab",
+    "entities-0": "b029407f99762913930958c06b268ca51e06fb20ae5a9773d591adce42080608",
+    "entities-16": "c4f3dfc729ef030fb5c4246ca5ca7628d1aa9396053ab58f69089d38aec89275",
+    "locked-hud": "9566e911b4427b1f7643a29c0ce8814cf85829950f6d029325da623c83260708",
+    "editor": "b40fe1ccb5f50cffb6664ba7754f379f9a4df041579012287fae6e2c40a3fe99"
+  },
+  "hiscore": [
+    "e567a2577345d4ae0f88e0edb382023099a1cce0c50f38825bb291172e8f7c23",
+    "f0bcfe92f4474b9a968e2dd46c3cd2c1e5dd759b2a7c07980d6d51223cd5baea",
+    "8f6e6d3a6ec03aa68e6d9dc0664678e668a99d0f1f2c1f9fb4af226c410b6aa9",
+    "08ec68db9904befe16364bdf139161e0dd9f393c3a2dad94c2adb9839036ebc5"
+  ],
+  "menuHeaders": {
+    "single-zero": {
+      "playerScores": [
+        0
+      ],
+      "highScore": 20000,
+      "labels": [
+        "00",
+        "20000"
+      ],
+      "sha256": "72ce471cb7e58b95d2131fb8dbdb40c62248ba24e779970e77704768ede4330e"
+    },
+    "single-small": {
+      "playerScores": [
+        1
+      ],
+      "highScore": 9,
+      "labels": [
+        "1",
+        "9"
+      ],
+      "sha256": "6fa158f8d306da6f652d1ee2e68795e5b54a52a39c89e08348aa10abfb8c99d7"
+    },
+    "single-four": {
+      "playerScores": [
+        1000
+      ],
+      "highScore": 1000,
+      "labels": [
+        "1000",
+        "1000"
+      ],
+      "sha256": "eec2b7973e6bae386987600bc521ccd94cee20be5f4d12dcbfa40c347aac2856"
+    },
+    "single-five": {
+      "playerScores": [
+        12345
+      ],
+      "highScore": 12345,
+      "labels": [
+        "12345",
+        "12345"
+      ],
+      "sha256": "2e546ce0671f2fbe07cfa20bcdf9f7ededc84e10a5f7841813b1631e40aafc5e"
+    },
+    "single-six": {
+      "playerScores": [
+        206300
+      ],
+      "highScore": 206300,
+      "labels": [
+        "206300",
+        "206300"
+      ],
+      "sha256": "78223cb181514a10743fa745b47e0dd6de905937985325ed7fbe8288aff72892"
+    },
+    "single-max": {
+      "playerScores": [
+        999999
+      ],
+      "highScore": 999999,
+      "labels": [
+        "999999",
+        "999999"
+      ],
+      "sha256": "c552d430872af39e16128b4a36f2319f43ad7f7cd3512eb7c5a5446d2e0ccfee"
+    },
+    "single-million": {
+      "playerScores": [
+        1000000
+      ],
+      "highScore": 1000000,
+      "labels": [
+        "00",
+        "00"
+      ],
+      "sha256": "45917a73356c131c1c81936698bca477e963c3757c2753a9ed5a806c1984fa20"
+    },
+    "single-million-tail": {
+      "playerScores": [
+        1000200
+      ],
+      "highScore": 1000200,
+      "labels": [
+        "200",
+        "200"
+      ],
+      "sha256": "e2d81d50d78e9bf6b4f8b9a5f7561cdaceaf2ab7e8bd11eb4c651e8889596252"
+    },
+    "coop-zero": {
+      "playerScores": [
+        0,
+        0
+      ],
+      "highScore": 20000,
+      "labels": [
+        "00",
+        "20000",
+        "00"
+      ],
+      "sha256": "6c3fd35fb14432f14a45b2d19b61275944f7c1c12aa0d9981fa60f109625ef92"
+    },
+    "coop-four": {
+      "playerScores": [
+        1000,
+        1000
+      ],
+      "highScore": 1000,
+      "labels": [
+        "1000",
+        "1000",
+        "1000"
+      ],
+      "sha256": "cad371ec127f5029a10c82ad703ac56e24599e60a4a0ddc75ca5a52bb3b5ec51"
+    },
+    "coop-five": {
+      "playerScores": [
+        12345,
+        54321
+      ],
+      "highScore": 54321,
+      "labels": [
+        "12345",
+        "54321",
+        "54321"
+      ],
+      "sha256": "66111b657d4b1b91cc387c35a8b2981f96621a5a5a9e9692bb0f36afd34f713d"
+    },
+    "coop-six": {
+      "playerScores": [
+        206300,
+        999999
+      ],
+      "highScore": 999999,
+      "labels": [
+        "206300",
+        "999999",
+        "999999"
+      ],
+      "sha256": "f6bcf3e2573cfda23bd45c6ddbac28046dace55171a0da74c6d6cead17ceb9a2"
+    },
+    "coop-million": {
+      "playerScores": [
+        1000000,
+        1000000
+      ],
+      "highScore": 1000000,
+      "labels": [
+        "00",
+        "00",
+        "00"
+      ],
+      "sha256": "14e54c3f96194b864d6da25ce22b2cc1ad90d6f15c5e50b420a3ccccb83e6c40"
+    },
+    "coop-million-tail": {
+      "playerScores": [
+        1000200,
+        1000200
+      ],
+      "highScore": 1000200,
+      "labels": [
+        "200",
+        "200",
+        "200"
+      ],
+      "sha256": "62a186a279b2d11919009a02c2b18cfce85d6d1502332feb40068e0ff0306a8b"
+    }
+  }
+}

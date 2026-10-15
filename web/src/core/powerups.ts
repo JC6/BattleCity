@@ -21,7 +21,7 @@ export function dropPowerUp(context: CoreContext): void {
   state.powerUp = {
     kind: POWER_UP_TABLE[randomInt(state, POWER_UP_TABLE.length)]!, x, y,
   };
-  context.events.push({ type: 'powerup' });
+  context.events.push({ type: 'powerup', action: 'appear', kind: state.powerUp.kind, playerIndex: null });
 }
 
 export function collectPowerUp(context: CoreContext,
@@ -29,13 +29,15 @@ export function collectPowerUp(context: CoreContext,
   const state = context.state;
   const powerUp = state.powerUp;
   if (!powerUp) return;
-  const playerTank = state.tanks.find(tank => tank.team === 'player' && tank.spawnTicks === 0 &&
-    Math.abs(tank.x - powerUp.x) < 12 && Math.abs(tank.y - powerUp.y) < 12);
+  // E972 checks player two before player one, independently of tank insertion order.
+  const playerTank = [1, 0].map(index => state.tanks.find(tank => tank.team === 'player' &&
+    tank.playerIndex === index && tank.spawnTicks === 0 &&
+    Math.abs(tank.x - powerUp.x) < 12 && Math.abs(tank.y - powerUp.y) < 12)).find(Boolean);
   if (!playerTank || playerTank.playerIndex === null) return;
   const player = state.players[playerTank.playerIndex]!;
   state.powerUp = null;
   addScore(context, player.index, 500);
-  context.events.push({ type: 'powerup' });
+  context.events.push({ type: 'powerup', action: 'pickup', kind: powerUp.kind, playerIndex: player.index });
   switch (powerUp.kind) {
     case 'helmet': playerTank.shieldTicks = timerDuration(HELMET_TICKS, state.tick); break;
     case 'timer': state.freezeTicks = timerDuration(FREEZE_TICKS, state.tick); break;
@@ -58,7 +60,7 @@ export function collectPowerUp(context: CoreContext,
       break;
     case 'tank':
       player.lives++;
-      context.events.push({ type: 'extra-life' });
+      context.events.push({ type: 'extra-life', playerIndex: player.index, reason: 'powerup' });
       break;
   }
 }

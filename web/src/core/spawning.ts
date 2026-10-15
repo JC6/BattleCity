@@ -42,6 +42,12 @@ export function updateSpawning(context: CoreContext): void {
     if (player.respawnTicks > 1) player.respawnTicks--;
     else if (player.respawnTicks === 1) spawnPlayer(context, player.index);
   }
+  updateEnemySpawning(context);
+}
+
+/** Enemy-wave updates are also usable by the isolated terminal presentation. */
+export function updateEnemySpawning(context: CoreContext): void {
+  const state = context.state;
   if (state.spawnTimer > 0) state.spawnTimer--;
   const enemies = state.tanks.filter(tank => tank.team === 'enemy');
   const maximum = maximumEnemies(state.mode);

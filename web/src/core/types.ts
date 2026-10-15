@@ -3,6 +3,8 @@ export type GameMode = 'single' | 'coop';
 export type GamePhase = 'intro' | 'playing' | 'paused' | 'won' | 'lost';
 export type EnemyKind = 'basic' | 'fast' | 'power' | 'armor';
 export type PowerUpKind = 'helmet' | 'timer' | 'shovel' | 'star' | 'grenade' | 'tank';
+/** Original ten physical guns: player primary 0/1, enemy 2–7, player secondary 8/9. */
+export type GunSlot = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
 export enum Tile {
   Empty = 0,
@@ -65,10 +67,10 @@ export interface Tank {
 
 export interface Bullet {
   id: number;
+  /** Stable physical slot except when a two-shot player moves the primary into 8/9. */
+  gunSlot: GunSlot;
   team: 'player' | 'enemy';
   playerIndex: 0 | 1 | null;
-  /** Fixed enemy gun slot survives its firing tank's destruction; null for players. */
-  enemySlot: number | null;
   x: number;
   y: number;
   direction: Direction;
@@ -86,6 +88,8 @@ export interface PowerUp {
 
 export interface Effect {
   kind: 'explosion' | 'points';
+  /** Base and tank bursts can use different presentation without changing combat. */
+  explosionVariant?: 'tank' | 'base';
   /** Logical-pixel center for both explosions and score labels. */
   x: number;
   y: number;
@@ -93,9 +97,15 @@ export interface Effect {
   value?: number;
 }
 
-export interface GameEvent {
-  type: 'fire' | 'hit' | 'explosion' | 'powerup' | 'extra-life' | 'stage-start' | 'game-over' | 'stage-clear';
-}
+export type GameEvent =
+  | { type: 'fire'; team: Tank['team']; playerIndex: 0 | 1 | null; enemyKind: EnemyKind | null; stars: number }
+  | { type: 'hit'; target: 'brick' | 'steel' | 'boundary' | 'tank'; team: Bullet['team'];
+      playerIndex: 0 | 1 | null; gunSlot?: GunSlot; steelPower?: boolean;
+      tankTeam?: Tank['team']; targetPlayerIndex?: 0 | 1 | null; enemyKind?: EnemyKind }
+  | { type: 'explosion'; owner: 'player' | 'enemy' | 'base'; playerIndex: 0 | 1 | null; enemyKind: EnemyKind | null }
+  | { type: 'powerup'; action: 'appear' | 'pickup'; kind: PowerUpKind; playerIndex: 0 | 1 | null }
+  | { type: 'extra-life'; playerIndex: 0 | 1; reason: 'score' | 'powerup' }
+  | { type: 'stage-start' | 'game-over' | 'stage-clear' };
 
 export interface GameState {
   tick: number;

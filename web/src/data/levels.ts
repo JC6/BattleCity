@@ -6,6 +6,18 @@ import { ORIGINAL_ENEMIES, ORIGINAL_MAPS } from './original';
 // Wall masks use top-left, top-right, bottom-left, bottom-right bit order.
 const WALL_MASKS = [0b1010, 0b1100, 0b0101, 0b0011, 0b1111];
 
+/** Decode one 16px terrain block into TL, TR, BL, BR 8px cells. */
+export function decodeTerrainCode(code: number): [Tile, Tile, Tile, Tile] {
+  if (!Number.isInteger(code) || code < 0 || code > 15) {
+    throw new Error(`Invalid terrain nibble ${code}.`);
+  }
+  const mask = code < 10 ? WALL_MASKS[code % 5]! : 0b1111;
+  const terrain = code < 5 ? Tile.Brick : code < 10 ? Tile.Steel
+    : code === 10 ? Tile.Water : code === 11 ? Tile.Forest
+      : code === 12 ? Tile.Ice : Tile.Empty;
+  return [0, 1, 2, 3].map(quadrant => mask & (1 << quadrant) ? terrain : Tile.Empty) as [Tile, Tile, Tile, Tile];
+}
+
 export function expandOriginalMap(map: readonly (readonly number[])[]): Tile[] {
   if (map.length !== 13 || map.some((row) => row.length !== 13)) {
     throw new Error('An original stage must contain 13 × 13 blocks.');
@@ -13,20 +25,11 @@ export function expandOriginalMap(map: readonly (readonly number[])[]): Tile[] {
   const tiles: Tile[] = Array.from({ length: GRID_SIZE * GRID_SIZE }, () => Tile.Empty);
   for (let row = 0; row < 13; row++) {
     for (let col = 0; col < 13; col++) {
-      const nibble = map[row]![col]!;
-      if (!Number.isInteger(nibble) || nibble < 0 || nibble > 15) {
-        throw new Error(`Invalid terrain nibble ${nibble}.`);
-      }
-      const wall = nibble < 10;
-      const mask = wall ? WALL_MASKS[nibble % 5]! : 0b1111;
-      const terrain = nibble < 5 ? Tile.Brick : nibble < 10 ? Tile.Steel
-        : nibble === 10 ? Tile.Water : nibble === 11 ? Tile.Forest
-          : nibble === 12 ? Tile.Ice : Tile.Empty;
+      const cells = decodeTerrainCode(map[row]![col]!);
       for (let quadrant = 0; quadrant < 4; quadrant++) {
-        if ((mask & (1 << quadrant)) === 0) continue;
         const x = col * 2 + (quadrant % 2);
         const y = row * 2 + Math.floor(quadrant / 2);
-        tiles[y * GRID_SIZE + x] = terrain;
+        tiles[y * GRID_SIZE + x] = cells[quadrant]!;
       }
     }
   }
@@ -38,10 +41,22 @@ export function expandOriginalMap(map: readonly (readonly number[])[]): Tile[] {
   return tiles;
 }
 
-export const LEVELS: readonly LevelDefinition[] = ORIGINAL_MAPS.map((map, index) => ({
-  tiles: expandOriginalMap(map),
-  enemies: ORIGINAL_ENEMIES[index]!.map((kind) => ENEMY_KINDS[kind]!),
-}));
+// The recorded original clears these cells around its separately installed base.
+// Stage 10: source 644.0s; stage 21: source 1332.5s (implementation baseline review).
+// Keep the raw maps and generic decoder intact; apply only observed standard-stage cells.
+const BASE_CLEARANCE: Readonly<Partial<Record<number, readonly (readonly [number, number])[]>>> = {
+  10: [[10, 23], [15, 23], [10, 24], [15, 24], [10, 25], [15, 25]],
+  21: [[10, 22], [11, 22], [12, 22], [13, 22], [14, 22], [15, 22], [10, 23], [15, 23]],
+};
+
+export const LEVELS: readonly LevelDefinition[] = ORIGINAL_MAPS.map((map, index) => {
+  const tiles = expandOriginalMap(map);
+  for (const [x, y] of BASE_CLEARANCE[index + 1] ?? []) tiles[y * GRID_SIZE + x] = Tile.Empty;
+  return {
+    tiles,
+    enemies: ORIGINAL_ENEMIES[index]!.map((kind) => ENEMY_KINDS[kind]!),
+  };
+});
 
 /** Stage numbers are one based; each play session receives independent terrain and queue. */
 export function getLevel(stage: number): LevelDefinition {

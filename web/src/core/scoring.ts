@@ -11,7 +11,7 @@ export function addScore(context: CoreContext, playerIndex: number, value: numbe
     } else player.lives++;
     // Grant a life at the first 20,000 points of a game, only once.
     player.nextExtraLife = Number.POSITIVE_INFINITY;
-    context.events.push({ type: 'extra-life' });
+    context.events.push({ type: 'extra-life', playerIndex: player.index, reason: 'score' });
   }
 }
 

@@ -82,3 +82,6 @@ web/coverage/
 web/playwright-report/
 web/test-results/
 web/.cache/
+
+# Keep validation documents and archives local.
+/docs/validation/

@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { GRID_SIZE, normalizeStage } from '../../src/core/constants';
+import { GameEngine } from '../../src/core/engine';
+import { FORTRESS_CELLS } from '../../src/core/rules';
 import { Tile } from '../../src/core/types';
 import { expandOriginalMap, getLevel, LEVELS } from '../../src/data/levels';
 import { ORIGINAL_ENEMIES, ORIGINAL_MAPS } from '../../src/data/original';
@@ -31,6 +33,63 @@ describe('Famicom stage dataset', () => {
     const tiles = expandOriginalMap(map);
     expect([tiles[0], tiles[1], tiles[26], tiles[27]]).toEqual([Tile.Empty, Tile.Brick, Tile.Empty, Tile.Brick]);
     expect([tiles[2], tiles[3], tiles[28], tiles[29]]).toEqual([Tile.Empty, Tile.Steel, Tile.Empty, Tile.Steel]);
+  });
+
+  it.each([10, 21, 45, 56])('matches the observed base surroundings in stage %i', stage => {
+    const tiles = getLevel(stage).tiles;
+    // Literal 6 × 4 region, from the source 644.0s and 1332.5s opening PNGs.
+    // B is the original eight-cell fortress; base footprint itself is stored as empty.
+    const expected = [
+      [Tile.Empty, Tile.Empty, Tile.Empty, Tile.Empty, Tile.Empty, Tile.Empty],
+      [Tile.Empty, Tile.Brick, Tile.Brick, Tile.Brick, Tile.Brick, Tile.Empty],
+      [Tile.Empty, Tile.Brick, Tile.Empty, Tile.Empty, Tile.Brick, Tile.Empty],
+      [Tile.Empty, Tile.Brick, Tile.Empty, Tile.Empty, Tile.Brick, Tile.Empty],
+    ];
+    expect(Array.from({ length: 4 }, (_, row) => tiles.slice((row + 22) * 26 + 10, (row + 22) * 26 + 16))).toEqual(expected);
+  });
+
+  it('preserves neighboring terrain outside the observed stage 21 clearance', () => {
+    const tiles = getLevel(21).tiles;
+    expect(tiles[22 * 26 + 9]).toBe(Tile.Steel);
+    expect(tiles[22 * 26 + 16]).toBe(Tile.Brick);
+    expect(tiles[21 * 26 + 12]).toBe(Tile.Brick);
+    expect(tiles[21 * 26 + 13]).toBe(Tile.Brick);
+  });
+
+  it('changes exactly the 14 observed cells and leaves every other decoded map cell intact', () => {
+    const corrected: Record<number, number[]> = {
+      10: [23 * 26 + 10, 23 * 26 + 15, 24 * 26 + 10, 24 * 26 + 15, 25 * 26 + 10, 25 * 26 + 15],
+      21: [22 * 26 + 10, 22 * 26 + 11, 22 * 26 + 12, 22 * 26 + 13, 22 * 26 + 14, 22 * 26 + 15, 23 * 26 + 10, 23 * 26 + 15],
+    };
+    for (let stage = 1; stage <= 35; stage++) {
+      const raw = expandOriginalMap(ORIGINAL_MAPS[stage - 1]!);
+      const final = getLevel(stage).tiles;
+      const changed = final.flatMap((tile, i) => tile === raw[i] ? [] : [i]);
+      expect(changed, `stage ${stage}`).toEqual(corrected[stage] ?? []);
+      for (const i of changed) expect([raw[i], final[i]]).toEqual([Tile.Brick, Tile.Empty]);
+    }
+    expect(getLevel(45).enemies).toEqual(getLevel(35).enemies);
+    expect(getLevel(56).enemies).toEqual(getLevel(35).enemies);
+  });
+
+  it.each(['single', 'coop'] as const)('initializes corrected terrain and brick masks in %s mode', mode => {
+    const engine = new GameEngine(getLevel(21), { mode, stage: 21 });
+    for (const i of [22 * 26 + 10, 22 * 26 + 11, 22 * 26 + 12, 22 * 26 + 13, 22 * 26 + 14, 22 * 26 + 15, 23 * 26 + 10, 23 * 26 + 15]) {
+      expect([engine.state.tiles[i], engine.state.brickMasks[i]]).toEqual([Tile.Empty, 0]);
+    }
+    for (const i of FORTRESS_CELLS) expect([engine.state.tiles[i], engine.state.brickMasks[i]]).toEqual([Tile.Brick, 15]);
+    expect(engine.state.baseAlive).toBe(true);
+  });
+
+  it('preserves custom terrain in the same cells without mutating the supplied draft', () => {
+    const custom = getLevel(21);
+    const painted = [22 * 26 + 10, 22 * 26 + 12, 23 * 26 + 15, 25 * 26 + 10];
+    for (const i of painted) custom.tiles[i] = Tile.Brick;
+    const before = [...custom.tiles];
+    const engine = new GameEngine(custom, { mode: 'coop', stage: 21 });
+    for (const i of painted) expect([engine.state.tiles[i], engine.state.brickMasks[i]]).toEqual([Tile.Brick, 15]);
+    expect(custom.tiles).toEqual(before);
+    expect(getLevel(21).tiles[22 * 26 + 12]).toBe(Tile.Empty);
   });
 
   it('repeats maps with stage 35 enemies during the second round only', () => {
