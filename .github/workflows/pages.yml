@@ -39,9 +39,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: desktop-browser-reports
-          path: |
-            web/playwright-report/
-            web/test-results/
+          path: web/test-results/acceptance/
           if-no-files-found: ignore
           retention-days: 7
       - uses: actions/configure-pages@v5

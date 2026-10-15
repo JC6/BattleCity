@@ -5,7 +5,7 @@ import { appendFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/pro
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { assertCommandCleanup, assertSourceBinding, bindFinalSource, classifyPlaywrightReport, cleanupExitedGroup, command, createCommandCleanup, createLogReader, fingerprintEntries, inspectProductionArtifacts, runtimeEnvironment, saveFinalReport, signalOwnedGroup, stopAndKillOwnedTargets } from './validate-desktop.mjs';
+import { assertCommandCleanup, assertSourceBinding, bindFinalSource, classifyPlaywrightReport, cleanupExitedGroup, command, createCommandCleanup, createLogReader, fingerprintEntries, inspectProductionArtifacts, readBrowserReport, runtimeEnvironment, saveFinalReport, signalOwnedGroup, stopAndKillOwnedTargets } from './validate-desktop.mjs';
 
 const expected = { chromium: 1, webkit: 1 };
 const digest = value => createHash('sha256').update(value).digest('hex');
@@ -32,6 +32,28 @@ test('accepts executed passing cases from both desktop engines', () => {
   const verdict = classifyPlaywrightReport(completedReport(), expected, validCommand());
   assert.equal(verdict.status, 'passed');
   assert.equal(verdict.testsExecuted, 2);
+});
+
+test('reads only the current archive and cannot substitute a top-level or previous passing report', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'battlecity-acceptance-test-'));
+  try {
+    const previous = path.join(directory, 'acceptance', 'previous', 'e2e');
+    const current = path.join(directory, 'acceptance', 'current', 'e2e');
+    await mkdir(previous, { recursive: true }); await mkdir(current, { recursive: true });
+    const passing = JSON.stringify(completedReport());
+    await writeFile(path.join(directory, 'e2e.json'), passing);
+    await writeFile(path.join(previous, 'e2e.json'), passing);
+    const filename = path.join(current, 'e2e.json');
+    const read = () => readBrowserReport(filename, expected, validCommand());
+    assert.equal((await read()).status, 'failed', 'Missing current report cannot use either old report');
+    await writeFile(filename, '{');
+    assert.equal((await read()).status, 'failed', 'Malformed current report cannot use either old report');
+    await writeFile(filename, passing);
+    assert.equal((await read()).status, 'passed');
+    assert.equal((await readBrowserReport(filename, expected, validCommand({ interrupted: true }))).status, 'failed');
+    assert.equal(await readFile(path.join(previous, 'e2e.json'), 'utf8'), passing);
+    assert.equal(await readFile(path.join(directory, 'e2e.json'), 'utf8'), passing);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test('rejects discovery reports with no actual execution', () => {
@@ -453,10 +475,12 @@ test('passes explicitly selected runtime paths to child processes without changi
     PLAYWRIGHT_BROWSERS_PATH: path.join(directory, 'browser-cache'),
     LD_LIBRARY_PATH: path.join(directory, 'user-libs'),
     LP_NUM_THREADS: '1', WEBKIT_SKIA_ENABLE_CPU_RENDERING: '1', WEBKIT_SKIA_CPU_PAINTING_THREADS: '1',
-    BATTLECITY_PRODUCTION: '1',
+    BATTLECITY_PRODUCTION: '1', BATTLECITY_ACCEPTANCE_DIR: path.join(directory, 'old-acceptance'),
   };
   const original = { ...supplied };
   try {
+    assert.equal(Object.hasOwn(runtimeEnvironment(supplied), 'BATTLECITY_ACCEPTANCE_DIR'), false,
+      'The caller cannot select a previous acceptance archive');
     const program = 'console.log(JSON.stringify({ paths:Object.fromEntries(["PATH","TMPDIR","PLAYWRIGHT_BROWSERS_PATH","LD_LIBRARY_PATH","LP_NUM_THREADS","WEBKIT_SKIA_ENABLE_CPU_RENDERING","WEBKIT_SKIA_CPU_PAINTING_THREADS"].map(key=>[key,process.env[key]])),executable:process.execPath,temporaryDirectory:require("node:os").tmpdir(),production:process.env.BATTLECITY_PRODUCTION??null }));';
     const result = await command(directory, runtimeEnvironment(supplied), 'selected-environment', 'node', ['-e', program], 5000, { quiet: true });
     assert.equal(result.status, 'passed');

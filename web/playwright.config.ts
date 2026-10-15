@@ -1,6 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
+import path from 'node:path';
 
 const production = process.env.BATTLECITY_PRODUCTION === '1';
+const kind = production ? 'production' : 'e2e';
+const acceptanceRoot = process.env.BATTLECITY_ACCEPTANCE_DIR;
+const archive = acceptanceRoot ? path.join(acceptanceRoot, kind) : undefined;
+const jsonReport = archive ? path.join(archive, `${kind}.json`) : `test-results/${kind}.json`;
 
 export default defineConfig({
   testDir: './tests/browser',
@@ -10,11 +15,11 @@ export default defineConfig({
   // Each game needs foreground animation and focus; simultaneous browser
   // windows make fixed-tick intro timing depend on headless throttling.
   workers: 1,
-  outputDir: production ? 'test-results/production' : 'test-results/e2e',
+  outputDir: archive ? path.join(archive, 'results') : `test-results/${kind}`,
   reporter: process.env.CI
-    ? [['github'], ['html', { open: 'never', outputFolder: production ? 'playwright-report/production' : 'playwright-report/e2e' }],
-      ['json', { outputFile: production ? 'test-results/production.json' : 'test-results/e2e.json' }]]
-    : [['list'], ['json', { outputFile: production ? 'test-results/production.json' : 'test-results/e2e.json' }]],
+    ? [['github'], ['html', { open: 'never', outputFolder: archive ? path.join(archive, 'html') : `playwright-report/${kind}` }],
+      ['json', { outputFile: jsonReport }]]
+    : [['list'], ['json', { outputFile: jsonReport }]],
   use: {
     baseURL: 'http://127.0.0.1:4173/',
     trace: { mode: 'retain-on-failure', screenshots: false, snapshots: false, sources: true },

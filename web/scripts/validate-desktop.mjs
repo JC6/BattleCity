@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { closeSync, createReadStream, createWriteStream, openSync } from 'node:fs';
-import { access, cp, lstat, mkdir, open, readFile, readdir, readlink, realpath, unlink, writeFile } from 'node:fs/promises';
+import { access, lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, realpath, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -136,6 +136,11 @@ export function classifyPlaywrightReport(report, expected, commandResult) {
     reasons: [...new Set(reasons)] };
 }
 
+export async function readBrowserReport(filename, expected, commandResult) {
+  try { return classifyPlaywrightReport(JSON.parse(await readFile(filename, 'utf8')), expected, commandResult); }
+  catch (error) { return { status: 'failed', testsExecuted: 0, reasons: [`Actual report unavailable: ${error.message}`] }; }
+}
+
 export async function inspectProductionArtifacts(directory, expectedLicenses) {
   if (!validSHA256(expectedLicenses?.licenseSHA256) || !validSHA256(expectedLicenses?.noticesSHA256)) throw new Error('Expected source license hashes are missing or invalid');
   const index = await readFile(path.join(directory, 'index.html'), 'utf8');
@@ -166,6 +171,7 @@ export function runtimeEnvironment(baseEnv = process.env) {
   const env = { ...baseEnv, PATH: `${path.dirname(process.execPath)}${path.delimiter}${baseEnv.PATH ?? ''}` };
   // Validation always starts from the test build, irrespective of a caller's previous run.
   delete env.BATTLECITY_PRODUCTION;
+  delete env.BATTLECITY_ACCEPTANCE_DIR;
   return env;
 }
 
@@ -604,8 +610,9 @@ async function main(args) {
   if (args.includes('--help')) { console.log('npm run validate:desktop -- [--install] [--preflight-only]\nDefault: no installs; save checks and browser acceptance in test-results/acceptance/.\n--install: npm ci only for mismatches; install Chromium/WebKit with host dependencies.'); return 0; }
   if (args.some(arg => !['--install', '--preflight-only'].includes(arg))) throw new Error('Unknown option; use --help');
   const env = runtimeEnvironment();
-  const runDir = path.join(webRoot, 'test-results', 'acceptance', `${new Date().toISOString().replace(/[-:.]/g, '')}-${process.pid}`);
-  await mkdir(runDir, { recursive: true });
+  const acceptanceRoot = path.join(webRoot, 'test-results', 'acceptance');
+  await mkdir(acceptanceRoot, { recursive: true });
+  const runDir = await mkdtemp(path.join(acceptanceRoot, `${new Date().toISOString().replace(/[-:.]/g, '')}-${process.pid}-`));
   const report = { schemaVersion: 2, status: 'running', browserAcceptance: 'unverified', startedAt: new Date().toISOString(), scope: args.includes('--preflight-only') ? 'environment preflight only; no browser acceptance' : 'desktop Chromium/WebKit execution acceptance',
     runtime: { node: process.version, executable: process.execPath, platform: process.platform, architecture: process.arch,
       browserCache: env.PLAYWRIGHT_BROWSERS_PATH ?? 'Playwright default', libraryPath: env.LD_LIBRARY_PATH ?? '',
@@ -622,8 +629,9 @@ async function main(args) {
   process.on('SIGINT', onInterrupt);
   process.on('SIGTERM', onTerminate);
   const save = async () => writeFile(path.join(runDir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
-  const runCommand = async (name, program, args, timeoutMs, options = {}) => {
-    const result = await command(runDir, env, name, program, args, timeoutMs, { ...options, signal: controller.signal });
+  const runCommand = async (name, program, args, timeoutMs, { browser = false, ...options } = {}) => {
+    const childEnv = browser ? { ...env, BATTLECITY_ACCEPTANCE_DIR: runDir } : env;
+    const result = await command(runDir, childEnv, name, program, args, timeoutMs, { ...options, signal: controller.signal });
     if (result.interrupted) {
       report.checks.interruption = publicStep(result);
       throw Object.assign(new Error(result.reason), { code: 'ABORT_ERR' });
@@ -677,21 +685,15 @@ async function main(args) {
       }
       const browserSuite = async (kind, npmScript) => {
         if (!canBrowse) return blocked('Environment preflight blocked; no game cases executed');
-        const filename = path.join(webRoot, 'test-results', `${kind}.json`);
-        try { await unlink(filename); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+        const destination = path.join(runDir, kind);
+        await mkdir(destination);
+        const filename = path.join(destination, `${kind}.json`);
         // Both engines run serially in one worker slot. Keep stage headroom
         // beyond their individual case budgets for server startup, isolated
         // fault-injection browsers, reporting and cleanup.
-        const result = await runCommand(kind, 'npm', ['run', npmScript], kind === 'e2e' ? 6_000_000 : 1_500_000);
-        let verdict;
-        try { verdict = classifyPlaywrightReport(JSON.parse(await readFile(filename, 'utf8')), expectedCases[kind], result); }
-        catch (error) { verdict = { status: 'failed', testsExecuted: 0, reasons: [`Actual report unavailable: ${error.message}`] }; }
+        const result = await runCommand(kind, 'npm', ['run', npmScript], kind === 'e2e' ? 6_000_000 : 1_500_000, { browser: true });
+        let verdict = await readBrowserReport(filename, expectedCases[kind], result);
         if (verdict.testsExecuted === 0 && (result.status === 'blocked' || environmentalError(result.tail))) verdict = { ...verdict, status: 'blocked', reason: 'Environment prevented case execution; inspect the command log' };
-        const destination = path.join(runDir, kind);
-        await mkdir(destination, { recursive: true });
-        for (const [from, to] of [[filename, `${kind}.json`], [path.join(webRoot, 'test-results', kind), 'results'], [path.join(webRoot, 'playwright-report', kind), 'html']]) {
-          if (await exists(from)) await cp(from, path.join(destination, to), { recursive: true });
-        }
         await writeFile(path.join(destination, 'source-binding.json'), `${JSON.stringify({ schemaVersion: 2, sourceFingerprint: report.repository.workingTreeFingerprint, commit: report.repository.commit, dirty: report.repository.dirty, licenseSHA256: report.repository.licenseSHA256, noticesSHA256: report.repository.noticesSHA256, startedAt: result.startedAt, finishedAt: result.finishedAt, reportSHA256: await exists(filename) ? sha256(await readFile(filename)) : null }, null, 2)}\n`);
         return { ...publicStep(result), ...verdict, artifacts: kind };
       };
