@@ -2,7 +2,7 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { attachPcmFailure, audioEventTime, audioReady, audioTime, beginPcmCapture, installPcmProbe, pcmAssert, pcmBandWindow, pcmIdleWindow, pcmShotWindow, waitForAudioTime } from './audio-probe';
 import type { PcmShotFailure } from './pcm-window';
 import { probeCanvas, waitForCanvasMenu } from './visual-probes';
-import { nativePixels } from './native-pixels';
+import { protectedBattlefield } from './construction-fixture';
 
 // Native PCM sampling and keyboard preparation share the desktop case budget.
 test.describe.configure({ timeout: 60000 });
@@ -20,62 +20,14 @@ async function attachShotFailure(testInfo: TestInfo, failure: PcmShotFailure, id
   });
 }
 
-async function realEditorTime(page: Page, duration = 34): Promise<void> {
-  // Phaser uses native timers here. Waiting on the same real clock lets it
-  // sample key levels and releases without depending on compositor RAFs.
-  await page.evaluate(ms => new Promise<void>(resolve => setTimeout(resolve, ms)), duration);
-}
-async function realKey(page: Page, key: string): Promise<void> {
-  // Release before waiting: slow browser RPCs must not turn a single
-  // editor direction into its twenty-tick held-key repeat.
-  await page.keyboard.press(key, { delay: 34 });
-  await realEditorTime(page);
-}
-async function protectedBattlefield(page: Page): Promise<void> {
-  // Genuine Construction input places a full steel row above the player.
-  // Enemy fire cannot invalidate the later shot while native PCM is sampled.
-  // Start and Select run synchronously in the genuine keyboard handlers.
-  await page.keyboard.press('ShiftRight'); await page.keyboard.press('ShiftRight'); await page.keyboard.press('Enter');
-  for (let row = 0; row < 5; row++) await realKey(page, 's');
-  // First B places code 0; five further B presses select full steel, code 9.
-  for (let index = 0; index < 5; index++) await realKey(page, 'k');
-  await page.keyboard.down('k');
-  try {
-    await realEditorTime(page);
-    await page.keyboard.down('d');
-    try {
-      // Tick 20 starts five-tick repeats; a real 1.5s hold reaches the
-      // clamped right edge. The complete wall is verified below.
-      await realEditorTime(page, 1500);
-    } finally { await page.keyboard.up('d'); }
-  } finally { await page.keyboard.up('k'); }
-  // Re-enter through the real menu to reset the cursor, so the wall can be
-  // inspected without relying on another frame-sampled direction tap.
-  await page.keyboard.press('Enter');
-  await page.keyboard.press('ShiftRight'); await page.keyboard.press('ShiftRight'); await page.keyboard.press('Enter');
-  const pixels = await nativePixels(page), steelRows: number[] = [];
-  for (let row = 1; row <= 5; row++) {
-    const colors = new Set<number>();
-    for (let y = 16 + row * 16; y < 32 + row * 16; y++) for (let x = 16; x < 224; x++) {
-      const offset = (y * 256 + x) * 4;
-      colors.add((pixels[offset] << 16) | (pixels[offset + 1] << 8) | pixels[offset + 2]);
-    }
-    const palette = [0x666666, 0xadadad, 0xfcfcfc];
-    if (colors.size === palette.length && [...colors].sort((a, b) => a - b).every((color, index) => color === palette[index])) steelRows.push(row);
-  }
-  // Any of these complete rows isolates enemies and leaves at least 96 native
-  // pixels above the player for the later movement and shot measurements.
-  expect(steelRows, 'Construction must create one continuous full steel barrier in the upper battlefield').toHaveLength(1);
-  await page.keyboard.press('Enter');
-}
-async function stageSelection(page: Page, protectPlayer = false): Promise<void> {
+async function stageSelection(page: Page, testInfo: TestInfo, protectPlayer = false): Promise<void> {
   // The first case retains desktop keyboard-to-audio timing coverage. This
   // lifecycle fixture uses native size to limit its extra editor observations.
   if (protectPlayer) await page.setViewportSize({ width: 256, height: 240 });
   await installPcmProbe(page, { deferRecording: protectPlayer }); await page.goto('./'); await page.bringToFront();
   await expect(page.locator('#game-canvas canvas')).toBeVisible(); await waitForCanvasMenu(page);
   if (protectPlayer) {
-    await protectedBattlefield(page);
+    await protectedBattlefield(page, testInfo);
   }
   // Normal menu gesture unlocks audio. This suite never installs a fake clock.
   await page.keyboard.press('Enter'); await audioReady(page);
@@ -89,7 +41,7 @@ async function battle(page: Page): Promise<void> {
 }
 
 test('real game clock and AudioWorklet PCM start the three-voice stage tune with the keyboard', async ({ page }, testInfo) => {
-  await stageSelection(page);
+  await stageSelection(page, testInfo);
   const silentAt = await audioTime(page);
   await pcmAssert(page, silentAt, silentAt + 0.12, [], value => {
     expect(value.peak).toBe(0);
@@ -122,7 +74,7 @@ test('real game clock and AudioWorklet PCM start the three-voice stage tune with
 });
 
 test('real keyboard movement, shot, manual pause and focus pause preserve the native PCM lifecycle', async ({ page }, testInfo) => {
-  await stageSelection(page, true); await page.keyboard.press('Enter'); const startedAt = await audioEventTime(page, 'Enter');
+  await stageSelection(page, testInfo, true); await page.keyboard.press('Enter'); const startedAt = await audioEventTime(page, 'Enter');
   const shotBand = Array.from({ length: 27 }, (_, index) => 600 + 25 * index);
   // ID11 alternates 87/92Hz notes; its positive /16 sweep reaches about
   // 82/87Hz within those notes. Compare that complete source band to idle.

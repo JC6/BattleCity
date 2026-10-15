@@ -1,5 +1,5 @@
 import { expect, type Page, type TestInfo } from '@playwright/test';
-import { observePcmShotFailure, pcmShotWindowFeatures, pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture, type PcmPacket, type PcmFeatures, type PcmComparisonWindow, type PcmShotMatch, type PcmSnapshot, type PcmShotFailure, type PcmShotFailureObserver } from './pcm-window';
+import { observePcmShotFailure, pcmShotWindowFeatures, pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture, type PcmPacket, type PcmFeatures, type PcmComparisonWindow, type PcmShotMatch, type PcmSnapshot, type PcmShotFailure, type PcmShotFailureObserver, type AudioTransportEntry } from './pcm-window';
 export type { PcmShotFailureObserver } from './pcm-window';
 
 interface PcmProbeOptions { observeScenes?: boolean; deferRecording?: boolean }
@@ -33,6 +33,41 @@ function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOption
     window.__AUDIO_PCM__ = capture;
     capture.recording = !deferRecording;
     let attachTap: (() => void) | undefined;
+    let observedPort: MessagePort | undefined;
+    const observeTransport = (node: AudioWorkletNode) => {
+      const history = capture.transport ??= { entries: [], next: 0, dropped: 0, observationErrors: 0 };
+      try {
+        const port = node.port;
+        if (port === observedPort) return;
+        observedPort = port;
+        const record = (direction: 'send' | 'receive', message: unknown) => {
+          try {
+            const value = message as AudioTransportEntry;
+            if (!['reset', 'pause', 'frames', 'ack', 'progress'].includes(value.type)) return;
+            const entry: AudioTransportEntry = { direction, wall: Date.now(), type: value.type, generation: value.generation };
+            for (const field of ['sequence', 'at', 'tick', 'offset', 'paused', 'reason', 'accepted', 'credits', 'nextAt'] as const) {
+              if (value[field] !== undefined) Object.assign(entry, { [field]: value[field] });
+            }
+            if (value.start) entry.start = value.start.slice(0, 28);
+            if (value.stop) entry.stop = value.stop.slice(0, 28);
+            if (value.recovery) entry.recovery = value.recovery.slice(0, 12).map(group => ({ at: group.at, start: group.start.slice(0, 28) }));
+            if (value.frames) entry.frames = value.frames.slice(0, 12).map(frame => ({ tick: frame.tick,
+              start: frame.start.slice(0, 28), stop: frame.stop.slice(0, 28) }));
+            if (history.entries.length < 512) history.entries.push(entry);
+            else { history.entries[history.next] = entry; history.next = (history.next + 1) % 512; history.dropped++; }
+          } catch { history.observationErrors++; }
+        };
+        const postMessage = port.postMessage;
+        port.postMessage = (function (this: MessagePort, ...args: unknown[]) {
+          const result = Reflect.apply(postMessage, this, args);
+          record('send', args[0]);
+          return result;
+        }) as MessagePort['postMessage'];
+        port.addEventListener('message', event => record('receive', event.data));
+        // The application's unchanged onmessage assignment starts this port.
+        // Do not call start() or replace its message handler for observation.
+      } catch { history.observationErrors++; }
+    };
     const eventTime = (kind: 'keydown' | 'blur', code: string) => {
       if (capture.recording === false || !capture.context) return;
       if (capture.events.length >= 128) { capture.errors.push('Audio event observation exceeded its bounded capacity'); return; }
@@ -47,6 +82,7 @@ function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOption
       const result = Reflect.apply(connect, this, args);
       if (this instanceof AudioWorkletNode && args[0] === capture.gain) {
         capture.gameReady = true;
+        observeTransport(this);
         // Register the sidecar after the real game module has finished loading.
         // Observation must not compete with the application's Worklet startup.
         attachTap?.(); attachTap = undefined;

@@ -40,6 +40,106 @@ describe('deferred native audio event observation', () => {
     };
     return { page, capture, emit, AudioNode, GainNode, AudioWorkletNode };
   }
+  async function transportFixture() {
+    const clock = vi.fn((): number => { throw new Error('Transport must not read native audio time'); });
+    const fixture = await eventFixture(clock);
+    const listeners: ((event: { data: unknown }) => void)[] = [];
+    const result = { delegated: true };
+    const post = vi.fn(function (this: unknown, ..._args: unknown[]) { return result; });
+    let handler: ((event: { data: unknown }) => void) | null = null;
+    const port = {
+      postMessage: post,
+      addEventListener: vi.fn((_kind: string, listener: (event: { data: unknown }) => void) => listeners.push(listener)),
+      start: vi.fn(),
+      get onmessage() { return handler; },
+      set onmessage(value: typeof handler) { handler = value; },
+    };
+    const worklet = new fixture.AudioWorkletNode();
+    Object.defineProperty(worklet, 'port', { value: port });
+    fixture.capture.gain = new fixture.GainNode() as unknown as GainNode;
+    const connect = () => Reflect.apply(worklet.connect, worklet, [fixture.capture.gain]);
+    const receive = (data: unknown) => {
+      const event = { data };
+      // A listener alone never activates a port. The real application sets
+      // onmessage after connect(), which performs its own implicit start.
+      if (handler) { handler(event); for (const listener of listeners) listener(event); }
+      return event;
+    };
+    return { ...fixture, clock, worklet, port, post, result, connect, receive };
+  }
+  it('observes only the game port and delegates original messages, transfers and receiver exactly once', async () => {
+    const fixture = await transportFixture();
+    const { capture, worklet, port, post, result, connect, receive, clock } = fixture;
+    expect(connect()).toBe(worklet); expect(connect()).toBe(worklet);
+    expect(port.addEventListener).toHaveBeenCalledOnce(); expect(port.start).not.toHaveBeenCalled();
+    const receiver = vi.fn();
+    receive({ type: 'ack', generation: 3, sequence: 7, accepted: true, credits: 11 });
+    expect(capture.transport!.entries).toEqual([]);
+    port.onmessage = receiver;
+    const transfers = [new ArrayBuffer(4)];
+    const message = { type: 'frames', generation: 3, sequence: 7, at: 1.25,
+      frames: [{ tick: 40, start: [15], stop: [17] }] };
+    expect(Reflect.apply(port.postMessage, port, [message, transfers])).toBe(result);
+    expect(post).toHaveBeenCalledExactlyOnceWith(message, transfers); expect(post.mock.contexts[0]).toBe(port);
+    const ack = { type: 'ack', generation: 3, sequence: 7, accepted: true, credits: 11, nextAt: 1.27 };
+    const event = receive(ack);
+    expect(port.onmessage).toBe(receiver); expect(receiver).toHaveBeenCalledExactlyOnceWith(event);
+    expect(capture.transport!.entries).toMatchObject([
+      { direction: 'send', type: 'frames', generation: 3, sequence: 7, at: 1.25, frames: [{ tick: 40, start: [15], stop: [17] }] },
+      { direction: 'receive', type: 'ack', generation: 3, sequence: 7, accepted: true, credits: 11, nextAt: 1.27 },
+    ]);
+    message.frames[0].start[0] = 1; message.frames[0].stop.push(18);
+    expect(capture.transport!.entries[0].frames).toEqual([{ tick: 40, start: [15], stop: [17] }]);
+    const reset = { type: 'reset', generation: 4, tick: 41, offset: 12, start: [18],
+      recovery: Array.from({ length: 13 }, (_, index) => ({ at: 1.2 + index / 60, start: Array.from({ length: 29 }, (_, id) => id) })) };
+    port.postMessage(reset);
+    const recovery = capture.transport!.entries.at(-1)!.recovery!;
+    expect(recovery).toHaveLength(12); expect(recovery[0]).toEqual({ at: 1.2, start: Array.from({ length: 28 }, (_, id) => id) });
+    reset.recovery[0].at = 99; reset.recovery[0].start[0] = 99;
+    expect(recovery[0].at).toBe(1.2); expect(recovery[0].start[0]).toBe(0);
+    expect(clock).not.toHaveBeenCalled(); expect(capture.errors).toEqual([]);
+  });
+  it('retains the last 512 messages in order and snapshots existing observations without another native read', async () => {
+    const { capture, port, connect, clock } = await transportFixture(); connect();
+    for (let sequence = 0; sequence < 520; sequence++) port.postMessage({ type: 'frames', generation: 4, sequence,
+      at: sequence / 60, frames: [{ tick: sequence, start: sequence === 519 ? [15] : [], stop: [] }] });
+    capture.transport!.entries.find(entry => entry.sequence === 519)!.recovery = [{ at: 8.5, start: [15] }];
+    capture.events.push({ kind: 'keydown', code: 'KeyJ', at: 8.5 }); capture.marks.push({ kind: 'game', at: 1 });
+    capture.rate = 1000; capture.packets = [packet([0])];
+    const snapshot = snapshotPcmWindow({ start: 0, end: 0.128 }, capture);
+    const history = snapshot.diagnostics!.transport!;
+    expect(history.entries).toHaveLength(512); expect(history.dropped).toBe(8); expect(history.observationErrors).toBe(0);
+    expect(history.entries.map(entry => entry.sequence)).toEqual(Array.from({ length: 512 }, (_, index) => index + 8));
+    expect(snapshot.diagnostics!.events).toEqual([{ kind: 'keydown', code: 'KeyJ', at: 8.5 }]);
+    capture.events[0].at = 99; capture.marks[0].at = 99;
+    capture.transport!.entries.find(entry => entry.sequence === 519)!.frames![0].start[0] = 1;
+    capture.transport!.entries.find(entry => entry.sequence === 519)!.recovery![0].start[0] = 1;
+    expect(snapshot.diagnostics!.events![0].at).toBe(8.5); expect(snapshot.diagnostics!.marks![0].at).toBe(1);
+    expect(history.entries.at(-1)!.frames![0].start).toEqual([15]);
+    expect(history.entries.at(-1)!.recovery).toEqual([{ at: 8.5, start: [15] }]);
+    const direct = pcmWindowFeatures({ start: 0, end: 0.128, frequencies: [] }, capture);
+    expect(pcmWindowFeatures({ start: 0, end: 0.128, frequencies: [] }, restorePcmSnapshot(snapshot))).toEqual(direct);
+    expect(clock).not.toHaveBeenCalled(); expect(capture.errors).toEqual([]);
+  });
+  it('preserves native post errors and receiver delivery when optional observation fails', async () => {
+    const { capture, port, post, connect, receive } = await transportFixture(); connect();
+    const receiver = vi.fn(); port.onmessage = receiver;
+    const malformed = { get type(): string { throw new Error('Broken diagnostic value'); } };
+    expect(Reflect.apply(port.postMessage, port, [malformed])).toEqual({ delegated: true });
+    receive(malformed); expect(receiver).toHaveBeenCalledOnce();
+    expect(capture.transport!.observationErrors).toBe(2); expect(capture.errors).toEqual([]);
+    const failure = new Error('Native post failed'); post.mockImplementationOnce(() => { throw failure; });
+    expect(() => port.postMessage({ type: 'frames', generation: 4 })).toThrow(failure);
+    expect(post).toHaveBeenCalledTimes(2); expect(capture.transport!.entries).toEqual([]);
+  });
+  it('keeps a failing optional diagnostic snapshot separate from validated raw PCM', async () => {
+    const { capture } = await transportFixture(); capture.rate = 1000; capture.packets = [packet([0])];
+    Object.defineProperty(capture, 'transport', { get() { throw new Error('Broken optional history'); } });
+    const snapshot = snapshotPcmWindow({ start: 0, end: 0.128 }, capture);
+    expect(snapshot.diagnostics).toEqual({ unavailable: true });
+    expect(pcmWindowFeatures({ start: 0, end: 0.128, frequencies: [] }, restorePcmSnapshot(snapshot)).rms).toBeGreaterThan(0);
+    expect(capture.errors).toEqual([]);
+  });
   it('does not read native event time for preparation keydown or blur while recording is deferred', async () => {
     const clock = vi.fn((): number => { throw new Error('Preparation must not read the native clock'); });
     const { capture, emit } = await eventFixture(clock);

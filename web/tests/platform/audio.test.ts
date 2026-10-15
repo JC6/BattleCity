@@ -68,6 +68,16 @@ async function enabled() {
   const audio = new GameAudio(0.3); audio.unlock(); await Promise.resolve(); await Promise.resolve();
   return { audio, context: Context.instances[0], node: Node.instances[0] };
 }
+// Transport fixtures begin after a real zero-frame reset receipt, without a
+// simulation step or a cursor/credit reservation. Barrier tests leave it pending.
+function acknowledgeReset(node: Node): void {
+  const proof = node.messages.findLast(message => message.type === 'frames');
+  if (proof?.type !== 'frames' || proof.frames.length) throw new Error('No pending zero-frame reset proof');
+  node.acknowledge();
+}
+function actualBatches(node: Node) {
+  return node.messages.filter((message): message is Extract<AudioMessage, { type: 'frames' }> => message.type === 'frames' && message.frames.length > 0);
+}
 async function tick(audio: GameAudio, node: Node) { audio.advanceTick(); await Promise.resolve(); node.acknowledge(); }
 function cues(node: Node): number[] { return node.messages.flatMap(message => message.type === 'frames' ? message.frames.flatMap(frame => frame.start) : []); }
 function deferResumes(): (() => void)[] {
@@ -159,7 +169,7 @@ describe('tick-driven Worklet audio adapter', () => {
     expect(node.messages.filter(message => message.type === 'reset')).toEqual(resets);
     expect(context.gain.gain.value).toBe(0);
     audio.advanceTick(); audio.commitFrame();
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(1);
+    expect(actualBatches(node)).toHaveLength(1);
     finish[1](); await settle();
     const recovered = node.messages.filter(message => message.type === 'reset');
     expect(recovered).toHaveLength(resets.length + 1);
@@ -181,10 +191,10 @@ describe('tick-driven Worklet audio adapter', () => {
     const state = fixture(); state.phase = 'lost';
     audio.updateScore(state, 0); await tick(audio, node);
     expect(context.gain.gain.value).toBe(0);
-    expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({ frames: [{ start: [] }] });
+    expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({ frames: [] });
     state.players[0].kills = [1, 0, 0, 0];
     audio.updateScore(state, SCORE_TIMING.leadMs + SCORE_TIMING.countMs);
-    // Empty lead frames already proved reset reception. Restore before the
+    // The zero-frame proof already confirmed reset reception. Restore before the
     // short count starts, without waiting for this cue's own later ACK.
     expect(context.gain.gain.value).toBe(0.3);
     audio.advanceTick(); audio.commitFrame();
@@ -213,29 +223,29 @@ describe('tick-driven Worklet audio adapter', () => {
     audio.setPaused(true, 'manual'); expect(context.gain.gain.value).toBe(0.3);
     audio.setPaused(false); expect(context.gain.gain.value).toBe(0.3);
   });
-  it('unmutes on an earlier accepted batch without releasing capacity reserved for the latest batch', async () => {
-    const { audio, context, node } = await enabled();
+  it('keeps proven gain across earlier accepted batches without releasing newer reservations', async () => {
+    const { audio, context, node } = await enabled(); acknowledgeReset(node);
     audio.play([{ type: 'stage-start' }]);
     for (let batch = 0; batch < 2; batch++) {
       for (let index = 0; index < 6; index++) audio.advanceTick();
       audio.commitFrame();
     }
-    const sent = node.messages.filter(message => message.type === 'frames');
+    const sent = actualBatches(node);
     expect(sent.map(message => message.frames.length)).toEqual([6, 6]);
-    expect(context.gain.gain.value).toBe(0);
+    expect(context.gain.gain.value).toBe(0.3);
     audio.advanceTick(); audio.commitFrame(); // All twelve FIFO credits remain reserved.
     node.port.onmessage?.({ data: { type: 'ack', generation: sent[0].generation, sequence: sent[0].sequence,
       accepted: true, credits: 12 } });
     expect(context.gain.gain.value).toBe(0.3);
-    expect(node.messages.filter(message => message.type === 'frames')).toEqual(sent);
+    expect(actualBatches(node)).toEqual(sent);
     node.progress(12, 1.3); // This latest progress must still wait for the latest reception ACK.
-    expect(node.messages.filter(message => message.type === 'frames')).toEqual(sent);
+    expect(actualBatches(node)).toEqual(sent);
     node.acknowledge(0);
-    expect(node.messages.filter(message => message.type === 'frames')).toEqual(sent);
+    expect(actualBatches(node)).toEqual(sent);
     context.currentTime = 1.25;
     node.progress(1, 1.3);
     expect(node.messages.findLast(message => message.type === 'frames')).toEqual({
-      type: 'frames', generation: 0, sequence: 3, at: 1.3,
+      type: 'frames', generation: 0, sequence: 4, at: 1.3,
       frames: [{ tick: 13, start: [], stop: [] }],
     });
     expect(cues(node)).toEqual([CUE.stagePulse1, CUE.stageTriangle, CUE.stagePulse2]);
@@ -260,15 +270,15 @@ describe('tick-driven Worklet audio adapter', () => {
       ...[-1, 13, 0.5, NaN, Infinity, '12', undefined].map(credits => ({ ...valid, credits })),
       { ...valid, accepted: 1 },
     ];
-    const sent = node.messages.filter(message => message.type === 'frames');
+    const sent = actualBatches(node);
     for (const message of invalid) {
       node.port.onmessage?.({ data: message });
       expect(context.gain.gain.value).toBe(0);
-      expect(node.messages.filter(message => message.type === 'frames')).toEqual(sent);
+      expect(actualBatches(node)).toEqual(sent);
     }
     node.port.onmessage?.({ data: { ...valid, credits: 0 } });
     expect(context.gain.gain.value).toBe(0.3);
-    expect(node.messages.filter(message => message.type === 'frames')).toEqual(sent);
+    expect(actualBatches(node)).toEqual(sent);
   });
   it('keeps a stopped scene silent when an earlier empty batch proves reset reception', async () => {
     const { audio, context, node } = await enabled();
@@ -326,7 +336,7 @@ describe('tick-driven Worklet audio adapter', () => {
     audio.startPresentation('hiscore'); await tick(audio, node);
     audio.setPaused(true, 'manual'); expect(context.gain.gain.value).toBe(0.3);
     audio.stopScene(); expect(context.gain.gain.value).toBe(0);
-    expect(node.messages.at(-1)).toMatchObject({ type: 'pause', paused: false });
+    expect(node.messages.findLast(message => message.type === 'pause')).toMatchObject({ type: 'pause', paused: false });
     await tick(audio, node); expect(context.gain.gain.value).toBe(0);
   });
   it('switches the native engine slots without repeated retriggering on cadence ticks', async () => {
@@ -341,7 +351,7 @@ describe('tick-driven Worklet audio adapter', () => {
     expect(last).toMatchObject({ frames: [{ start: [], stop: [CUE.playerEngine, CUE.enemyEngine] }] });
   });
   it('submits completed ticks immediately and retains sample spacing across unacknowledged batches', async () => {
-    const { audio, context, node } = await enabled();
+    const { audio, context, node } = await enabled(); acknowledgeReset(node);
     audio.play([{ type: 'stage-start' }]);
     for (let index = 0; index < 6; index++) audio.advanceTick();
     await Promise.resolve();
@@ -352,7 +362,7 @@ describe('tick-driven Worklet audio adapter', () => {
     ] });
     context.currentTime = 1.06;
     audio.advanceTick(); await Promise.resolve();
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(2);
+    expect(actualBatches(node)).toHaveLength(2);
     const second = node.messages.findLast(message => message.type === 'frames');
     expect(second).toMatchObject({ at: 1 + 6 / 60.0988, frames: [{ tick: 7, start: [], stop: [] }] });
   });
@@ -369,21 +379,21 @@ describe('tick-driven Worklet audio adapter', () => {
     });
   });
   it('commits a fresh count before a 70ms paint without duplicating its actual tick in the microtask fallback', async () => {
-    const { audio, context, node } = await enabled(); context.currentTime = 0;
+    const { audio, context, node } = await enabled(); acknowledgeReset(node); context.currentTime = 0;
     const state = fixture(); state.phase = 'lost'; state.players[0].kills = [1, 0, 0, 0];
     audio.updateScore(state, SCORE_TIMING.leadMs + SCORE_TIMING.countMs);
     audio.advanceTick(); audio.commitFrame();
     expect(node.messages.findLast(message => message.type === 'frames')).toEqual({
-      type: 'frames', generation: 0, sequence: 1, at: 0,
+      type: 'frames', generation: 0, sequence: 2, at: 0,
       frames: [{ tick: 1, start: [CUE.countPulse, CUE.countNoise], stop: [] }],
     });
     context.currentTime = 0.07; // Native audio time can advance during canvas painting.
     await Promise.resolve(); node.acknowledge();
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(1);
+    expect(actualBatches(node)).toHaveLength(1);
     expect(cues(node)).toEqual([CUE.countPulse, CUE.countNoise]);
   });
   it('commits a fresh count within reserved capacity before an older acknowledgement delayed by painting', async () => {
-    const { audio, context, node } = await enabled(); context.currentTime = 0;
+    const { audio, context, node } = await enabled(); acknowledgeReset(node); context.currentTime = 0; settledActiveScene(audio);
     audio.advanceTick(); audio.commitFrame();
     const first = node.messages.findLast(message => message.type === 'frames');
     if (first?.type !== 'frames') throw new Error('No first batch');
@@ -391,20 +401,20 @@ describe('tick-driven Worklet audio adapter', () => {
     const state = fixture(); state.phase = 'lost'; state.players[0].kills = [1, 0, 0, 0];
     audio.updateScore(state, SCORE_TIMING.leadMs + SCORE_TIMING.countMs);
     audio.advanceTick(); audio.commitFrame();
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(2);
+    expect(actualBatches(node)).toHaveLength(2);
     expect(node.messages.findLast(message => message.type === 'frames')).toEqual({
-      type: 'frames', generation: 0, sequence: 2, at: 1 / 60.0988,
+      type: 'frames', generation: 0, sequence: 3, at: 1 / 60.0988,
       frames: [{ tick: 2, start: [CUE.countPulse, CUE.countNoise], stop: [] }],
     });
     context.currentTime = 0.093; // The previous ACK can dispatch only after an 84ms canvas paint.
     node.port.onmessage?.({ data: { type: 'ack', generation: first.generation, sequence: first.sequence,
       accepted: true, credits: 11 } });
     await Promise.resolve(); node.acknowledge(10);
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(2);
+    expect(actualBatches(node)).toHaveLength(2);
     expect(cues(node)).toEqual([CUE.countPulse, CUE.countNoise]);
   });
   it('expires queued old counts and shots while preserving every tick, stop and sustained cue in order', async () => {
-    const { audio, context, node } = await enabled();
+    const { audio, context, node } = await enabled(); acknowledgeReset(node);
     settledActiveScene(audio);
     for (let index = 0; index < 12; index++) audio.advanceTick();
     await Promise.resolve(); // Reserve all capacity until native consumption is acknowledged.
@@ -419,10 +429,10 @@ describe('tick-driven Worklet audio adapter', () => {
     audio.play([{ type: 'fire', team: 'player', playerIndex: 0, enemyKind: null, stars: 0 }]);
     audio.startPresentation('gameover'); audio.syncState(null);
     audio.advanceTick(); await Promise.resolve();
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(1);
+    expect(actualBatches(node)).toHaveLength(1);
     node.acknowledge();
     expect(node.messages.findLast(message => message.type === 'frames')).toEqual({
-      type: 'frames', generation: 0, sequence: 2, at: 1 + 12 / AUDIO_TICK_HZ,
+      type: 'frames', generation: 0, sequence: 3, at: 1 + 12 / AUDIO_TICK_HZ,
       frames: [
         { tick: 13, start: [CUE.stagePulse1, CUE.stageTriangle, CUE.stagePulse2, CUE.enemyEngine],
           stop: [CUE.playerEngine, CUE.enemyEngine] },
@@ -432,7 +442,7 @@ describe('tick-driven Worklet audio adapter', () => {
     });
   });
   it('uses actual consumption progress for the next pending batch sample cursor', async () => {
-    const { audio, context, node } = await enabled();
+    const { audio, context, node } = await enabled(); acknowledgeReset(node);
     settledActiveScene(audio);
     for (let index = 0; index < 12; index++) audio.advanceTick();
     await Promise.resolve();
@@ -441,16 +451,16 @@ describe('tick-driven Worklet audio adapter', () => {
     context.currentTime = 1.2;
     audio.advanceTick(); await Promise.resolve();
     node.acknowledge(0);
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(1);
+    expect(actualBatches(node)).toHaveLength(1);
     node.progress(12, 1.225);
     expect(node.messages.findLast(message => message.type === 'frames')).toEqual({
-      type: 'frames', generation: 0, sequence: 2, at: 1.225,
+      type: 'frames', generation: 0, sequence: 3, at: 1.225,
       frames: [{ tick: 13, start: [], stop: [] }],
     });
   });
   it('ignores an old scene acknowledgement without changing the current batch or sample cursor', async () => {
-    const { audio, context, node } = await enabled();
-    await tick(audio, node); audio.stopScene();
+    const { audio, context, node } = await enabled(); acknowledgeReset(node);
+    await tick(audio, node); audio.stopScene(); acknowledgeReset(node);
     settledActiveScene(audio);
     context.currentTime = 1.1;
     for (let index = 0; index < 12; index++) audio.advanceTick();
@@ -459,22 +469,22 @@ describe('tick-driven Worklet audio adapter', () => {
     if (current?.type !== 'frames') throw new Error('No current batch');
     context.currentTime = 1.3;
     audio.advanceTick(); await Promise.resolve();
-    const sent = node.messages.filter(message => message.type === 'frames').length;
+    const sent = actualBatches(node).length;
     node.port.onmessage?.({ data: { type: 'ack', generation: current.generation - 1,
       sequence: current.sequence, accepted: true, credits: 12 } });
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(sent);
+    expect(actualBatches(node)).toHaveLength(sent);
     node.acknowledge(0);
     node.port.onmessage?.({ data: { type: 'progress', generation: current.generation - 1,
       sequence: current.sequence, credits: 12, nextAt: 1.2 } });
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(sent);
+    expect(actualBatches(node)).toHaveLength(sent);
     node.progress(12, 1.345);
     expect(node.messages.findLast(message => message.type === 'frames')).toEqual({
-      type: 'frames', generation: 1, sequence: 3, at: 1.345,
+      type: 'frames', generation: 1, sequence: 4, at: 1.345,
       frames: [{ tick: 14, start: [], stop: [] }],
     });
   });
   it('submits a fresh cue while nine accepted frames are still playing', async () => {
-    const { audio, context, node } = await enabled();
+    const { audio, context, node } = await enabled(); acknowledgeReset(node);
     settledActiveScene(audio);
     for (let index = 0; index < 9; index++) audio.advanceTick();
     await Promise.resolve(); node.acknowledge(3);
@@ -482,13 +492,13 @@ describe('tick-driven Worklet audio adapter', () => {
     const state = fixture(); state.phase = 'lost'; state.players[0].kills = [1, 0, 0, 0];
     audio.updateScore(state, SCORE_TIMING.leadMs + SCORE_TIMING.countMs);
     audio.advanceTick(); await Promise.resolve();
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(2);
+    expect(actualBatches(node)).toHaveLength(2);
     expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({
-      sequence: 2, frames: [{ tick: 10, start: [CUE.countPulse, CUE.countNoise], stop: [] }],
+      sequence: 3, frames: [{ tick: 10, start: [CUE.countPulse, CUE.countNoise], stop: [] }],
     });
   });
   it('waits at zero credits and drains pending ticks in one-credit prefixes without losing their cues', async () => {
-    const { audio, context, node } = await enabled();
+    const { audio, context, node } = await enabled(); acknowledgeReset(node);
     settledActiveScene(audio);
     for (let index = 0; index < 12; index++) audio.advanceTick();
     await Promise.resolve(); node.acknowledge(0);
@@ -499,27 +509,27 @@ describe('tick-driven Worklet audio adapter', () => {
     const state = fixture(); state.phase = 'lost'; state.players[0].kills = [1, 0, 0, 0];
     audio.updateScore(state, SCORE_TIMING.leadMs + SCORE_TIMING.countMs);
     audio.advanceTick(); await Promise.resolve();
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(1);
+    expect(actualBatches(node)).toHaveLength(1);
     node.progress(1, 1.02);
     expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({
-      sequence: 2, frames: [{ tick: 13, start: [CUE.shot], stop: [] }],
+      sequence: 3, frames: [{ tick: 13, start: [CUE.shot], stop: [] }],
     });
     node.acknowledge(0);
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(2);
+    expect(actualBatches(node)).toHaveLength(2);
     node.progress(1, 1.04);
     expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({
-      sequence: 3, frames: [{ tick: 14, start: [CUE.countPulse, CUE.countNoise], stop: [] }],
+      sequence: 4, frames: [{ tick: 14, start: [CUE.countPulse, CUE.countNoise], stop: [] }],
     });
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(3);
+    expect(actualBatches(node)).toHaveLength(3);
   });
   it('reserves at most twelve frames across multiple unacknowledged batches and ignores older positive snapshots', async () => {
-    const { audio, context, node } = await enabled();
+    const { audio, context, node } = await enabled(); acknowledgeReset(node);
     settledActiveScene(audio);
     for (let batch = 0; batch < 3; batch++) {
       for (let index = 0; index < 4; index++) audio.advanceTick();
       audio.commitFrame();
     }
-    const sent = node.messages.filter(message => message.type === 'frames');
+    const sent = actualBatches(node);
     expect(sent.map(message => message.frames.length)).toEqual([4, 4, 4]);
     audio.advanceTick(); audio.advanceTick(); audio.commitFrame();
     for (const earlier of sent.slice(0, 2)) node.port.onmessage?.({ data: {
@@ -528,21 +538,21 @@ describe('tick-driven Worklet audio adapter', () => {
     for (const earlier of sent) node.port.onmessage?.({ data: {
       type: 'progress', generation: earlier.generation, sequence: earlier.sequence, credits: 12, nextAt: 2,
     } });
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(3);
+    expect(actualBatches(node)).toHaveLength(3);
     node.acknowledge(0);
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(3);
+    expect(actualBatches(node)).toHaveLength(3);
     context.currentTime = 1.25; node.progress(1, 1.3);
     expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({
-      sequence: 4, at: 1.3, frames: [{ tick: 13, start: [], stop: [] }],
+      sequence: 5, at: 1.3, frames: [{ tick: 13, start: [], stop: [] }],
     });
     node.acknowledge(0); node.progress(1, 1.32);
-    const all = node.messages.filter(message => message.type === 'frames');
+    const all = actualBatches(node);
     expect(all.map(message => message.frames.length)).toEqual([4, 4, 4, 1, 1]);
     expect(all.flatMap(message => message.frames.map(frame => frame.tick))).toEqual(Array.from({ length: 14 }, (_, index) => index + 1));
-    expect(all.at(-1)).toMatchObject({ sequence: 5, at: 1.32 });
+    expect(all.at(-1)).toMatchObject({ sequence: 6, at: 1.32 });
   });
   it('does not accept a progress credit snapshot while a new batch reception is still in flight', async () => {
-    const { audio, node } = await enabled();
+    const { audio, node } = await enabled(); acknowledgeReset(node);
     settledActiveScene(audio);
     audio.advanceTick(); await Promise.resolve();
     const first = node.messages.findLast(message => message.type === 'frames');
@@ -555,16 +565,16 @@ describe('tick-driven Worklet audio adapter', () => {
     for (const sequence of [first.sequence, second.sequence]) node.port.onmessage?.({ data: {
       type: 'progress', generation: second.generation, sequence, credits: 12, nextAt: 1.1,
     } });
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(2);
+    expect(actualBatches(node)).toHaveLength(2);
     node.acknowledge(0);
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(2);
+    expect(actualBatches(node)).toHaveLength(2);
     node.progress(1, 1.05);
     expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({
-      sequence: 3, at: 1.05, frames: [{ tick: 3, start: [], stop: [] }],
+      sequence: 4, at: 1.05, frames: [{ tick: 3, start: [], stop: [] }],
     });
   });
   it('isolates pre-pause acknowledgements and progress even within the same generation', async () => {
-    const { audio, context, node } = await enabled();
+    const { audio, context, node } = await enabled(); acknowledgeReset(node);
     settledActiveScene(audio);
     audio.advanceTick(); await Promise.resolve();
     const old = node.messages.findLast(message => message.type === 'frames');
@@ -582,17 +592,17 @@ describe('tick-driven Worklet audio adapter', () => {
       { type: 'progress', generation: old.generation, sequence: old.sequence, credits: 12, nextAt: 1.11 },
     ];
     for (const message of stale) node.port.onmessage?.({ data: message });
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(2);
+    expect(actualBatches(node)).toHaveLength(2);
     node.acknowledge(0);
     for (const message of stale) node.port.onmessage?.({ data: message });
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(2);
+    expect(actualBatches(node)).toHaveLength(2);
     context.currentTime = 1.2; node.progress(12, 1.225);
     expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({
       at: 1.225, frames: [{ tick: 14, start: [], stop: [] }],
     });
   });
   it('recovers an earlier rejected outstanding batch rather than losing sustained state behind newer posts', async () => {
-    const { audio, node } = await enabled();
+    const { audio, node } = await enabled(); acknowledgeReset(node);
     audio.play([{ type: 'stage-start' }]); audio.advanceTick(); await Promise.resolve();
     const first = node.messages.findLast(message => message.type === 'frames');
     if (first?.type !== 'frames') throw new Error('No first batch');
@@ -614,7 +624,7 @@ describe('tick-driven Worklet audio adapter', () => {
     audio.advanceTick(); audio.commitFrame();
     const old = node.messages.findLast(message => message.type === 'frames');
     if (old?.type !== 'frames') throw new Error('No old batch');
-    audio.stopScene(); audio.startPresentation('hiscore'); audio.advanceTick(); audio.commitFrame();
+    audio.stopScene(); acknowledgeReset(node); audio.startPresentation('hiscore'); audio.advanceTick(); audio.commitFrame();
     const current = node.messages.findLast(message => message.type === 'frames');
     if (current?.type !== 'frames') throw new Error('No current batch');
     const resets = node.messages.filter(message => message.type === 'reset').length;
@@ -682,11 +692,11 @@ describe('tick-driven Worklet audio adapter', () => {
     expect(context.gain.gain.value).toBe(0.3);
     audio.setPaused(true, 'focus'); expect(context.gain.gain.value).toBe(0);
     audio.setPaused(false); expect(context.gain.gain.value).toBe(0);
-    expect(node.messages.at(-1)).toMatchObject({ type: 'pause', paused: false });
+    expect(node.messages.findLast(message => message.type === 'pause')).toMatchObject({ type: 'pause', paused: false });
     audio.syncState(fixture()); await tick(audio, node); expect(context.gain.gain.value).toBe(0.3);
   });
   it('sends the authoritative tick, discarded pending frames and uncommitted persistent controls when pausing', async () => {
-    const { audio, node } = await enabled();
+    const { audio, node } = await enabled(); acknowledgeReset(node);
     expect(node.messages.find(message => message.type === 'reset')).toMatchObject({ tick: 0 });
     audio.play([{ type: 'stage-start' }]);
     for (let index = 0; index < 12; index++) audio.advanceTick();
@@ -781,7 +791,7 @@ describe('tick-driven Worklet audio adapter', () => {
     });
     await tick(audio, node); expect(context.gain.gain.value).toBe(0);
     expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({
-      generation: 2, frames: [{ tick: 2, start: [], stop: [] }],
+      generation: 2, frames: [],
     });
   });
   it('restores only the latest music and engine after resume, excluding old acknowledgements and credits', async () => {
@@ -798,19 +808,22 @@ describe('tick-driven Worklet audio adapter', () => {
       type: 'reset', generation: 2, tick: 3, offset: 2,
       start: [CUE.hiscorePulse1, CUE.hiscorePulse2, CUE.hiscoreTriangle, CUE.playerEngine],
     });
+    node.port.onmessage?.({ data: { type: 'ack', generation: old.generation, sequence: old.sequence, accepted: true, credits: 12 } });
+    expect(context.gain.gain.value).toBe(0);
+    acknowledgeReset(node);
     for (let index = 0; index < 12; index++) audio.advanceTick();
     audio.commitFrame(); audio.advanceTick(); audio.commitFrame();
-    const frames = node.messages.filter(message => message.type === 'frames');
+    const frames = actualBatches(node);
     for (const reply of [
       { type: 'ack', generation: old.generation, sequence: old.sequence, accepted: true, credits: 12 },
       { type: 'ack', generation: old.generation, sequence: old.sequence, accepted: false, credits: 12 },
       { type: 'progress', generation: old.generation, sequence: old.sequence, credits: 12, nextAt: 9 },
     ]) node.port.onmessage?.({ data: reply });
-    expect(node.messages.filter(message => message.type === 'frames')).toEqual(frames);
+    expect(actualBatches(node)).toEqual(frames);
     expect(node.messages.filter(message => message.type === 'reset')).toHaveLength(3);
-    expect(context.gain.gain.value).toBe(0);
+    expect(context.gain.gain.value).toBe(0.3);
     node.acknowledge(0); expect(context.gain.gain.value).toBe(0.3);
-    expect(node.messages.filter(message => message.type === 'frames')).toEqual(frames);
+    expect(actualBatches(node)).toEqual(frames);
     node.progress(1, 1.3);
     expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({
       generation: 2, frames: [{ tick: 16, start: [], stop: [] }],
@@ -848,7 +861,7 @@ describe('tick-driven Worklet audio adapter', () => {
     const { audio, node } = await enabled();
     audio.advanceTick(); await Promise.resolve();
     for (let index = 0; index < 30; index++) { audio.play([{ type: 'hit', target: 'brick', team: 'player', playerIndex: 0 }]); audio.advanceTick(); await Promise.resolve(); }
-    const batches = node.messages.filter(message => message.type === 'frames');
+    const batches = actualBatches(node);
     expect(batches.every(message => message.type === 'frames' && message.frames.length <= 12)).toBe(true);
     expect(node.messages.some(message => message.type === 'reset' && message.generation > 0 && message.start.length === 0)).toBe(true);
     node.acknowledge();
@@ -928,12 +941,137 @@ async function realReceiver() {
     return Math.sqrt(energy / (last - first));
   };
   deliver(); renderUntil(context.currentTime);
-  return { audio, context, node, processor, writes, deliver, acknowledge, renderUntil, rms };
+  return { audio, context, node, processor, writes, deliver, acknowledge, renderUntil, rms,
+    acknowledgeReset: () => {
+      const proof = node.messages.findLast(message => message.type === 'frames');
+      if (proof?.type !== 'frames' || proof.frames.length) throw new Error('No pending zero-frame receiver proof');
+      deliver(); acknowledge();
+    },
+  };
 }
+
+describe('generation gain proof and the first actual shot phase', () => {
+  it.each([
+    ['before the first hardware write', 128 / 44100, false],
+    ['after the first 940Hz phase', 0.030, false],
+    ['after one failed native gain write', 128 / 44100, true],
+  ] as const)('retains the first shot phase when the accepted ACK arrives %s', async (_label, proofDelay, failGainWrite) => {
+    const receiver = await realReceiver();
+    const { audio, context, node, processor } = receiver;
+    audio.stopScene(); receiver.deliver();
+    const cueAt = context.currentTime, rate = 44100;
+    const channel = (processor.synth as unknown as { channels: { timer: number }[] }).channels[0];
+    const target: { frame: number; raw: number; gain: number }[] = [];
+    let sampleFrame = Math.round(cueAt * rate);
+    const sample = processor.synth.sample.bind(processor.synth);
+    const advanceSilence = processor.synth.advanceSilence.bind(processor.synth);
+    vi.spyOn(processor.synth, 'advanceSilence').mockImplementation(samples => {
+      advanceSilence(samples); sampleFrame += samples;
+    });
+    vi.spyOn(processor.synth, 'sample').mockImplementation(() => {
+      const value = sample();
+      // Timer 118 is the literal 940.006828Hz phase after shot's first sweep.
+      // Inspect the existing sample; do not add an oscillator or advance a clock.
+      if (channel.timer === 118) target.push({ frame: sampleFrame, raw: value, gain: context.gain.value });
+      sampleFrame++;
+      return value;
+    });
+    const trigger = vi.spyOn(processor.driver, 'trigger');
+    audio.play([{ type: 'fire', team: 'player', playerIndex: 0, enemyKind: null, stars: 0 }]);
+    audio.advanceTick(); audio.commitFrame(); receiver.deliver();
+    const events = [
+      { at: cueAt + proofDelay, proof: true },
+      ...Array.from({ length: 5 }, (_, index) => ({ at: cueAt + (index + 1) / AUDIO_TICK_HZ, proof: false })),
+    ].sort((first, second) => first.at - second.at);
+    for (const event of events) {
+      receiver.renderUntil(event.at);
+      context.currentTime = event.at;
+      if (event.proof) {
+        expect(context.gain.value).toBe(0);
+        if (failGainWrite) {
+          const failure = new Error('First native gain write failed');
+          context.gain.failNextWrite = failure;
+          expect(() => receiver.acknowledge()).toThrow(failure);
+          expect(context.gain.value).toBe(0);
+          expect(actualBatches(node)).toHaveLength(0);
+          audio.commitFrame(); // Retry without another ACK or a new driver step.
+        } else receiver.acknowledge();
+        expect(context.gain.value).toBe(0.3);
+      } else {
+        audio.advanceTick(); audio.commitFrame(); receiver.deliver();
+      }
+    }
+    receiver.renderUntil(cueAt + 0.095);
+    expect(sampleFrame).toBe(Math.ceil((cueAt + 0.095) * rate));
+    expect(trigger).toHaveBeenCalledExactlyOnceWith(CUE.shot);
+    expect(receiver.writes.filter(write => write.channel === 0 && write.register === 3)).toHaveLength(1);
+    if (!target.length) throw new Error('The real synth never reached the first shot sweep');
+    const rawRms = Math.sqrt(target.reduce((sum, value) => sum + value.raw ** 2, 0) / target.length);
+    const gatedRms = Math.sqrt(target.reduce((sum, value) => sum + (value.raw * value.gain) ** 2, 0) / target.length);
+    expect(rawRms).toBeGreaterThan(0.002);
+    const first = target[0].frame / rate, last = (target.at(-1)!.frame + 1) / rate;
+    // Only ACK delivery differs. Every game step, source deadline and native
+    // sample remains fresh and ordered; the destination must retain that phase.
+    expect(receiver.rms(first, last), JSON.stringify({ proofDelay, rawRms, gatedRms, first, last }))
+      .toBeGreaterThan(0.0005);
+  });
+});
+
+describe('reset proof keeps the existing cue and persistent-state boundaries', () => {
+  it.each(['expired', 'manual', 'focus'] as const)('does not replay a shot discarded by %s while proof is pending', async boundary => {
+    const receiver = await realReceiver();
+    const { audio, context, node, processor } = receiver;
+    audio.stopScene(); receiver.deliver();
+    const cueAt = context.currentTime, trigger = vi.spyOn(processor.driver, 'trigger');
+    audio.play([{ type: 'fire', team: 'player', playerIndex: 0, enemyKind: null, stars: 0 }]);
+    audio.advanceTick(); audio.commitFrame();
+    expect(actualBatches(node)).toHaveLength(0);
+    if (boundary === 'expired') {
+      receiver.renderUntil(cueAt + 0.040); context.currentTime = cueAt + 0.040;
+      receiver.acknowledge();
+    } else {
+      audio.setPaused(true, boundary); receiver.deliver();
+      receiver.renderUntil(cueAt + 0.010); context.currentTime = cueAt + 0.010;
+      receiver.acknowledge(); // The pre-pause proof cannot reopen this barrier.
+      audio.setPaused(false); receiver.acknowledgeReset();
+    }
+    audio.advanceTick(); audio.commitFrame(); receiver.deliver();
+    receiver.renderUntil(cueAt + 0.095);
+    expect(trigger).not.toHaveBeenCalledWith(CUE.shot);
+    expect(receiver.rms(cueAt + 0.060, cueAt + 0.090)).toBe(0);
+  });
+
+  it('keeps reset-carried intro at its authoritative seek and advances only subsequent actual ticks', async () => {
+    const receiver = await realReceiver();
+    const { audio, context, node, processor } = receiver;
+    const tick = vi.spyOn(processor.driver, 'tick'), at = context.currentTime;
+    audio.play([{ type: 'stage-start' }]);
+    for (let index = 0; index < 13; index++) audio.advanceTick();
+    const reset = node.messages.findLast(message => message.type === 'reset');
+    expect(reset).toMatchObject({ tick: 13, offset: 13, start: [CUE.stagePulse1, CUE.stageTriangle, CUE.stagePulse2] });
+    receiver.deliver();
+    expect(tick).toHaveBeenCalledTimes(13);
+    receiver.renderUntil(at + 0.030); context.currentTime = at + 0.030;
+    expect(tick).toHaveBeenCalledTimes(13);
+    expect(receiver.rms(at + 0.002, at + 0.025)).toBe(0);
+    // Persistent seek remains synchronous at reset. The synth's native clocks
+    // still advance while gain is closed; this fix does not replay that segment.
+    receiver.acknowledgeReset();
+    for (let index = 0; index < 3; index++) {
+      context.currentTime = at + 0.030 + index / AUDIO_TICK_HZ;
+      audio.advanceTick(); audio.commitFrame(); receiver.deliver();
+      receiver.renderUntil(context.currentTime + 128 / 44100); receiver.acknowledge();
+    }
+    receiver.renderUntil(at + 0.095);
+    expect(tick).toHaveBeenCalledTimes(16);
+    expect(actualBatches(node).flatMap(message => message.frames.map(frame => frame.tick))).toEqual([14, 15, 16]);
+    expect(receiver.rms(at + 0.035, at + 0.090)).toBeGreaterThan(0.0005);
+  });
+});
 
 describe('sender and native receiver count regressions', () => {
   it('preserves nine queued sample deadlines when a fresh count clock is only ten milliseconds later', async () => {
-    const receiver = await realReceiver();
+    const receiver = await realReceiver(); receiver.acknowledgeReset();
     const { audio, context, node, processor } = receiver;
     settledActiveScene(audio);
     for (let index = 0; index < 9; index++) audio.advanceTick();
@@ -977,15 +1115,19 @@ describe('sender and native receiver count regressions', () => {
       audio.advanceTick(); audio.commitFrame(); await Promise.resolve();
       receiver.deliver(); receiver.renderUntil(context.currentTime);
     }
-    expect.soft(node.messages.filter(message => message.type === 'frames')).toHaveLength(1);
+    expect.soft(actualBatches(node)).toHaveLength(0);
+    const reset = node.messages.findLast(message => message.type === 'reset');
+    expect.soft(node.messages.filter(message => message.type === 'frames' && message.generation === reset?.generation))
+      .toMatchObject([{ frames: [] }]);
     const trigger = vi.spyOn(processor.driver, 'trigger');
     context.currentTime = 1 + 44 / AUDIO_TICK_HZ;
     const countAt = context.currentTime;
     audio.updateScore(state, 44 * 1000 / AUDIO_TICK_HZ);
     audio.advanceTick(); audio.commitFrame(); await Promise.resolve();
+    expect.soft(actualBatches(node)).toHaveLength(0);
+    receiver.deliver(); receiver.acknowledge(); receiver.deliver();
     const count = node.messages.findLast(message => message.type === 'frames');
     expect.soft(count).toMatchObject({ frames: [{ tick: 44, start: [CUE.countPulse, CUE.countNoise], stop: [] }] });
-    receiver.deliver(); receiver.acknowledge();
     expect.soft(context.gain.value).toBe(0.3);
     receiver.renderUntil(countAt + 0.002);
     for (let index = 1; index <= 2; index++) {
@@ -997,8 +1139,8 @@ describe('sender and native receiver count regressions', () => {
     receiver.renderUntil(countAt + 0.6);
     expect.soft(trigger).toHaveBeenCalledWith(CUE.countPulse);
     expect.soft(trigger).toHaveBeenCalledWith(CUE.countNoise);
-    expect.soft(node.messages.filter(message => message.type === 'frames').flatMap(message => message.frames.map(frame => frame.tick)))
-      .toEqual([1, 44, 45, 46]);
+    expect.soft(actualBatches(node).flatMap(message => message.frames.map(frame => frame.tick)))
+      .toEqual([44, 45, 46]);
     const note = receiver.writes.find(event => event.channel === 1 && event.register === 0 && event.value === 0x80);
     const mute = receiver.writes.find(event => event.channel === 1 && event.register === 0 && event.value === 0x10 && note && event.frame > note.frame);
     expect.soft(note).toBeDefined(); expect.soft(mute).toBeDefined();
@@ -1014,7 +1156,10 @@ describe('sender and native receiver count regressions', () => {
       context.currentTime += 1 / AUDIO_TICK_HZ;
       audio.advanceTick(); audio.commitFrame(); await Promise.resolve();
     }
-    expect(node.messages.filter(message => message.type === 'frames')).toHaveLength(1);
+    expect(actualBatches(node)).toHaveLength(0);
+    const reset = node.messages.findLast(message => message.type === 'reset');
+    expect(node.messages.filter(message => message.type === 'frames' && message.generation === reset?.generation))
+      .toMatchObject([{ frames: [] }]);
     const state = fixture(); state.phase = 'lost'; state.players[0].kills = [1, 0, 0, 0];
     audio.updateScore(state, 44 * 1000 / AUDIO_TICK_HZ); audio.advanceTick(); audio.commitFrame();
     expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({
@@ -1027,7 +1172,7 @@ describe('sender and native receiver count regressions', () => {
     for (let index = 0; index < 9; index++) audio.advanceTick();
     audio.commitFrame(); node.acknowledge(3);
     context.currentTime = 1.01;
-    if (barrier === 'reset') audio.stopScene();
+    if (barrier === 'reset') { audio.stopScene(); acknowledgeReset(node); }
     else { audio.setPaused(true); audio.setPaused(false); }
     const state = fixture(); state.phase = 'lost'; state.players[0].kills = [1, 0, 0, 0];
     audio.updateScore(state, 44 * 1000 / AUDIO_TICK_HZ); audio.advanceTick(); audio.commitFrame();
@@ -1040,7 +1185,7 @@ describe('sender and native receiver count regressions', () => {
 
 describe('ACK/progress coalescing candidate sender', () => {
   it('keeps the consumed hardware cursor from a latest accepted ACK', async () => {
-    const { audio, context, node } = await enabled();
+    const { audio, context, node } = await enabled(); acknowledgeReset(node);
     audio.startPresentation('hiscore'); audio.advanceTick(); audio.commitFrame();
     const first = node.messages.findLast(message => message.type === 'frames');
     if (first?.type !== 'frames') throw new Error('No real frame');
@@ -1048,18 +1193,18 @@ describe('ACK/progress coalescing candidate sender', () => {
     context.currentTime = 1.01; audio.advanceTick(); audio.commitFrame();
     expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({ at: 1.25, frames: [{ tick: 2, start: [], stop: [] }] });
   });
-  it('uses an older accepted ACK only as reset proof, without rebasing the latest reservation', async () => {
-    const { audio, context, node } = await enabled();
+  it('ignores an earlier accepted credit snapshot without rebasing the latest reservation', async () => {
+    const { audio, context, node } = await enabled(); acknowledgeReset(node);
     audio.startPresentation('hiscore');
     for (let batch = 0; batch < 2; batch++) {
       for (let tick = 0; tick < 6; tick++) audio.advanceTick();
       audio.commitFrame();
     }
-    const sent = node.messages.filter(message => message.type === 'frames');
+    const sent = actualBatches(node);
     audio.advanceTick(); audio.commitFrame();
     node.port.onmessage?.({ data: { type: 'ack', generation: sent[0].generation, sequence: sent[0].sequence, accepted: true, credits: 12, nextAt: 9 } });
     expect(context.gain.value).toBe(0.3);
-    expect(node.messages.filter(message => message.type === 'frames')).toEqual(sent);
+    expect(actualBatches(node)).toEqual(sent);
     node.acknowledge(0);
     context.currentTime = 1.25; node.progress(1, 1.3);
     expect(node.messages.findLast(message => message.type === 'frames')).toMatchObject({ at: 1.3, frames: [{ tick: 13, start: [], stop: [] }] });
@@ -1070,7 +1215,7 @@ describe('ACK/progress coalescing candidate sender', () => {
 describe('overflow recovery preserves only fresh unposted attacks', () => {
   it.each(['fresh', 'expired', 'posted', 'pause', 'suspended', 'rejected'] as const)(
     '%s attack crosses only its permitted overflow barrier into the real receiver', async scenario => {
-      const receiver = await realReceiver();
+      const receiver = await realReceiver(); receiver.acknowledgeReset();
       const { audio, context, node, processor } = receiver;
       settledActiveScene(audio);
       const shot = () => audio.play([{ type: 'fire', team: 'player', playerIndex: 0, enemyKind: null, stars: 0 }]);
@@ -1105,7 +1250,7 @@ describe('overflow recovery preserves only fresh unposted attacks', () => {
       if (scenario === 'fresh') expect(reset.recovery).toEqual([{ at: 1.01, start: [CUE.shot] }]);
       else expect(reset.recovery).toBeUndefined();
       const trigger = vi.spyOn(processor.driver, 'trigger');
-      receiver.renderUntil(context.currentTime); receiver.deliver();
+      receiver.renderUntil(context.currentTime); receiver.deliver(); receiver.acknowledgeReset();
       // Reset receipt must not decode or write a rescued short attack. Only
       // subsequent authoritative ticks can perform its normal decode/write.
       expect(trigger.mock.calls.filter(([id]) => id === CUE.shot)).toHaveLength(0);

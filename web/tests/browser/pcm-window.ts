@@ -4,9 +4,19 @@ import { setTimeout as setDiagnosticTimeout, clearTimeout as clearDiagnosticTime
 export interface PcmPacket { frame: number; times: number[]; frames: number[]; lengths: number[]; samples: Float32Array }
 export interface AudioEvent { kind: 'keydown' | 'blur'; code: string; at: number }
 export interface AudioMark { kind: string; at: number; tick?: number }
+export interface AudioTransportEntry {
+  direction: 'send' | 'receive'; wall: number; type: string; generation: number;
+  sequence?: number; at?: number; tick?: number; offset?: number; paused?: boolean; reason?: string;
+  accepted?: boolean; credits?: number; nextAt?: number; start?: number[]; stop?: number[];
+  frames?: { tick: number; start: number[]; stop: number[] }[];
+  recovery?: { at: number; start: number[] }[];
+}
+export interface AudioTransportHistory {
+  entries: AudioTransportEntry[]; next: number; dropped: number; observationErrors: number;
+}
 export interface AudioCapture {
   ready: boolean; gameReady: boolean; errors: string[]; rate: number; context?: AudioContext; gain?: GainNode; packets: PcmPacket[];
-  events: AudioEvent[]; marks: AudioMark[]; recording?: boolean; recordFromFrame?: number;
+  events: AudioEvent[]; marks: AudioMark[]; recording?: boolean; recordFromFrame?: number; transport?: AudioTransportHistory;
 }
 declare global { interface Window { __AUDIO_PCM__?: AudioCapture } }
 export interface PcmFeatures { rms: number; peak: number; onset: number | null; amplitudes: number[]; samples: number; rate: number; idleReady?: boolean }
@@ -17,6 +27,8 @@ export interface PcmShotMatch { band: PcmFeatures; bandStart: number; phases: [P
 export interface PcmSnapshot {
   ready: boolean; gameReady: boolean; errors: string[]; rate: number;
   packets: (Omit<PcmPacket, 'samples'> & { samplesBase64: string })[];
+  diagnostics?: { events?: AudioEvent[]; marks?: AudioMark[];
+    transport?: Omit<AudioTransportHistory, 'next'>; unavailable?: boolean };
 }
 export interface PcmShotParameters { start: number; end: number; frequencies: readonly number[]; minimumAmplitude: number }
 export interface PcmShotFailure {
@@ -58,7 +70,7 @@ export function snapshotPcmWindow({ start, end }: { start: number; end: number }
   const first = Math.ceil(start * pcm.rate), last = Math.floor(end * pcm.rate);
   const packets = pcm.packets.filter((packet, index) => index === pcm.packets.length - 1 ||
     packet.frames.some((frame, index) => frame < last && frame + packet.lengths[index] > first));
-  return { ready: pcm.ready, gameReady: pcm.gameReady, errors: [...pcm.errors], rate: pcm.rate,
+  const snapshot: PcmSnapshot = { ready: pcm.ready, gameReady: pcm.gameReady, errors: [...pcm.errors], rate: pcm.rate,
     packets: packets.map(packet => {
       if (!(packet.samples instanceof Float32Array)) throw new Error('Malformed PCM packet');
       const bytes = new Uint8Array(packet.samples.buffer, packet.samples.byteOffset, packet.samples.byteLength);
@@ -67,6 +79,20 @@ export function snapshotPcmWindow({ start, end }: { start: number; end: number }
       return { frame: packet.frame, times: [...packet.times], frames: [...packet.frames], lengths: [...packet.lengths],
         samplesBase64: btoa(binary) };
     }) };
+  // These optional observations never participate in PCM validation or require
+  // another browser read. A broken observer must not replace the PCM result.
+  try {
+    const history = pcm.transport;
+    const entries = history ? [...history.entries.slice(history.next), ...history.entries.slice(0, history.next)] : [];
+    if (history || pcm.events.length || pcm.marks.length) snapshot.diagnostics = { events: pcm.events.map(event => ({ ...event })), marks: pcm.marks.map(mark => ({ ...mark })),
+      ...(history ? { transport: { dropped: history.dropped, observationErrors: history.observationErrors,
+        entries: entries.map(entry => ({ ...entry,
+          ...(entry.start ? { start: [...entry.start] } : {}), ...(entry.stop ? { stop: [...entry.stop] } : {}),
+          ...(entry.recovery ? { recovery: entry.recovery.map(group => ({ at: group.at, start: [...group.start] })) } : {}),
+          ...(entry.frames ? { frames: entry.frames.map(frame => ({ tick: frame.tick, start: [...frame.start], stop: [...frame.stop] })) } : {}),
+        })) } } : {}) };
+  } catch { snapshot.diagnostics = { unavailable: true }; }
+  return snapshot;
 }
 
 /** Decode in Node without rounding samples or repairing raw quantum metadata. */

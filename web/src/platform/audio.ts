@@ -125,6 +125,12 @@ export class GameAudio {
     this.post({ type: 'pause', generation: this.generation, paused: this.paused, reason: this.pauseReason,
       tick: this.tick, frames: frames.map(({ tick, start, stop }) => ({ tick, start, stop })),
       start: [...this.starts], stop: [...this.stops] });
+    // Prove FIFO reset/unpause reception without advancing an actual driver
+    // step. The gain must open before a real attack can reach the processor.
+    if (this.node && !this.paused && !this.resumeSyncNeeded && !this.generationReady && !this.inFlight) {
+      this.sequence++; this.inFlight = true;
+      this.post({ type: 'frames', generation: this.generation, sequence: this.sequence, at: this.nextTime, frames: [] });
+    }
   }
   private applyGain(): void {
     if (!this.gain) return;
@@ -200,10 +206,10 @@ export class GameAudio {
   advanceTick(): void {
     this.tick++; if (this.music) this.musicTicks++;
     if (!this.ready()) { this.starts.clear(); this.stops.clear(); return; }
-    // A reset scene has no driver work until a real cue starts. Send one empty
-    // handshake to prove reset reception, then leave capacity for that cue.
+    // A reset scene has no driver work until a real cue starts. The zero-frame
+    // control proof does not need a simulated step or reserve FIFO capacity.
     const silentLead = !this.sceneActive && !this.music && !this.engine && !this.starts.size && !this.stops.size;
-    if (silentLead && (this.generationReady || this.inFlight || this.pending.length > 0)) return;
+    if (silentLead) return;
     this.pending.push({ tick: this.tick, start: [...this.starts], stop: [...this.stops], queuedAt: this.context!.currentTime });
     this.starts.clear(); this.stops.clear();
     if (this.pending.length > 12) {
@@ -224,7 +230,10 @@ export class GameAudio {
   /** Submit actual fixed steps before the frame paints its canvas. */
   commitFrame(): void { this.flush(); }
   private flush(): void {
-    if (!this.credits || !this.pending.length || !this.ready()) return;
+    if (!this.generationReady || !this.credits || !this.pending.length || !this.ready()) return;
+    // A failed native gain setter must not let the already proved generation
+    // submit its first attack while still muted. A cached success avoids another setter.
+    this.applyGain();
     const now = this.context!.currentTime;
     // Preserve completed ticks and persistent state, without replaying attacks
     // that expired while processor capacity was unavailable. A recovery keeps
