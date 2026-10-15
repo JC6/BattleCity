@@ -33,21 +33,8 @@ flowchart LR
 
 ## 检查与变更
 
-需要 Node 24，依赖版本由 `package-lock.json` 固定。在 `web` 下执行：
-
-```sh
-npm run typecheck:app
-npm run typecheck:tests
-npm test
-npm run validate:desktop
-```
-
-`typecheck` 同时检查应用、测试、JSON fixture 和 Vite/Vitest/Playwright 配置，`build` 与正式验收均调用它。测试宿主使用 Node 24 类型和 ES2023 库类型；应用保持自己的目标配置。
+测试宿主使用 Node 24 类型和 ES2023 库类型；应用保持自己的目标配置。开发命令见 [README](../../README.md#开发)，完整检查流程见 [桌面验收](validation.md)。
 
 单元测试按规则、应用端口、浏览器适配、音频资源/传输、实际 Worklet 与合成器分层。原有键盘集成测试仍验证 bootstrap 与控制器的真实接线。Construction 的模拟像素在测试 fixture 内缓存诊断扫描，字节一致性使用 `Buffer.equals`；仅键盘准备测试组使用 15 秒预算，不启用重试。
 
-正式验收固定为每引擎 52 项 E2E、12 项生产用例，包含真实时钟与 PCM 恢复。结果必须满足完整执行、零失败/跳过/重试/flaky/全局错误以及源码绑定通过。运行中不要修改源码。证据保存在 `test-results/acceptance/<run>/`，大型像素、音频和 trace 不进入 Git。生产包检查确保测试接口被移除。
-
-实时 PCM 验收需要宿主及时调度音频与页面线程。诊断软件渲染竞争时，可显式选择 [Mesa 的 `LP_NUM_THREADS`](https://docs.mesa3d.org/envvars.html#envvar-LP_NUM_THREADS) 和 [WebKit 的 CPU 绘制配置](https://github.com/WebKit/WebKit/blob/main/Source/WebKit/glib/environment-variables.md.in)。脚本不自动设置它们；报告的 `runtime.rendering` 记录本次显式传入的 `LP_NUM_THREADS`、`WEBKIT_SKIA_ENABLE_CPU_RENDERING`、`WEBKIT_SKIA_CPU_PAINTING_THREADS`，便于区分不同环境的结果。环境调整不能替代完整验收，也不能放宽 PCM 时间或波形断言。
-
-[应用状态与时序](state-machine.md) · [音频协议与恢复](audio.md) · [参考资料与证据缺口](references.md)
+[应用状态与时序](state-machine.md) · [音频协议与恢复](audio.md) · [桌面验收](validation.md) · [参考资料与证据缺口](references.md)

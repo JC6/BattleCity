@@ -65,25 +65,7 @@ Firefox 不主动拦截，但不属于本轮兼容承诺或发布门禁；移动
 npm run validate:desktop -- --install
 ```
 
-从 Linux 或普通 WSL 终端执行上述命令，准备固定依赖后完成环境预检、类型与单元检查、两引擎 E2E、生产构建和冒烟。已有依赖时运行 `npm run validate:desktop`，不执行安装。每次验收保存源码指纹与独立日志；环境受阻会明确报告浏览器用例未执行。
-
-脚本使用当前终端的 Node 24，将它的目录置于子进程 `PATH` 开头并保留原 `PATH`；`TMPDIR`、`PLAYWRIGHT_BROWSERS_PATH` 和 `LD_LIBRARY_PATH` 原样继承，不会自动寻找或切换到固定缓存。如果 Node 24 和浏览器已放在 `/tmp`，可明确选择现有目录（按实际位置调整）：
-
-```sh
-PATH="/tmp/battlecity-toolchain/node-v24.21.0-linux-x64/bin:$PATH" \
-TMPDIR=/tmp PLAYWRIGHT_BROWSERS_PATH=/tmp/battlecity-playwright \
-npm run validate:desktop
-```
-
-首次准备这些目录时，在同一环境配置下加 `-- --install`。需要自备动态库时显式设置 `LD_LIBRARY_PATH`。`/tmp` 的缓存可能在重启或清理后消失，浏览器安装也需要下载与解压空间；临时目录和浏览器缓存都可改为其他有足够空间的目录。
-
-CI 安装依赖和浏览器后使用同一入口，并始终尝试保存可用报告到 GitHub Actions Artifacts，保留 7 天。验收归档保留在本地或 CI 产物中，不提交到代码仓库。推送 `master` 后，全部检查通过才自动部署 GitHub Pages。
-
-每次验收报告保存在 `web/test-results/acceptance/<run>/`，包含源码清单、日志和独立保存的实际浏览器结果；顶层测试 JSON 可能被后续运行覆盖。
-
-正式通过要求完整运行的 `browserAcceptance: passed`、源码绑定通过、两个引擎完整执行，且零失败、跳过、flaky 或全局错误；每例仅接受一次通过、零重试，命令及用例的完整时间区间必须属于本次执行。配置必须为单 worker、不分片、不提前停止、不重复执行。缺失、过期或只发现用例的报告不能替代实际执行。
-
-验收报告和阶段源码绑定使用 `schemaVersion: 2`，源码指纹覆盖 git 列出的 `web` 文件及根目录 `LICENSE`；同时记录 `LICENSE` 和第三方声明的 SHA-256，生产副本必须与本次初始源码快照一致。旧版报告不包含这些证据，不能替代新版验收。完整验收退出码 `0` 表示通过，`1` 表示检查失败，`2` 表示环境受阻或中断。`--preflight-only` 不执行游戏验收用例，即使返回 `0`，仍是未验收的 `unverified` 状态。
+从 Linux 或普通 WSL 终端运行；已有依赖时使用 `npm run validate:desktop`。环境准备、完整验收标准、报告和 CI 说明集中在 [桌面验收](web/docs/validation.md)。
 
 ## 原 Android 工程
 
