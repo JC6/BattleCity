@@ -233,16 +233,18 @@ export async function audioMarkTime(page: Page, kind: string, options: { after?:
   } finally { await handle.dispose(); }
 }
 export async function waitForAudioTime(page: Page, time: number): Promise<void> {
+  // Native PCM coverage does not require compositor frames. A RAF observer can
+  // add rendering work while the game's independent fixed-step timer is live.
   const handle = await page.waitForFunction(time => {
     const pcm = window.__AUDIO_PCM__;
     if (pcm?.errors.length) throw new Error(pcm.errors.join('\n'));
     const last = pcm?.packets.at(-1);
     return !!last && (last.frames.at(-1)! + last.lengths.at(-1)!) / pcm!.rate >= time;
-  }, time, { polling: 'raf', timeout: 15000 });
+  }, time, { polling: 25, timeout: 15000 });
   await handle.dispose();
 }
 async function measuredPcm(page: Page, parameters: Parameters<typeof pcmWindowFeatures>[0]): Promise<PcmFeatures> {
-  const snapshot = await page.evaluate(snapshotPcmWindow, { start: parameters.start, end: parameters.end });
+  const snapshot = await page.evaluate(snapshotPcmWindow, { start: parameters.start, end: parameters.end, measure: true });
   return pcmWindowFeatures(parameters, restorePcmSnapshot(snapshot));
 }
 /** Retain the exact raw window analyzed in Node; diagnostic failures must never
@@ -255,7 +257,7 @@ export async function pcmMeasurement(page: Page, start: number, end: number, fre
   return observePcmShotFailure(async () => {
     await waitForAudioTime(page, end);
     stage = 'sampling';
-    snapshot = await page.evaluate(snapshotPcmWindow, { start, end });
+    snapshot = await page.evaluate(snapshotPcmWindow, { start, end, measure: true });
     stage = 'measurement';
     const features = pcmWindowFeatures(parameters, restorePcmSnapshot(snapshot));
     return { parameters, snapshot, features };
@@ -299,19 +301,16 @@ export async function pcmShotWindow(page: Page, start: number, end: number, freq
   const parameters = { start, end, frequencies, minimumAmplitude };
   let snapshot: PcmSnapshot | undefined;
   let stage: PcmShotFailure['stage'] = 'coverage';
-  let measured: PcmShotMatch | null = null;
   return observePcmShotFailure(async () => {
-    await waitForAudioTime(page, start + 0.025);
-    stage = 'polling';
-    await expect.poll(async () => {
-      stage = 'sampling';
-      snapshot = undefined;
-      snapshot = await page.evaluate(snapshotPcmWindow, { start, end });
-      stage = 'measurement';
-      measured = pcmShotWindowFeatures({ ...parameters, frequencies: [...frequencies] }, restorePcmSnapshot(snapshot));
-      stage = 'polling';
-      return measured !== null;
-    }, { timeout: 15000 }).toBe(true);
-    return measured!;
+    // Observe coverage cheaply until the original bounded window is complete.
+    // Exporting partial PCM while the attack is still playing can itself stall
+    // the main thread, delaying the real tick/ACK traffic being measured.
+    await waitForAudioTime(page, end);
+    stage = 'sampling';
+    snapshot = await page.evaluate(snapshotPcmWindow, { start, end, measure: true });
+    stage = 'measurement';
+    const measured = pcmShotWindowFeatures({ ...parameters, frequencies: [...frequencies] }, restorePcmSnapshot(snapshot));
+    if (!measured) throw new Error('The original PCM shot window was not fully captured');
+    return measured;
   }, () => ({ parameters, snapshot, stage }), onFailure);
 }

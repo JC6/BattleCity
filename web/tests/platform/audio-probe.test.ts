@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Page } from '@playwright/test';
 import { createContext, runInContext } from 'node:vm';
-import { beginPcmCapture, installPcmProbe } from '../browser/audio-probe';
+import { beginPcmCapture, installPcmProbe, pcmShotWindow } from '../browser/audio-probe';
 import { observePcmShotFailure, pcmShotWindowFeatures, pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture, type PcmPacket } from '../browser/pcm-window';
 import { ApuDriver } from '../../src/platform/apu-driver';
 import { ApuSynth } from '../../src/platform/apu-synth';
@@ -352,6 +352,28 @@ function actualCue(cue: number, rate: number, warmup = 1): AudioCapture {
       times: frames.map(frame => frame / rate), samples }] };
 }
 describe('bounded browser-to-Node PCM snapshots', () => {
+  it('keeps native and fallback byte encoding identical across chunk boundaries and buffer offsets', () => {
+    const bits = new Uint32Array(32772);
+    for (let index = 0; index < bits.length; index++) bits[index] = [0x3f800001, 0x80000000, 0x7fc12345, 0x00000001][index % 4];
+    const samples = new Float32Array(bits.buffer, 4, bits.length - 2);
+    const capture: AudioCapture = { ready: true, gameReady: true, errors: [], rate: 44100, events: [], marks: [],
+      packets: [{ frame: 0, frames: [0], times: [0], lengths: [samples.length], samples }] };
+    const native = vi.fn(function (this: Uint8Array) {
+      return Buffer.from(this.buffer, this.byteOffset, this.byteLength).toString('base64');
+    });
+    const snapshots = [true, false].map(enabled => {
+      class Bytes extends Uint8Array {}
+      Object.defineProperty(Bytes.prototype, 'toBase64', { value: enabled ? native : undefined });
+      const realm = createContext({ Uint8Array: Bytes, Float32Array, btoa, capture });
+      return runInContext(`(${snapshotPcmWindow.toString()})({start:0,end:0.5},capture)`, realm);
+    });
+    expect(native).toHaveBeenCalledOnce(); expect(snapshots[0]).toEqual(snapshots[1]);
+    for (const snapshot of snapshots) {
+      const restored = restorePcmSnapshot(snapshot);
+      expect(Array.from(new Uint32Array(restored.packets[0].samples.buffer))).toEqual(Array.from(bits.subarray(1, -1)));
+    }
+  });
+
   it('copies complete intersecting packets in order and retains the final native coverage packet', () => {
     const packets = [packet([0, 128]), packet([512, 640]), packet([1024, 1152]), packet([2048]), packet([4096])];
     const capture: AudioCapture = { ready: true, gameReady: true, errors: [], rate: 1000, packets, events: [], marks: [] };
@@ -596,6 +618,38 @@ describe('player-shot PCM signature', () => {
   const gateFor = (capture: AudioCapture) => Math.max(0.002, Math.max(...pcmWindowFeatures({
     start: 0, end: 0.5, frequencies, idle: true, comparison: { duration: 0.025, step: 0.008 },
   }, capture).amplitudes) * 3);
+
+  it('waits for the original complete window before exporting once, with unchanged sweep analysis', async () => {
+    const capture = independent(), snapshot = snapshotPcmWindow(parameters, capture);
+    let complete!: (handle: { dispose: () => void }) => void;
+    const coverage = new Promise<{ dispose: () => void }>(resolve => { complete = resolve; });
+    const dispose = vi.fn(), evaluate = vi.fn(async () => snapshot);
+    const waitForFunction = vi.fn((_expression: unknown, _parameters: unknown, _options: unknown) => coverage);
+    const page = { evaluate, waitForFunction } as unknown as Page;
+    const result = pcmShotWindow(page, parameters.start, parameters.end, frequencies, parameters.minimumAmplitude);
+    await Promise.resolve();
+    expect(evaluate).not.toHaveBeenCalled();
+    expect(waitForFunction.mock.calls[0]?.[1]).toBe(parameters.end);
+    expect(waitForFunction.mock.calls[0]?.[2]).toEqual({ polling: 25, timeout: 15000 });
+    complete({ dispose });
+    expect(await result).toEqual(pcmShotWindowFeatures(parameters, capture));
+    expect(evaluate).toHaveBeenCalledOnce(); expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it.each(['absent shot', 'invalid tail after a valid shot'] as const)('retains the complete failing window for %s without another export', async kind => {
+    const capture = independent();
+    if (kind === 'absent shot') capture.packets[0].samples.fill(0);
+    else capture.packets[0].samples[Math.floor(capture.rate * 0.4)] = Number.NaN;
+    const snapshot = snapshotPcmWindow(parameters, capture), observer = vi.fn();
+    const evaluate = vi.fn(async () => snapshot), dispose = vi.fn();
+    const page = { evaluate, waitForFunction: vi.fn(async () => ({ dispose })) } as unknown as Page;
+    await expect(pcmShotWindow(page, parameters.start, parameters.end, frequencies, parameters.minimumAmplitude, observer))
+      .rejects.toThrow(kind === 'absent shot' ? /Player-shot PCM signature was absent/ : /Non-finite PCM sample/);
+    expect(evaluate).toHaveBeenCalledOnce(); expect(observer).toHaveBeenCalledOnce();
+    expect(observer.mock.calls[0][0].snapshot).toBe(snapshot);
+    expect(observer.mock.calls[0][0].parameters).toEqual(parameters);
+    expect(observer.mock.calls[0][0].stage).toBe('measurement');
+  });
 
   it.each([44100, 48000].flatMap(rate => [0.04, 0.041, 0.053, 0.137].map((onset, index) => [rate, onset, index * 0.7] as const)))
     ('matches an independent %sHz literal sweep starting at %ss with phase %s', (rate, onset, phase) => {

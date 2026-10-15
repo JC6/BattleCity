@@ -70,7 +70,7 @@ describe('exact PCM measurement diagnostics', () => {
     expect(value.waitForFunction).toHaveBeenCalledOnce();
     expect(value.waitForFunction.mock.calls[0][1]).toBe(value.parameters.end);
     expect(value.evaluate).toHaveBeenCalledOnce();
-    expect(value.evaluate.mock.calls[0][1]).toEqual({ start: value.parameters.start, end: value.parameters.end });
+    expect(value.evaluate.mock.calls[0][1]).toEqual({ start: value.parameters.start, end: value.parameters.end, measure: true });
     expect(value.dispose).toHaveBeenCalledOnce(); expect(observer).not.toHaveBeenCalled();
   });
   it('keeps the existing pcmFeatures result and its wait and sample behavior', async () => {

@@ -29,6 +29,7 @@ export interface PcmShotMatch { band: PcmFeatures; bandStart: number; phases: [P
 export interface PcmSnapshot {
   ready: boolean; gameReady: boolean; errors: string[]; rate: number;
   packets: (Omit<PcmPacket, 'samples'> & { samplesBase64: string })[];
+  timing?: { wall: number; selectMs: number; encodeMs: number; diagnosticsMs: number };
   diagnostics?: { events?: AudioEvent[]; marks?: AudioMark[];
     transport?: Omit<AudioTransportHistory, 'next'>; unavailable?: boolean };
 }
@@ -65,22 +66,33 @@ export async function observePcmShotFailure<T, Evidence extends object = Omit<Pc
 /** This self-contained function is the only measurement code sent to the page.
  * Copy complete intersecting packets, retaining their offsets and labels. The
  * final real packet also proves how much native audio has actually arrived. */
-export function snapshotPcmWindow({ start, end }: { start: number; end: number }, capture?: AudioCapture): PcmSnapshot {
+export function snapshotPcmWindow({ start, end, measure = false }: { start: number; end: number; measure?: boolean }, capture?: AudioCapture): PcmSnapshot {
+  const wall = measure ? Date.now() : 0, started = measure ? performance.now() : 0;
   const pcm = capture ?? window.__AUDIO_PCM__!;
   if (pcm.errors.length) throw new Error(pcm.errors.join('\n'));
   if (pcm.packets.length > 768) throw new Error('PCM capture exceeded its bounded packet capacity');
   const first = Math.ceil(start * pcm.rate), last = Math.floor(end * pcm.rate);
   const packets = pcm.packets.filter((packet, index) => index === pcm.packets.length - 1 ||
     packet.frames.some((frame, index) => frame < last && frame + packet.lengths[index] > first));
+  const selected = measure ? performance.now() : 0;
   const snapshot: PcmSnapshot = { ready: pcm.ready, gameReady: pcm.gameReady, errors: [...pcm.errors], rate: pcm.rate,
     packets: packets.map(packet => {
       if (!(packet.samples instanceof Float32Array)) throw new Error('Malformed PCM packet');
       const bytes = new Uint8Array(packet.samples.buffer, packet.samples.byteOffset, packet.samples.byteLength);
-      let binary = '';
-      for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+      // Native byte encoding avoids materializing/spreading thousands of JS
+      // characters on the game's thread while its audio deadlines are live.
+      const native = bytes as Uint8Array & { toBase64?: () => string };
+      let samplesBase64: string;
+      if (typeof native.toBase64 === 'function') samplesBase64 = native.toBase64();
+      else {
+        let binary = '';
+        for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+        samplesBase64 = btoa(binary);
+      }
       return { frame: packet.frame, times: [...packet.times], frames: [...packet.frames], lengths: [...packet.lengths],
-        samplesBase64: btoa(binary) };
+        samplesBase64 };
     }) };
+  const encoded = measure ? performance.now() : 0;
   // These optional observations never participate in PCM validation or require
   // another browser read. A broken observer must not replace the PCM result.
   try {
@@ -94,6 +106,8 @@ export function snapshotPcmWindow({ start, end }: { start: number; end: number }
           ...(entry.frames ? { frames: entry.frames.map(frame => ({ tick: frame.tick, start: [...frame.start], stop: [...frame.stop] })) } : {}),
         })) } } : {}) };
   } catch { snapshot.diagnostics = { unavailable: true }; }
+  if (measure) snapshot.timing = { wall, selectMs: selected - started,
+    encodeMs: encoded - selected, diagnosticsMs: performance.now() - encoded };
   return snapshot;
 }
 
