@@ -7,6 +7,7 @@ import { SCORE_TIMING } from '../../src/game/score-timeline';
 import type { AudioMessage, AudioReply } from '../../src/platform/apu-worklet';
 import type { ApuDriver } from '../../src/platform/apu-driver';
 import type { ApuSynth } from '../../src/platform/apu-synth';
+import { pcmWindowFeatures } from '../browser/pcm-window';
 
 class Gain {
   value = 0;
@@ -784,6 +785,11 @@ async function realReceiver() {
   };
   deliver(); renderUntil(context.currentTime);
   return { audio, context, node, processor, writes, deliver, acknowledge, renderUntil, rms,
+    features: (start: number, end: number, frequencies: number[] = []) => {
+      if (end * 44100 > current) throw new Error('Unrendered receiver PCM window');
+      return pcmWindowFeatures({ start, end, frequencies }, { ready: true, gameReady: true, errors: [], rate: 44100,
+        events: [], marks: [], packets: [{ frame: 0, frames: [0], times: [0], lengths: [current], samples: pcm.subarray(0, current) }] });
+    },
     acknowledgeReset: () => {
       const proof = node.messages.findLast(message => message.type === 'frames');
       if (proof?.type !== 'frames' || proof.frames.length) throw new Error('No pending zero-frame receiver proof');
@@ -793,6 +799,34 @@ async function realReceiver() {
 }
 
 describe('generation gain proof and the first actual shot phase', () => {
+  it('starts all three intro voices within 90ms from proved silence while subsequent ACKs wait 160ms', async () => {
+    const receiver = await realReceiver(); receiver.acknowledgeReset();
+    const { audio, context, node, processor } = receiver;
+    for (let index = 0; index < 48; index++) audio.advanceTick();
+    receiver.renderUntil(1.25); context.currentTime = 1.25;
+    const keyAt = context.currentTime, tick = vi.spyOn(processor.driver, 'tick');
+    audio.stopScene(); audio.play([{ type: 'stage-start' }]); receiver.deliver();
+    // Only native samples and actual game steps advance. No replies are
+    // delivered during the opening, matching a slow page-side ACK handler.
+    for (let index = 1; index <= 9; index++) {
+      context.currentTime = keyAt + index / AUDIO_TICK_HZ;
+      receiver.renderUntil(context.currentTime);
+      audio.advanceTick(); audio.commitFrame(); receiver.deliver();
+    }
+    receiver.renderUntil(keyAt + 0.16); context.currentTime = keyAt + 0.16;
+    const opening = receiver.features(keyAt, keyAt + 0.16);
+    expect(opening.onset).not.toBeNull(); expect(opening.onset!).toBeGreaterThanOrEqual(keyAt);
+    expect(opening.onset!).toBeLessThanOrEqual(keyAt + 0.09);
+    expect(opening.rms).toBeGreaterThan(0.008); expect(opening.peak).toBeLessThan(0.5);
+    const voices = receiver.features(opening.onset! + 0.015, opening.onset! + 0.10, [522.714, 195.57, 130.678]);
+    for (const [index, minimum] of [0.005, 0.003, 0.001].entries()) expect(voices.amplitudes[index]).toBeGreaterThan(minimum);
+    expect(receiver.rms(1.02, keyAt)).toBe(0);
+    expect(tick).toHaveBeenCalledTimes(9);
+    expect(actualBatches(node).flatMap(batch => batch.frames.map(frame => frame.tick)))
+      .toEqual(Array.from({ length: 9 }, (_, index) => 49 + index));
+    receiver.acknowledge(); receiver.deliver();
+    expect(tick).toHaveBeenCalledTimes(9);
+  });
   it.each([
     ['before the first hardware write', 128 / 44100, false],
     ['after the first 940Hz phase', 0.030, false],

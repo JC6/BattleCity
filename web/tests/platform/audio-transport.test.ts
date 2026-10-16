@@ -36,6 +36,60 @@ function activate(transport: AudioTransport): void {
 }
 
 describe('audio frame transport without native APIs', () => {
+  it('reuses acknowledged silence across menu ticks and starts music without another control round trip', () => {
+    const { transport, messages, gains, latest, acknowledge } = fixture(); acknowledge();
+    const proof = latest(), controls = [...messages];
+    for (let index = 0; index < 48; index++) transport.advanceTick();
+    transport.stopScene(); transport.stopScene(); transport.commitFrame();
+    expect(messages).toEqual(controls); expect(gains.at(-1)).toBe(0);
+    for (const cue of [CUE.stagePulse1, CUE.stageTriangle, CUE.stagePulse2]) transport.cue(cue);
+    expect(messages).toEqual(controls); // Cues alone never invent a driver tick.
+    transport.advanceTick(); transport.commitFrame();
+    expect(latest()).toEqual({ type: 'frames', generation: proof.generation, sequence: proof.sequence + 1, at: 1,
+      frames: [{ tick: 49, start: [CUE.stagePulse1, CUE.stageTriangle, CUE.stagePulse2], stop: [] }] });
+    expect(gains.at(-1)).toBe(0.3);
+  });
+  it('requires the new reset proof when silence was not yet acknowledged', () => {
+    const { transport, gains, latest, acknowledge, reply, batches } = fixture();
+    const old = latest(); transport.stopScene(); const current = latest();
+    expect(current.generation).toBe(old.generation + 1);
+    transport.cue(CUE.stageTriangle); transport.advanceTick(); transport.commitFrame();
+    reply({ type: 'ack', generation: old.generation, sequence: old.sequence, accepted: true, credits: 12 });
+    expect(batches()).toEqual([]); expect(gains.at(-1)).toBe(0);
+    acknowledge();
+    expect(batches()).toMatchObject([{ generation: current.generation, frames: [{ tick: 1, start: [CUE.stageTriangle] }] }]);
+  });
+  it.each(['manual', 'focus'] as const)('does not reuse silence after a %s pause, even after unpausing and a repeated ACK', reason => {
+    const { transport, gains, latest, acknowledge, reply } = fixture(); acknowledge();
+    const old = latest(); transport.setPaused(true, reason); transport.setPaused(false);
+    reply({ type: 'ack', generation: old.generation, sequence: old.sequence, accepted: true, credits: 12 });
+    transport.stopScene();
+    expect(latest()).toMatchObject({ generation: old.generation + 1, frames: [] });
+    expect(gains.at(-1)).toBe(0);
+    const proof = latest(); acknowledge(); transport.stopScene();
+    expect(latest()).toBe(proof); // A newly proved empty reset is reusable again.
+  });
+  it.each(['blocked', 'resumed', 'failed'] as const)('requires a new receipt after the runtime is %s', transition => {
+    const { transport, latest, acknowledge, hooks } = fixture(); acknowledge();
+    const old = latest(); hooks[transition](); transport.stopScene();
+    expect(latest().generation).toBeGreaterThan(old.generation);
+    const pending = latest(); transport.stopScene();
+    expect(latest().generation).toBe(pending.generation + 1);
+  });
+  it('resets a previously active scene even after all frames have been consumed', () => {
+    const { transport, gains, latest, acknowledge, progress } = fixture(); acknowledge();
+    transport.cue(CUE.shot); transport.advanceTick(); transport.commitFrame(); acknowledge(); progress(12, 1.1);
+    const active = latest(); transport.stopScene();
+    expect(latest()).toMatchObject({ generation: active.generation + 1, frames: [] });
+    expect(gains.at(-1)).toBe(0);
+  });
+  it('does not treat an acknowledged persistent recovery as an empty reset', () => {
+    const { transport, persistent, hooks, latest, acknowledge } = fixture(); acknowledge();
+    persistent.start = [CUE.stageTriangle]; persistent.offset = 12;
+    hooks.resumed(); acknowledge(); const recovered = latest();
+    persistent.start = []; persistent.offset = 0; transport.stopScene();
+    expect(latest()).toMatchObject({ generation: recovered.generation + 1, frames: [] });
+  });
   it('keeps gain and attacks behind accepted current-generation reset proof', () => {
     const { transport, gains, hooks, latest, messages, acknowledge } = fixture();
     transport.cue(CUE.shot); transport.advanceTick(); transport.commitFrame();
@@ -122,7 +176,7 @@ describe('audio frame transport without native APIs', () => {
   });
   it('ignores an old scene acknowledgement without changing the current batch or sample cursor', async () => {
     const { transport, clock, latest, acknowledge, progress, reply, batches } = fixture(); acknowledge();
-    transport.advanceTick(); await Promise.resolve(); acknowledge(); transport.stopScene(); acknowledge();
+    transport.cue(CUE.shot); transport.advanceTick(); await Promise.resolve(); acknowledge(); transport.stopScene(); acknowledge();
     activate(transport);
     clock.now = 1.1;
     for (let index = 0; index < 12; index++) transport.advanceTick();
@@ -140,7 +194,7 @@ describe('audio frame transport without native APIs', () => {
     expect(batches()).toHaveLength(sent);
     progress(12, 1.345);
     expect(latest()).toEqual({
-      type: 'frames', generation: 1, sequence: 6, at: 1.345,
+      type: 'frames', generation: 1, sequence: 7, at: 1.345,
       frames: [{ tick: 14, start: [], stop: [] }],
     });
   });

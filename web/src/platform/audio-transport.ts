@@ -11,6 +11,7 @@ export type AudioRuntimeFactory = (hooks: AudioRuntimeHooks) => AudioEndpoint;
 export class AudioTransport {
   private readonly runtime: AudioEndpoint;
   private generationReady = false;
+  private idleReset = false;
   private sceneActive = false;
   private generation = 0;
   private sequence = 0;
@@ -30,9 +31,9 @@ export class AudioTransport {
     this.runtime = createRuntime({
       ready: () => { this.resetProcessor(); this.applyPause(); },
       resumed: () => { this.starts.clear(); this.stops.clear(); this.resynchronize(); },
-      blocked: () => this.applyGain(),
+      blocked: () => { this.idleReset = false; this.applyGain(); },
       failed: () => {
-        this.generation++; this.generationReady = false;
+        this.generation++; this.generationReady = false; this.idleReset = false;
         this.starts.clear(); this.stops.clear(); this.pending = [];
         this.inFlight = false; this.credits = 12; this.nextTime = 0;
         this.rejectionFloor = this.sequence;
@@ -75,6 +76,7 @@ export class AudioTransport {
 
   setPaused(paused: boolean, reason: 'manual' | 'focus' = 'manual'): void {
     if (this.paused === paused && (!paused || this.pauseReason === reason)) return;
+    this.idleReset = false;
     this.paused = paused; this.pauseReason = reason;
     this.sequence++; this.rejectionFloor = this.sequence;
     const discarded = this.pending;
@@ -101,15 +103,23 @@ export class AudioTransport {
     this.runtime.setGain(target);
   }
   stopScene(): void {
+    // Menu/selection ticks cannot make an acknowledged empty processor active.
+    // Reuse that silence so Start does not wait for a second port round trip.
+    // A pause, cue or runtime barrier invalidates it even if its queues drained.
+    if (this.idleReset && this.generationReady && !this.sceneActive && this.runtime.ready && !this.paused
+      && !this.pending.length && !this.inFlight && this.credits === 12 && this.nextTime === 0
+      && !this.starts.size && !this.stops.size && !this.snapshot().start.length) {
+      this.applyGain(); return;
+    }
     this.generation++; this.pending = []; this.starts.clear(); this.stops.clear(); this.inFlight = false; this.credits = 12;
     this.rejectionFloor = this.sequence;
     this.nextTime = 0; this.sceneActive = false; this.paused = false;
     this.resetProcessor(); this.applyPause();
   }
   cue(id: number): void {
-    if (this.ready()) { this.starts.add(id); this.sceneActive = true; this.applyGain(); }
+    if (this.ready()) { this.idleReset = false; this.starts.add(id); this.sceneActive = true; this.applyGain(); }
   }
-  stop(id: number): void { if (this.ready()) this.stops.add(id); }
+  stop(id: number): void { if (this.ready()) { this.idleReset = false; this.stops.add(id); } }
   private ready(): boolean { return this.runtime.ready && !this.paused && this.volume > 0; }
   /** Once at the end of each actual simulation tick, after cues/state sync. */
   advanceTick(): void {
@@ -169,6 +179,7 @@ export class AudioTransport {
   }
   private resetProcessor(recovery: { at: number; start: number[] }[] = []): void {
     const persistent = this.snapshot(), start = [...persistent.start];
+    this.idleReset = !start.length && !recovery.length;
     // Native gain blocks the old scene while its asynchronous reset is pending.
     // An empty scene stays silent after ACK; recovered persistent state and a
     // new real cue can activate only after FIFO reception proves this reset ran.
