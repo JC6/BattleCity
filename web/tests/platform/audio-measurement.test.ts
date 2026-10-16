@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Page } from '@playwright/test';
+import { createContext, runInContext } from 'node:vm';
 import { pcmAssert, pcmFeatures, pcmMeasurement, type PcmMeasurementFailure } from '../browser/audio-probe';
 import { pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture } from '../browser/pcm-window';
 
@@ -8,13 +9,51 @@ function fixture() {
     packets: [{ frame: 0, frames: [0, 128], times: [0, 0.128], lengths: [128, 128], samples: new Float32Array(256).fill(0.01) }] };
   const parameters = { start: 0.032, end: 0.2, frequencies: [100] };
   const snapshot = snapshotPcmWindow(parameters, capture);
-  const dispose = vi.fn(), evaluate = vi.fn(async (_expression: unknown, _parameters: unknown) => snapshot);
+  const dispose = vi.fn(), evaluate = vi.fn(async (_expression: unknown, _parameters: unknown) => JSON.stringify(snapshot));
   const waitForFunction = vi.fn(async (_expression: unknown, _parameters: unknown, _options: unknown) => ({ dispose }));
   const page = { evaluate, waitForFunction } as unknown as Page;
-  return { page, parameters, snapshot, dispose, evaluate, waitForFunction };
+  return { page, capture, parameters, snapshot, dispose, evaluate, waitForFunction };
+}
+
+function browserSerializationFixture() {
+  const value = fixture();
+  const realm = createContext({ window: { __AUDIO_PCM__: value.capture }, Float32Array, Uint8Array, btoa, performance });
+  value.evaluate.mockImplementation(async (expression, parameters) => {
+    realm.request = parameters;
+    const wire = runInContext(typeof expression === 'function' ? `(${expression.toString()})(request)` : String(expression), realm);
+    expect(typeof wire).toBe('string');
+    return wire;
+  });
+  return value;
 }
 
 describe('exact PCM measurement diagnostics', () => {
+  it('exports a standalone browser snapshot as one string with unchanged PCM bytes, labels and observations', async () => {
+    const value = browserSerializationFixture();
+    value.capture.events.push({ kind: 'keydown', code: 'KeyJ', at: 0.03 });
+    value.capture.transport = { next: 0, dropped: 3, observationErrors: 0,
+      entries: Array.from({ length: 512 }, (_, sequence) => ({ direction: 'send', type: 'frames',
+        generation: 2, wall: 1700000000000 + sequence, sequence, at: sequence / 60,
+        frames: [{ tick: sequence, start: sequence === 511 ? [15] : [], stop: [] }] })) };
+    const expected = snapshotPcmWindow(value.parameters, value.capture);
+    const result = await pcmMeasurement(value.page, value.parameters.start, value.parameters.end, value.parameters.frequencies);
+    expect(result.snapshot).toEqual({ ...expected, timing: expect.any(Object) });
+    expect(result.features).toEqual(pcmWindowFeatures(value.parameters, value.capture));
+    expect(value.evaluate).toHaveBeenCalledOnce();
+  });
+  it.each(['non-finite time', 'invalid length', 'non-finite sample'] as const)('still rejects %s after the actual string export', async corruption => {
+    const value = browserSerializationFixture(), raw = value.capture.packets[0], observer = vi.fn();
+    if (corruption === 'non-finite time') raw.times[1] = Number.NaN;
+    else if (corruption === 'invalid length') raw.lengths[1] = Number.POSITIVE_INFINITY;
+    else new Uint32Array(raw.samples.buffer)[150] = 0x7fc12345;
+    await expect(pcmMeasurement(value.page, value.parameters.start, value.parameters.end, value.parameters.frequencies, observer))
+      .rejects.toThrow(corruption === 'non-finite time' ? /frame\/time labels disagree/ :
+        corruption === 'invalid length' ? /Invalid PCM quantum labels/ : /Non-finite PCM sample/);
+    expect(observer).toHaveBeenCalledOnce(); expect(value.evaluate).toHaveBeenCalledOnce();
+    const failure = observer.mock.calls[0][0];
+    expect(failure.stage).toBe('measurement');
+    expect(failure.snapshot.packets[0].samplesBase64).toBe(Buffer.from(raw.samples.buffer).toString('base64'));
+  });
   it('checks a successful measurement once without observing failure or resampling', async () => {
     const value = fixture(), observer = vi.fn(), assertion = vi.fn();
     const result = await pcmAssert(value.page, value.parameters.start, value.parameters.end, value.parameters.frequencies, assertion, observer);
@@ -37,7 +76,7 @@ describe('exact PCM measurement diagnostics', () => {
     const observed = observer.mock.calls[0][0];
     expect(observed.error).toBe(caught); expect(observed.stage).toBe(stage);
     expect(observed.parameters).toEqual(value.parameters); expect(observed.features).toBeUndefined();
-    expect(observed.snapshot).toBe(stage === 'measurement' ? value.snapshot : undefined);
+    expect(observed.snapshot).toEqual(stage === 'measurement' ? value.snapshot : undefined);
     expect(value.evaluate).toHaveBeenCalledTimes(stage === 'coverage' ? 0 : 1);
   });
   it('observes an assertion failure once with its original error and exact analyzed sample', async () => {
@@ -49,7 +88,7 @@ describe('exact PCM measurement diagnostics', () => {
     expect(observer).toHaveBeenCalledOnce();
     const observed = observer.mock.calls[0][0];
     expect(observed.error).toBe(original); expect(observed.stage).toBe('assertion');
-    expect(observed.snapshot).toBe(value.snapshot); expect(observed.parameters).toEqual(value.parameters);
+    expect(observed.snapshot).toEqual(value.snapshot); expect(observed.parameters).toEqual(value.parameters);
     expect(observed.features).toBe(analyzed);
     expect(value.waitForFunction).toHaveBeenCalledOnce(); expect(value.evaluate).toHaveBeenCalledOnce();
   });
@@ -64,7 +103,7 @@ describe('exact PCM measurement diagnostics', () => {
   it('retains the analyzed raw snapshot, parameters and features without a second sample', async () => {
     const value = fixture(), observer = vi.fn();
     const result = await pcmMeasurement(value.page, value.parameters.start, value.parameters.end, value.parameters.frequencies, observer);
-    expect(result.snapshot).toBe(value.snapshot);
+    expect(result.snapshot).toEqual(value.snapshot);
     expect(result.parameters).toEqual(value.parameters);
     expect(result.features).toEqual(pcmWindowFeatures(value.parameters, restorePcmSnapshot(value.snapshot)));
     expect(value.waitForFunction).toHaveBeenCalledOnce();
@@ -101,7 +140,7 @@ describe('exact PCM measurement diagnostics', () => {
     catch (error) { caught = error; }
     expect(caught).toBeInstanceOf(Error); expect((caught as Error).message).toBe('Raw PCM capture failed');
     const observed = observer.mock.calls[0][0];
-    expect(observed.error).toBe(caught); expect(observed.snapshot).toBe(value.snapshot);
+    expect(observed.error).toBe(caught); expect(observed.snapshot).toEqual(value.snapshot);
     expect(observed.stage).toBe('measurement'); expect(observed.features).toBeUndefined();
     expect(value.evaluate).toHaveBeenCalledOnce();
   });

@@ -623,7 +623,7 @@ describe('player-shot PCM signature', () => {
     const capture = independent(), snapshot = snapshotPcmWindow(parameters, capture);
     let complete!: (handle: { dispose: () => void }) => void;
     const coverage = new Promise<{ dispose: () => void }>(resolve => { complete = resolve; });
-    const dispose = vi.fn(), evaluate = vi.fn(async () => snapshot);
+    const dispose = vi.fn(), evaluate = vi.fn(async () => JSON.stringify(snapshot));
     const waitForFunction = vi.fn((_expression: unknown, _parameters: unknown, _options: unknown) => coverage);
     const page = { evaluate, waitForFunction } as unknown as Page;
     const result = pcmShotWindow(page, parameters.start, parameters.end, frequencies, parameters.minimumAmplitude);
@@ -641,12 +641,12 @@ describe('player-shot PCM signature', () => {
     if (kind === 'absent shot') capture.packets[0].samples.fill(0);
     else capture.packets[0].samples[Math.floor(capture.rate * 0.4)] = Number.NaN;
     const snapshot = snapshotPcmWindow(parameters, capture), observer = vi.fn();
-    const evaluate = vi.fn(async () => snapshot), dispose = vi.fn();
+    const evaluate = vi.fn(async () => JSON.stringify(snapshot)), dispose = vi.fn();
     const page = { evaluate, waitForFunction: vi.fn(async () => ({ dispose })) } as unknown as Page;
     await expect(pcmShotWindow(page, parameters.start, parameters.end, frequencies, parameters.minimumAmplitude, observer))
       .rejects.toThrow(kind === 'absent shot' ? /Player-shot PCM signature was absent/ : /Non-finite PCM sample/);
     expect(evaluate).toHaveBeenCalledOnce(); expect(observer).toHaveBeenCalledOnce();
-    expect(observer.mock.calls[0][0].snapshot).toBe(snapshot);
+    expect(observer.mock.calls[0][0].snapshot).toEqual(snapshot);
     expect(observer.mock.calls[0][0].parameters).toEqual(parameters);
     expect(observer.mock.calls[0][0].stage).toBe('measurement');
   });

@@ -2,6 +2,12 @@ import { expect, type Page, type TestInfo } from '@playwright/test';
 import { observePcmShotFailure, pcmShotWindowFeatures, pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture, type PcmPacket, type PcmFeatures, type PcmComparisonWindow, type PcmShotMatch, type PcmSnapshot, type PcmShotFailure, type PcmShotFailureObserver, type AudioTransportEntry } from './pcm-window';
 export type { PcmShotFailureObserver } from './pcm-window';
 
+// Playwright invokes function arguments; a string containing a function would
+// only evaluate to that function. Embed the self-contained snapshot code once.
+const snapshotPcmJson = new Function('request',
+  `return JSON.stringify((${snapshotPcmWindow.toString()})(request));`) as
+  (request: Parameters<typeof snapshotPcmWindow>[0]) => string;
+
 interface PcmProbeOptions { observeScenes?: boolean; deferRecording?: boolean }
 export interface PcmMeasurement {
   parameters: Parameters<typeof pcmWindowFeatures>[0]; snapshot: PcmSnapshot; features: PcmFeatures;
@@ -243,8 +249,15 @@ export async function waitForAudioTime(page: Page, time: number): Promise<void> 
   }, time, { polling: 25, timeout: 15000 });
   await handle.dispose();
 }
+async function readPcmSnapshot(page: Page, start: number, end: number): Promise<PcmSnapshot> {
+  // Send one JSON string, avoiding Playwright's recursive object serializer on
+  // the game's thread. PCM remains base64 bytes; Node still validates every
+  // quantum label and analyzes the exact snapshot retained for failures.
+  const json = await page.evaluate(snapshotPcmJson, { start, end, measure: true });
+  return JSON.parse(json) as PcmSnapshot;
+}
 async function measuredPcm(page: Page, parameters: Parameters<typeof pcmWindowFeatures>[0]): Promise<PcmFeatures> {
-  const snapshot = await page.evaluate(snapshotPcmWindow, { start: parameters.start, end: parameters.end, measure: true });
+  const snapshot = await readPcmSnapshot(page, parameters.start, parameters.end);
   return pcmWindowFeatures(parameters, restorePcmSnapshot(snapshot));
 }
 /** Retain the exact raw window analyzed in Node; diagnostic failures must never
@@ -257,7 +270,7 @@ export async function pcmMeasurement(page: Page, start: number, end: number, fre
   return observePcmShotFailure(async () => {
     await waitForAudioTime(page, end);
     stage = 'sampling';
-    snapshot = await page.evaluate(snapshotPcmWindow, { start, end, measure: true });
+    snapshot = await readPcmSnapshot(page, start, end);
     stage = 'measurement';
     const features = pcmWindowFeatures(parameters, restorePcmSnapshot(snapshot));
     return { parameters, snapshot, features };
@@ -307,7 +320,7 @@ export async function pcmShotWindow(page: Page, start: number, end: number, freq
     // the main thread, delaying the real tick/ACK traffic being measured.
     await waitForAudioTime(page, end);
     stage = 'sampling';
-    snapshot = await page.evaluate(snapshotPcmWindow, { start, end, measure: true });
+    snapshot = await readPcmSnapshot(page, start, end);
     stage = 'measurement';
     const measured = pcmShotWindowFeatures({ ...parameters, frequencies: [...frequencies] }, restorePcmSnapshot(snapshot));
     if (!measured) throw new Error('The original PCM shot window was not fully captured');
