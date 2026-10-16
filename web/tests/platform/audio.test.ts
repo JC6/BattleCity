@@ -799,6 +799,23 @@ async function realReceiver() {
 }
 
 describe('generation gain proof and the first actual shot phase', () => {
+  it.each(['posted', 'pending'] as const)('retains the %s intro tick when paused before playback after a long silent menu', async delivery => {
+    const receiver = await realReceiver(); receiver.acknowledgeReset();
+    const { audio, processor } = receiver;
+    const tick = vi.spyOn(processor.driver, 'tick');
+    for (let index = 0; index < 1200; index++) audio.advanceTick();
+    audio.stopScene(); audio.play([{ type: 'stage-start' }]); audio.advanceTick();
+    if (delivery === 'posted') { audio.commitFrame(); receiver.deliver(); }
+    audio.setPaused(true, 'focus'); receiver.deliver();
+    expect(tick).toHaveBeenCalledTimes(1);
+    for (const cue of [CUE.stagePulse1, CUE.stageTriangle, CUE.stagePulse2]) expect(processor.driver.active(cue)).toBe(true);
+    receiver.renderUntil(1.1); expect(receiver.rms(1, 1.1)).toBe(0);
+    receiver.context.currentTime = 1.1;
+    audio.setPaused(false); audio.advanceTick(); audio.commitFrame(); receiver.deliver();
+    receiver.renderUntil(1.18);
+    expect(tick).toHaveBeenCalledTimes(2);
+    expect(receiver.rms(1.12, 1.18)).toBeGreaterThan(0.008);
+  });
   it('starts all three intro voices within 90ms from proved silence while subsequent ACKs wait 160ms', async () => {
     const receiver = await realReceiver(); receiver.acknowledgeReset();
     const { audio, context, node, processor } = receiver;

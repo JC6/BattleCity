@@ -112,6 +112,13 @@ class BattleCityApu extends AudioWorkletProcessor {
     // its sustained driver state up silently before freezing; queued shots,
     // tally clicks and other short attacks must not replay after Start.
     const pending = message.frames.length <= 12 ? message.frames : [];
+    // Proved empty scenes can be reused after an arbitrarily long menu. Its
+    // unsubmitted silent ticks must not exhaust the bounded catch-up before
+    // the first real queued music tick, including one not yet sent as a batch.
+    if (!this.live && !this.tailSamples) {
+      const firstTick = Math.min(this.queue[this.position]?.tick ?? message.tick + 1, pending[0]?.tick ?? message.tick + 1);
+      this.lastTick = Math.max(this.lastTick, Math.min(message.tick, firstTick - 1));
+    }
     let queued = this.position, discarded = 0;
     const target = Math.max(this.lastTick, Math.min(message.tick, this.lastTick + 600));
     while (this.lastTick < target) {
