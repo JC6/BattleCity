@@ -66,7 +66,11 @@ async function stageSelection(page: Page, testInfo: TestInfo, protectPlayer = fa
   }
   // Normal menu gesture unlocks audio. This suite never installs a fake clock.
   await page.keyboard.press('Enter'); await audioReady(page);
-  expect((await probeCanvas(page)).stageSelect).toBe(1);
+  // Audio can already be ready while the canvas still awaits its next frame.
+  await expect.poll(async () => (await probeCanvas(page)).stageSelect, {
+    timeout: 20000,
+    message: 'The canvas must render STAGE 1 before selecting another stage',
+  }).toBe(1);
   await page.keyboard.press('j');
   await expect.poll(async () => (await probeCanvas(page)).stageSelect).toBe(2);
   if (protectPlayer) await beginPcmCapture(page);
