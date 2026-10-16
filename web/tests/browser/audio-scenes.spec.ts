@@ -20,6 +20,8 @@ async function attachCountFailure(testInfo: TestInfo, failure: PcmMeasurementFai
 }
 
 async function prepared(page: Parameters<typeof ready>[0]): Promise<void> {
+  // Limit paint work while measuring native scene audio.
+  await page.setViewportSize({ width: 256, height: 240 });
   await installPcmProbe(page, { observeScenes: true }); await ready(page);
   await page.keyboard.press('Enter'); await audioReady(page);
   // Enter already selected the normal single-player stage; finish using Start.

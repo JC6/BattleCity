@@ -227,11 +227,11 @@ export async function audioEventTime(page: Page, code: string, kind: 'keydown' |
   }, { code, kind });
 }
 export async function audioMarkTime(page: Page, kind: string, options: { after?: number; timeout?: number } = {}): Promise<number> {
-  // Keep the wait inside genuine RAF callbacks. Repeated RPCs and the default
-  // expect.poll backoff can leave part of this bounded scene budget unused.
+  // The fixed-step observer already records scene timestamps. Read those marks
+  // without scheduling extra compositor frames while native audio is running.
   const handle = await page.waitForFunction(({ kind, after }) =>
     window.__AUDIO_PCM__!.marks.findLast(mark => mark.kind === kind && mark.at > after) ?? null,
-  { kind, after: options.after ?? -1 }, { polling: 'raf', timeout: options.timeout ?? 5000 });
+  { kind, after: options.after ?? -1 }, { polling: 25, timeout: options.timeout ?? 5000 });
   try {
     const mark = await handle.jsonValue();
     if (!mark) throw new Error(`Actual audio scene was not observed: ${kind}`);
