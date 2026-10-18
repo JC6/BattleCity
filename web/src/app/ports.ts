@@ -13,7 +13,6 @@ export interface AppAudio {
   setPaused(paused: boolean, reason?: 'manual' | 'focus'): void;
   syncState(state: GameState | null): void;
   play(events: readonly GameEvent[]): void;
-  advanceTick(): void;
   commitFrame(): void;
   updateScore(state: GameState, elapsedMs: number): void;
   startPresentation(kind: 'gameover' | 'hiscore'): void;

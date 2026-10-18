@@ -93,7 +93,11 @@ export async function protectedBattlefield(page: Page, testInfo: TestInfo): Prom
     inspection.signature?.every((color, index) => color === signatures[code][index]) === true;
   try {
     await press('ShiftRight'); await press('ShiftRight'); await press('Enter');
+    expected = { column: 0, row: 0 };
+    await wait('Construction must render its initial cursor before moving down', value =>
+      value.cursor?.column === 0 && value.cursor.row === 0);
     phase = 'move Construction cursor down';
+    expected = { column: 0, row: '1..5' };
     for (let row = 0; row < 5; row++) {
       await press('s', 34);
       await page.evaluate(ms => new Promise<void>(resolve => setTimeout(resolve, ms)), 34);

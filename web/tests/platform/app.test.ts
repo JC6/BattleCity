@@ -58,7 +58,6 @@ vi.mock('../../src/platform/audio', () => ({
     dispose() { runtime.audioEvents.push('dispose'); return Promise.resolve(); }
     unlock() {} stopScene() { runtime.audioEvents.push('stop'); } setPaused(_paused: boolean) {}
     syncState(state: GameState | null) { runtime.audioSyncStates.push(state); }
-    advanceTick() { runtime.audioEvents.push('tick'); }
     commitFrame() { runtime.audioEvents.push('commit'); }
     startPresentation(kind: string) { runtime.audioEvents.push(kind); }
     play(_events: unknown) {} updateScore(_state: unknown, _elapsed: number) {}
@@ -412,22 +411,18 @@ describe('keyboard application flow', () => {
     players[0].score = 45000;
     api.debug({ players, phase: 'lost' }); api.step();
     until('gameover');
-    expect(runtime.audioEvents.slice(-3)).toEqual(['gameover', 'tick', 'commit']);
-    const gameoverAudioStart = runtime.audioEvents.length - 3;
+    expect(runtime.audioEvents.slice(-2)).toEqual(['gameover', 'commit']);
     expect(api.getEditorTiles()).not.toEqual(edited);
     expect(api.presentation().highScore).toBe(20000);
     frame(108);
     expect(api.presentation()).toMatchObject({ kind: 'gameover', highScore: 20000 });
     frame();
     expect(api.presentation()).toMatchObject({ kind: 'hiscore', highScore: 45000 });
-    expect(runtime.audioEvents.slice(gameoverAudioStart, -3).filter(event => event === 'tick')).toHaveLength(109);
-    expect(runtime.audioEvents.slice(-3)).toEqual(['hiscore', 'tick', 'commit']);
-    const hiscoreAudioStart = runtime.audioEvents.length - 3;
+    expect(runtime.audioEvents.slice(-2)).toEqual(['hiscore', 'commit']);
     frame(460);
     expect(api.presentation().kind).toBe('hiscore');
     frame();
     expect(api.presentation().kind).toBe('menu');
-    expect(runtime.audioEvents.slice(hiscoreAudioStart, -3).filter(event => event === 'tick')).toHaveLength(461);
     expect(api.presentation().highScore).toBe(45000);
     expect(api.state()).toBeNull();
   });

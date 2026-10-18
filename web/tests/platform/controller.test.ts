@@ -12,7 +12,7 @@ function fixture() {
   const input: AppInput = { read: vi.fn(() => [{ ...EMPTY_INPUT }, { ...EMPTY_INPUT }]),
     readPads: vi.fn(() => [{ ...pad }, { ...pad }]), clear: vi.fn(), resetForFocus: vi.fn() };
   const audio: AppAudio = { stopScene: vi.fn(() => trace.push('stop')), syncState: vi.fn(), play: vi.fn(),
-    advanceTick: vi.fn(() => trace.push('tick')), commitFrame: vi.fn(() => trace.push('commit')),
+    commitFrame: vi.fn(() => trace.push('commit')),
     updateScore: vi.fn(), startPresentation: vi.fn(), setPaused: vi.fn() };
   let presentation: ArenaPresentation = { kind: 'game' };
   const render: AppRenderer = { state: null, hudState: null, draft: null,
@@ -30,8 +30,11 @@ afterEach(() => vi.unstubAllGlobals());
 describe('application controller ports', () => {
   it('starts and advances using injected ports with no browser globals', () => {
     vi.stubGlobal('window', undefined); vi.stubGlobal('document', undefined); vi.stubGlobal('crypto', undefined);
-    const { controller, api, seed } = fixture();
-    controller.startKey(); controller.startKey(); controller.frame(TICK_MS);
+    const { controller, api, seed, trace } = fixture();
+    controller.startKey(); controller.startKey();
+    expect(api.state()!.tick).toBe(0);
+    expect(trace.slice(-2)).toEqual(['commit', 'present:intro']);
+    controller.frame(TICK_MS);
     expect(seed).toHaveBeenCalledOnce(); expect(api.state()).toMatchObject({ tick: 1, phase: 'intro', rng: 7 });
   });
   it('retains fractional fixed steps, caps stalled frames and submits audio before presentation', () => {

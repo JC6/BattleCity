@@ -1,6 +1,6 @@
 import type { GameEvent, GameState } from '../core/types';
 import { scoreTimeline } from '../game/score-timeline';
-import { CUE } from './audio-cues';
+import { AUDIO_SCENE_TICKS, AUDIO_TICK_HZ, CUE } from './audio-cues';
 import { AudioRuntime } from './audio-runtime';
 import { AudioTransport } from './audio-transport';
 
@@ -15,7 +15,8 @@ const MUSIC_TRACKS = {
 export class GameAudio {
   private readonly transport: AudioTransport;
   private music: Music = null;
-  private musicTicks = 0;
+  private musicStarted = 0;
+  private pausedAt: number | null = null;
   private introPlayed = false;
   private engine: 'player' | 'enemy' | null = null;
   private ice = false;
@@ -23,24 +24,30 @@ export class GameAudio {
   private scoreState?: GameState;
   private scoreCues = 0;
   private scoreBonus = false;
-  constructor(volume: number, clock?: () => number) {
-    this.transport = new AudioTransport(volume, () => ({
-      start: [ ...(this.music ? MUSIC_TRACKS[this.music] : []),
-        ...(this.engine ? [this.engine === 'player' ? CUE.playerEngine : CUE.enemyEngine] : []) ],
-      offset: this.musicTicks,
-    }), hooks => new AudioRuntime(hooks, clock));
+  constructor(volume: number, private readonly clock = () => performance.now()) {
+    this.transport = new AudioTransport(volume, () => {
+      const offset = Math.max(0, Math.floor(((this.pausedAt ?? this.clock()) - this.musicStarted) * AUDIO_TICK_HZ / 1000));
+      const music = this.music && offset < AUDIO_SCENE_TICKS[this.music] ? MUSIC_TRACKS[this.music] : [];
+      return { music, offset: music.length ? offset : 0,
+        engine: this.engine ? (this.engine === 'player' ? CUE.playerEngine : CUE.enemyEngine) : null };
+    }, hooks => new AudioRuntime(hooks, clock));
   }
   unlock(): void { this.transport.unlock(); }
   dispose(): Promise<void> { return this.transport.dispose(); }
-  setPaused(paused: boolean, reason: 'manual' | 'focus' = 'manual'): void { this.transport.setPaused(paused, reason); }
+  setPaused(paused: boolean, reason: 'manual' | 'focus' = 'manual'): void {
+    const now = this.clock();
+    if (paused && this.pausedAt === null) this.pausedAt = now;
+    else if (!paused && this.pausedAt !== null) { this.musicStarted += now - this.pausedAt; this.pausedAt = null; }
+    this.transport.setPaused(paused, reason);
+  }
   stopScene(): void {
-    this.music = null; this.musicTicks = 0; this.introPlayed = false; this.engine = null; this.ice = false;
+    this.music = null; this.musicStarted = this.clock(); this.pausedAt = null; this.introPlayed = false; this.engine = null; this.ice = false;
     this.scoreState = undefined; this.scoreCues = 0; this.scoreBonus = false; this.lastMovingTick = -100;
     this.transport.stopScene();
   }
   startPresentation(music: Exclude<Music, 'intro' | null>): void { this.startMusic(music); }
   private startMusic(music: Exclude<Music, null>): void {
-    this.music = music; this.musicTicks = 0;
+    this.music = music; this.musicStarted = this.pausedAt ?? this.clock();
     for (const id of MUSIC_TRACKS[music]) this.cue(id);
   }
   syncState(state: GameState | null): void {
@@ -87,6 +94,5 @@ export class GameAudio {
   }
   private cue(id: number): void { this.transport.cue(id); }
   private stop(id: number): void { this.transport.stop(id); }
-  advanceTick(): void { if (this.music) this.musicTicks++; this.transport.advanceTick(); }
   commitFrame(): void { this.transport.commitFrame(); }
 }

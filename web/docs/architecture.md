@@ -25,6 +25,8 @@ flowchart LR
 | [`platform/audio.ts`](../src/platform/audio.ts) | 游戏事件与音轨语义；传输和浏览器资源见 [音频文档](audio.md) |
 | [`app/test-adapter.ts`](../src/app/test-adapter.ts) | 测试快照、控制状态和单步接口，仅在 test 模式构造 |
 
+音符由 Worklet 的采样时钟独立推进；主线程只提交声音状态和事件。主线程短暂卡顿时音乐继续，游戏仍按原固定步进规则运行。Start 在状态同步后、首帧绘制前提交开场命令。
+
 控制器不读取 `window`、`document`、`crypto` 或 WebAudio。bootstrap 把可见性/焦点转换为 `frame(delta, active)` 和 `inactive()`，把种子生成函数和会话最高分存储注入控制器。
 
 渲染端接收借用的只读顶层游戏视图和只读草稿数组，嵌套实体仍由引擎持有；约定渲染器不修改它们。每帧不复制整个世界。独立失败世界在进入演出时创建，测试快照在跨测试接口时 `structuredClone`。

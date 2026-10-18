@@ -1,337 +1,84 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AudioTransport, type AudioEndpoint } from '../../src/platform/audio-transport';
-import type { AudioMessage, AudioReply } from '../../src/platform/audio-protocol';
+import type { AudioMessage, PersistentAudio } from '../../src/platform/audio-protocol';
 import type { AudioRuntimeHooks } from '../../src/platform/audio-runtime';
 import { AUDIO_TICK_HZ, CUE } from '../../src/platform/audio-cues';
-
-function fixture() {
-  const messages: AudioMessage[] = [], gains: number[] = [];
-  const persistent = { start: [] as number[], offset: 0 };
-  const clock = { now: 1 };
-  let hooks!: AudioRuntimeHooks;
-  const endpoint: AudioEndpoint = { status: 'ready', connected: true, ready: true, resumeSyncNeeded: false, get now() { return clock.now; },
-    unlock() {}, setGain: value => { gains.push(value); }, post: message => { messages.push(message); },
-    dispose: async () => {} };
-  const transport = new AudioTransport(0.3, () => persistent, callbacks => { hooks = callbacks; return endpoint; });
+function fixture(volume = 0.3) {
+  const messages: AudioMessage[] = [], persistent: PersistentAudio = { music: [], offset: 0, engine: null };
+  let now = 0, hooks!: AudioRuntimeHooks;
+  const endpoint: AudioEndpoint = { status: 'ready', connected: true, ready: true, get now() { return now; },
+    unlock: vi.fn(), setGain: vi.fn(), post: message => { messages.push(message); }, dispose: vi.fn(async () => {}) };
+  const transport = new AudioTransport(volume, () => persistent, callbacks => { hooks = callbacks; return endpoint; });
   hooks.ready();
-  const latest = () => messages.findLast((value): value is Extract<AudioMessage, { type: 'frames' }> => value.type === 'frames')!;
-  const acknowledge = (credits = 12) => {
-    const message = latest();
-    hooks.reply({ type: 'ack', generation: message.generation, sequence: message.sequence, accepted: true, credits });
-  };
-  const reply = (message: AudioReply) => hooks.reply(message);
-  const progress = (credits: number, nextAt: number) => {
-    const { generation, sequence } = latest();
-    reply({ type: 'progress', generation, sequence, credits, nextAt });
-  };
-  const batches = () => messages.filter((message): message is Extract<AudioMessage, { type: 'frames' }> =>
-    message.type === 'frames' && message.frames.length > 0);
-  return { transport, messages, gains, persistent, clock, hooks, latest, acknowledge, reply, progress, batches };
+  const batches = () => messages.filter((message): message is Extract<AudioMessage, { type: 'commands' }> => message.type === 'commands');
+  return { transport, endpoint, messages, persistent, hooks, batches, time: (value: number) => { now = value; } };
 }
-
-// Establish an active but silent scene through public controls; no native graph is needed.
-function activate(transport: AudioTransport): void {
-  transport.cue(CUE.shot);
-  transport.setPaused(true, 'focus'); transport.setPaused(false);
-}
-
-describe('audio frame transport without native APIs', () => {
-  it('reuses acknowledged silence across menu ticks and starts music without another control round trip', () => {
-    const { transport, messages, gains, latest, acknowledge } = fixture(); acknowledge();
-    const proof = latest(), controls = [...messages];
-    for (let index = 0; index < 48; index++) transport.advanceTick();
-    transport.stopScene(); transport.stopScene(); transport.commitFrame();
-    expect(messages).toEqual(controls); expect(gains.at(-1)).toBe(0);
-    for (const cue of [CUE.stagePulse1, CUE.stageTriangle, CUE.stagePulse2]) transport.cue(cue);
-    expect(messages).toEqual(controls); // Cues alone never invent a driver tick.
-    transport.advanceTick(); transport.commitFrame();
-    expect(latest()).toEqual({ type: 'frames', generation: proof.generation, sequence: proof.sequence + 1, at: 1,
-      frames: [{ tick: 49, start: [CUE.stagePulse1, CUE.stageTriangle, CUE.stagePulse2], stop: [] }] });
-    expect(gains.at(-1)).toBe(0.3);
+describe('semantic audio command transport', () => {
+  it('submits the first attack without receiving a reply and never sends heartbeat frames', () => {
+    const { transport, batches, messages, endpoint } = fixture();
+    for (let index = 0; index < 100; index++) transport.commitFrame(); expect(messages).toHaveLength(1);
+    transport.cue(CUE.stagePulse1); transport.commitFrame();
+    expect(batches()).toHaveLength(1); expect(endpoint.setGain).toHaveBeenLastCalledWith(0.3);
+    for (let index = 0; index < 100; index++) transport.commitFrame(); expect(messages).toHaveLength(2);
+    for (let index = 0; index < 20; index++) { transport.cue(CUE.shot); transport.commitFrame(); }
+    expect(batches()).toHaveLength(21); expect(messages.filter(message => message.type === 'reset')).toHaveLength(1);
   });
-  it('requires the new reset proof when silence was not yet acknowledged', () => {
-    const { transport, gains, latest, acknowledge, reply, batches } = fixture();
-    const old = latest(); transport.stopScene(); const current = latest();
-    expect(current.generation).toBe(old.generation + 1);
-    transport.cue(CUE.stageTriangle); transport.advanceTick(); transport.commitFrame();
-    reply({ type: 'ack', generation: old.generation, sequence: old.sequence, accepted: true, credits: 12 });
-    expect(batches()).toEqual([]); expect(gains.at(-1)).toBe(0);
-    acknowledge();
-    expect(batches()).toMatchObject([{ generation: current.generation, frames: [{ tick: 1, start: [CUE.stageTriangle] }] }]);
+  it('coalesces each slot to its last operation and bounds pending commands by the track table', () => {
+    const { transport, batches } = fixture();
+    for (let index = 0; index < 100; index++) { transport.cue(CUE.shot); transport.stop(CUE.shot); }
+    transport.cue(CUE.playerEngine); transport.stop(CUE.playerEngine); transport.cue(CUE.enemyEngine);
+    transport.cue(100); transport.commitFrame();
+    expect(batches()[0].commands).toEqual([
+      { id: CUE.shot, start: false, createdAt: 0 }, { id: CUE.playerEngine, start: false, createdAt: 0 },
+      { id: CUE.enemyEngine, start: true, createdAt: 0 },
+    ]);
   });
-  it.each(['manual', 'focus'] as const)('does not reuse silence after a %s pause, even after unpausing and a repeated ACK', reason => {
-    const { transport, gains, latest, acknowledge, reply } = fixture(); acknowledge();
-    const old = latest(); transport.setPaused(true, reason); transport.setPaused(false);
-    reply({ type: 'ack', generation: old.generation, sequence: old.sequence, accepted: true, credits: 12 });
-    transport.stopScene();
-    expect(latest()).toMatchObject({ generation: old.generation + 1, frames: [] });
-    expect(gains.at(-1)).toBe(0);
-    const proof = latest(); acknowledge(); transport.stopScene();
-    expect(latest()).toBe(proof); // A newly proved empty reset is reusable again.
+  it.each([0.052, 0.087, 0.1, 0.101])('retains count creation time across a %s-second sender delay', delay => {
+    const { transport, batches, time } = fixture();
+    transport.cue(CUE.countPulse); transport.cue(CUE.countNoise); transport.cue(CUE.shot);
+    transport.cue(CUE.stagePulse1); transport.stop(CUE.enemyEngine); time(delay); transport.commitFrame();
+    const expected = delay <= 0.1 ? [CUE.countPulse, CUE.countNoise, CUE.stagePulse1] : [CUE.stagePulse1];
+    expect(batches()[0].commands.filter(command => command.start).map(command => command.id)).toEqual(expected);
+    expect(batches()[0].commands.every(command => command.createdAt === 0)).toBe(true);
+    expect(batches()[0].sentAt).toBe(delay);
+    expect(batches()[0].commands.at(-1)).toMatchObject({ id: CUE.enemyEngine, start: false });
   });
-  it.each(['blocked', 'resumed', 'failed'] as const)('requires a new receipt after the runtime is %s', transition => {
-    const { transport, latest, acknowledge, hooks } = fixture(); acknowledge();
-    const old = latest(); hooks[transition](); transport.stopScene();
-    expect(latest().generation).toBeGreaterThan(old.generation);
-    const pending = latest(); transport.stopScene();
-    expect(latest().generation).toBe(pending.generation + 1);
+  it.each([2 / AUDIO_TICK_HZ, 2 / AUDIO_TICK_HZ + 0.0001])('uses the existing two-tick sender budget at %s seconds', delay => {
+    const { transport, batches, time } = fixture(); transport.cue(CUE.shot); time(delay); transport.commitFrame();
+    expect(batches()).toHaveLength(delay <= 2 / AUDIO_TICK_HZ ? 1 : 0);
   });
-  it('resets a previously active scene even after all frames have been consumed', () => {
-    const { transport, gains, latest, acknowledge, progress } = fixture(); acknowledge();
-    transport.cue(CUE.shot); transport.advanceTick(); transport.commitFrame(); acknowledge(); progress(12, 1.1);
-    const active = latest(); transport.stopScene();
-    expect(latest()).toMatchObject({ generation: active.generation + 1, frames: [] });
-    expect(gains.at(-1)).toBe(0);
+  it.each(['manual', 'focus'] as const)('preserves pending music but discards attacks across %s pause', reason => {
+    const { transport, messages, batches, endpoint } = fixture();
+    transport.cue(CUE.stagePulse1); transport.cue(CUE.shot); transport.setPaused(true, reason);
+    expect(messages.at(-1)).toMatchObject({ type: 'pause', paused: true, reason,
+      commands: [{ id: CUE.stagePulse1, start: true, createdAt: 0 }] });
+    transport.cue(CUE.countPulse); transport.commitFrame(); transport.setPaused(false); transport.commitFrame();
+    expect(batches()).toHaveLength(0); expect(endpoint.setGain).toHaveBeenLastCalledWith(0.3);
   });
-  it('does not treat an acknowledged persistent recovery as an empty reset', () => {
-    const { transport, persistent, hooks, latest, acknowledge } = fixture(); acknowledge();
-    persistent.start = [CUE.stageTriangle]; persistent.offset = 12;
-    hooks.resumed(); acknowledge(); const recovered = latest();
-    persistent.start = []; persistent.offset = 0; transport.stopScene();
-    expect(latest()).toMatchObject({ generation: recovered.generation + 1, frames: [] });
+  it.each(['ready', 'blocked', 'resumed'] as const)('restores only the latest semantic snapshot on %s, including while not running', hook => {
+    const { transport, messages, persistent, hooks, endpoint, batches } = fixture();
+    transport.cue(CUE.shot); persistent.music = [21, 22, 23]; persistent.offset = 65; persistent.engine = CUE.enemyEngine;
+    transport.setPaused(true, 'focus'); Object.assign(endpoint, { ready: false }); hooks[hook]();
+    expect(messages.at(-1)).toMatchObject({ type: 'reset', music: [21, 22, 23], offset: 65,
+      engine: CUE.enemyEngine, paused: true, reason: 'focus' });
+    Object.assign(endpoint, { ready: true }); transport.setPaused(false); transport.commitFrame(); expect(batches()).toHaveLength(0);
   });
-  it('keeps gain and attacks behind accepted current-generation reset proof', () => {
-    const { transport, gains, hooks, latest, messages, acknowledge } = fixture();
-    transport.cue(CUE.shot); transport.advanceTick(); transport.commitFrame();
-    const proof = latest(); expect(proof.frames).toEqual([]); expect(gains.at(-1)).toBe(0);
-    hooks.reply({ type: 'ack', generation: proof.generation + 1, sequence: proof.sequence, accepted: true, credits: 12 });
-    expect(latest()).toBe(proof);
-    acknowledge(); expect(gains.at(-1)).toBe(0.3);
-    expect(messages.at(-1)).toMatchObject({ type: 'frames', frames: [{ tick: 1, start: [CUE.shot] }] });
+  it('drops attacks while unavailable and clears pending commands across stop, failure and disposal', async () => {
+    const { transport, batches, endpoint, hooks, messages } = fixture();
+    Object.assign(endpoint, { ready: false }); transport.cue(CUE.shot); Object.assign(endpoint, { ready: true });
+    transport.commitFrame(); expect(batches()).toHaveLength(0);
+    transport.cue(CUE.shot); transport.stopScene(); transport.commitFrame();
+    transport.cue(CUE.shot); hooks.failed(); hooks.ready(); transport.commitFrame();
+    transport.cue(CUE.shot); await transport.dispose(); expect(endpoint.dispose).toHaveBeenCalledOnce();
+    expect(batches()).toHaveLength(0); expect(messages.at(-1)).toMatchObject({ type: 'reset', music: [], engine: null });
   });
-  it('reserves all twelve slots and expires waiting attacks without losing ticks or persistent starts', () => {
-    const { transport, clock, latest, acknowledge } = fixture(); acknowledge();
-    transport.cue(CUE.enemyEngine);
-    for (let i = 0; i < 12; i++) transport.advanceTick();
-    transport.commitFrame(); expect(latest().frames).toHaveLength(12);
-    const batch = latest(); transport.cue(CUE.shot); transport.cue(CUE.stagePulse1); transport.advanceTick();
-    transport.commitFrame(); expect(latest()).toBe(batch);
-    clock.now = 1.1; acknowledge(12);
-    expect(latest().frames).toEqual([{ tick: 13, start: [CUE.stagePulse1], stop: [] }]);
+  it('keeps the first cue pending if the native gain setter fails', () => {
+    const { transport, endpoint, batches } = fixture(); transport.cue(CUE.shot);
+    vi.mocked(endpoint.setGain).mockImplementationOnce(() => { throw new Error('gain failed'); });
+    expect(() => transport.commitFrame()).toThrow('gain failed'); expect(batches()).toHaveLength(0);
+    transport.commitFrame(); expect(batches()[0].commands).toEqual([{ id: CUE.shot, start: true, createdAt: 0 }]);
   });
-  it('resynchronizes rejected outstanding ticks from the latest semantic snapshot', () => {
-    const { transport, persistent, latest, hooks, messages, acknowledge } = fixture(); acknowledge();
-    transport.cue(CUE.shot); transport.advanceTick(); transport.commitFrame();
-    const rejected = latest(); persistent.start = [CUE.hiscoreTriangle]; persistent.offset = 47;
-    hooks.reply({ type: 'ack', generation: rejected.generation, sequence: rejected.sequence, accepted: false, credits: 12 });
-    expect(messages.findLast(value => value.type === 'reset')).toMatchObject({
-      generation: rejected.generation + 1, tick: 1, offset: 47, start: [CUE.hiscoreTriangle],
-    });
-    const proof = latest(); expect(proof.frames).toEqual([]);
-    hooks.reply({ type: 'ack', generation: rejected.generation, sequence: rejected.sequence, accepted: true, credits: 12 });
-    expect(latest()).toBe(proof);
-  });
-  it('clears queued frames across a focus barrier and requires a fresh attack after resume', async () => {
-    const { transport, messages, acknowledge } = fixture(); acknowledge();
-    transport.cue(CUE.shot); transport.advanceTick(); transport.setPaused(true, 'focus');
-    transport.setPaused(false); await Promise.resolve(); transport.commitFrame();
-    expect(messages.filter(value => value.type === 'frames' && value.frames.length)).toEqual([]);
-    transport.cue(CUE.shot); transport.advanceTick(); transport.commitFrame();
-    expect(messages.at(-1)).toMatchObject({ type: 'frames', frames: [{ tick: 2, start: [CUE.shot] }] });
-  });
-
-  it('expires queued old counts and shots while preserving every tick, stop and sustained cue in order', async () => {
-    const { transport, clock, latest, acknowledge, batches } = fixture(); acknowledge();
-    activate(transport);
-    for (let index = 0; index < 12; index++) transport.advanceTick();
-    await Promise.resolve(); // Reserve all capacity until native consumption is acknowledged.
-    clock.now = 1.001;
-    transport.cue(CUE.shot);
-    transport.cue(CUE.countPulse); transport.cue(CUE.countNoise);
-    for (const cue of [CUE.stagePulse1, CUE.stageTriangle, CUE.stagePulse2]) transport.cue(cue);
-    transport.stop(CUE.playerEngine); transport.stop(CUE.enemyEngine); transport.cue(CUE.enemyEngine);
-    transport.advanceTick(); await Promise.resolve();
-    clock.now = 1.05;
-    transport.cue(CUE.countPulse); transport.cue(CUE.countNoise);
-    transport.cue(CUE.shot);
-    for (const cue of [CUE.gameoverPulse1, CUE.gameoverPulse2, CUE.gameoverTriangle]) transport.cue(cue);
-    transport.stop(CUE.playerEngine); transport.stop(CUE.enemyEngine);
-    transport.advanceTick(); await Promise.resolve();
-    expect(batches()).toHaveLength(1);
-    acknowledge();
-    expect(latest()).toEqual({
-      type: 'frames', generation: 0, sequence: 5, at: 1 + 12 / AUDIO_TICK_HZ,
-      frames: [
-        { tick: 13, start: [CUE.stagePulse1, CUE.stageTriangle, CUE.stagePulse2, CUE.enemyEngine],
-          stop: [CUE.playerEngine, CUE.enemyEngine] },
-        { tick: 14, start: [CUE.countPulse, CUE.countNoise, CUE.shot,
-          CUE.gameoverPulse1, CUE.gameoverPulse2, CUE.gameoverTriangle], stop: [CUE.playerEngine, CUE.enemyEngine] },
-      ],
-    });
-  });
-  it('uses actual consumption progress for the next pending batch sample cursor', async () => {
-    const { transport, clock, latest, acknowledge, progress, batches } = fixture(); acknowledge();
-    activate(transport);
-    for (let index = 0; index < 12; index++) transport.advanceTick();
-    await Promise.resolve();
-    clock.now = 1.2;
-    transport.advanceTick(); await Promise.resolve();
-    acknowledge(0);
-    expect(batches()).toHaveLength(1);
-    progress(12, 1.225);
-    expect(latest()).toEqual({
-      type: 'frames', generation: 0, sequence: 5, at: 1.225,
-      frames: [{ tick: 13, start: [], stop: [] }],
-    });
-  });
-  it('ignores an old scene acknowledgement without changing the current batch or sample cursor', async () => {
-    const { transport, clock, latest, acknowledge, progress, reply, batches } = fixture(); acknowledge();
-    transport.cue(CUE.shot); transport.advanceTick(); await Promise.resolve(); acknowledge(); transport.stopScene(); acknowledge();
-    activate(transport);
-    clock.now = 1.1;
-    for (let index = 0; index < 12; index++) transport.advanceTick();
-    await Promise.resolve();
-    const current = latest();
-    clock.now = 1.3;
-    transport.advanceTick(); await Promise.resolve();
-    const sent = batches().length;
-    reply({ type: 'ack', generation: current.generation - 1,
-      sequence: current.sequence, accepted: true, credits: 12 });
-    expect(batches()).toHaveLength(sent);
-    acknowledge(0);
-    reply({ type: 'progress', generation: current.generation - 1,
-      sequence: current.sequence, credits: 12, nextAt: 1.2 });
-    expect(batches()).toHaveLength(sent);
-    progress(12, 1.345);
-    expect(latest()).toEqual({
-      type: 'frames', generation: 1, sequence: 7, at: 1.345,
-      frames: [{ tick: 14, start: [], stop: [] }],
-    });
-  });
-  it('submits a fresh cue while nine accepted frames are still playing', async () => {
-    const { transport, clock, latest, acknowledge, batches } = fixture(); acknowledge();
-    activate(transport);
-    for (let index = 0; index < 9; index++) transport.advanceTick();
-    await Promise.resolve(); acknowledge(3);
-    clock.now = 1.1;
-    transport.cue(CUE.countPulse); transport.cue(CUE.countNoise);
-    transport.advanceTick(); await Promise.resolve();
-    expect(batches()).toHaveLength(2);
-    expect(latest()).toMatchObject({
-      sequence: 5, frames: [{ tick: 10, start: [CUE.countPulse, CUE.countNoise], stop: [] }],
-    });
-  });
-  it('waits at zero credits and drains pending ticks in one-credit prefixes without losing their cues', async () => {
-    const { transport, clock, latest, acknowledge, progress, batches } = fixture(); acknowledge();
-    activate(transport);
-    for (let index = 0; index < 12; index++) transport.advanceTick();
-    await Promise.resolve(); acknowledge(0);
-    clock.now = 1.005;
-    transport.cue(CUE.shot);
-    transport.advanceTick(); await Promise.resolve();
-    clock.now = 1.01;
-    transport.cue(CUE.countPulse); transport.cue(CUE.countNoise);
-    transport.advanceTick(); await Promise.resolve();
-    expect(batches()).toHaveLength(1);
-    progress(1, 1.02);
-    expect(latest()).toMatchObject({
-      sequence: 5, frames: [{ tick: 13, start: [CUE.shot], stop: [] }],
-    });
-    acknowledge(0);
-    expect(batches()).toHaveLength(2);
-    progress(1, 1.04);
-    expect(latest()).toMatchObject({
-      sequence: 6, frames: [{ tick: 14, start: [CUE.countPulse, CUE.countNoise], stop: [] }],
-    });
-    expect(batches()).toHaveLength(3);
-  });
-  it('reserves at most twelve frames across multiple unacknowledged batches and ignores older positive snapshots', async () => {
-    const { transport, clock, latest, acknowledge, progress, reply, batches } = fixture(); acknowledge();
-    activate(transport);
-    for (let batch = 0; batch < 3; batch++) {
-      for (let index = 0; index < 4; index++) transport.advanceTick();
-      transport.commitFrame();
-    }
-    const sent = batches();
-    expect(sent.map(message => message.frames.length)).toEqual([4, 4, 4]);
-    transport.advanceTick(); transport.advanceTick(); transport.commitFrame();
-    for (const earlier of sent.slice(0, 2)) reply({
-      type: 'ack', generation: earlier.generation, sequence: earlier.sequence, accepted: true, credits: 12,
-    });
-    for (const earlier of sent) reply({
-      type: 'progress', generation: earlier.generation, sequence: earlier.sequence, credits: 12, nextAt: 2,
-    });
-    expect(batches()).toHaveLength(3);
-    acknowledge(0);
-    expect(batches()).toHaveLength(3);
-    clock.now = 1.25; progress(1, 1.3);
-    expect(latest()).toMatchObject({
-      sequence: 7, at: 1.3, frames: [{ tick: 13, start: [], stop: [] }],
-    });
-    acknowledge(0); progress(1, 1.32);
-    const all = batches();
-    expect(all.map(message => message.frames.length)).toEqual([4, 4, 4, 1, 1]);
-    expect(all.flatMap(message => message.frames.map(frame => frame.tick))).toEqual(Array.from({ length: 14 }, (_, index) => index + 1));
-    expect(all.at(-1)).toMatchObject({ sequence: 8, at: 1.32 });
-  });
-  it('does not accept a progress credit snapshot while a new batch reception is still in flight', async () => {
-    const { transport, latest, acknowledge, progress, reply, batches } = fixture(); acknowledge();
-    activate(transport);
-    transport.advanceTick(); await Promise.resolve();
-    const first = latest();
-    acknowledge(1);
-    transport.advanceTick(); await Promise.resolve();
-    const second = latest();
-    transport.advanceTick(); await Promise.resolve();
-    for (const sequence of [first.sequence, second.sequence]) reply({
-      type: 'progress', generation: second.generation, sequence, credits: 12, nextAt: 1.1,
-    });
-    expect(batches()).toHaveLength(2);
-    acknowledge(0);
-    expect(batches()).toHaveLength(2);
-    progress(1, 1.05);
-    expect(latest()).toMatchObject({
-      sequence: 6, at: 1.05, frames: [{ tick: 3, start: [], stop: [] }],
-    });
-  });
-  it('isolates pre-pause acknowledgements and progress even within the same generation', async () => {
-    const { transport, clock, latest, acknowledge, progress, reply, batches } = fixture(); acknowledge();
-    activate(transport);
-    transport.advanceTick(); await Promise.resolve();
-    const old = latest();
-    transport.setPaused(true); transport.setPaused(false);
-    for (let index = 0; index < 12; index++) transport.advanceTick();
-    await Promise.resolve();
-    const current = latest();
-    expect(current.generation).toBe(old.generation); expect(current.sequence).toBeGreaterThan(old.sequence);
-    transport.advanceTick(); await Promise.resolve();
-    const stale: AudioReply[] = [
-      { type: 'ack', generation: old.generation, sequence: old.sequence, accepted: true, credits: 12 },
-      { type: 'ack', generation: old.generation, sequence: old.sequence, accepted: false, credits: 0 },
-      { type: 'progress', generation: old.generation, sequence: old.sequence, credits: 12, nextAt: 1.11 },
-    ];
-    for (const message of stale) reply(message);
-    expect(batches()).toHaveLength(2);
-    acknowledge(0);
-    for (const message of stale) reply(message);
-    expect(batches()).toHaveLength(2);
-    clock.now = 1.2; progress(12, 1.225);
-    expect(latest()).toMatchObject({
-      at: 1.225, frames: [{ tick: 14, start: [], stop: [] }],
-    });
-  });
-  it('keeps the consumed hardware cursor from a latest accepted ACK', async () => {
-    const { transport, clock, latest, reply, acknowledge } = fixture(); acknowledge();
-    for (const cue of [CUE.hiscorePulse1, CUE.hiscorePulse2, CUE.hiscoreTriangle]) transport.cue(cue); transport.advanceTick(); transport.commitFrame();
-    const first = latest();
-    reply({ type: 'ack', generation: first.generation, sequence: first.sequence, accepted: true, credits: 12, nextAt: 1.25 });
-    clock.now = 1.01; transport.advanceTick(); transport.commitFrame();
-    expect(latest()).toMatchObject({ at: 1.25, frames: [{ tick: 2, start: [], stop: [] }] });
-  });
-  it('ignores an earlier accepted credit snapshot without rebasing the latest reservation', async () => {
-    const { transport, clock, gains, latest, acknowledge, progress, reply, batches } = fixture(); acknowledge();
-    for (const cue of [CUE.hiscorePulse1, CUE.hiscorePulse2, CUE.hiscoreTriangle]) transport.cue(cue);
-    for (let batch = 0; batch < 2; batch++) {
-      for (let tick = 0; tick < 6; tick++) transport.advanceTick();
-      transport.commitFrame();
-    }
-    const sent = batches();
-    transport.advanceTick(); transport.commitFrame();
-    reply({ type: 'ack', generation: sent[0].generation, sequence: sent[0].sequence, accepted: true, credits: 12, nextAt: 9 });
-    expect(gains.at(-1)).toBe(0.3);
-    expect(batches()).toEqual(sent);
-    acknowledge(0);
-    clock.now = 1.25; progress(1, 1.3);
-    expect(latest()).toMatchObject({ at: 1.3, frames: [{ tick: 13, start: [], stop: [] }] });
+  it('never submits attacks with zero volume', () => {
+    const { transport, batches } = fixture(0); transport.cue(CUE.shot); transport.commitFrame(); expect(batches()).toHaveLength(0);
   });
 });

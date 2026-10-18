@@ -41,6 +41,29 @@ npm run validate:desktop -- --install
 
 `--preflight-only` 仅检查环境，不执行游戏验收用例；即使返回 `0`，`browserAcceptance` 仍为 `unverified`。
 
+## 音频功能与性能观察
+
+开场功能检查要求按键前 120ms 静音，真实 Enter 后在 AudioContext/PCM 时间坐标的 500ms 内起音，并采集完整 500ms 窗口检查峰值 `<0.5`。音质在实际首音后 15–100ms 检查 `RMS >0.008` 和峰值 `<0.5`；正常开场还须通过原声部及完整乐句检查。采样覆盖保留 15 秒墙钟超时，缺失、重复、乱序及非有限数据仍使验收失败。150ms/300ms 主线程阻塞回归先确认正常播放，再检查阻塞期间声音连续。细节见[音频验证](audio.md#验证)。
+
+90ms 保留为非阻断的历史观察目标，附件记录实际首音延迟、超标标记、采样率和功能上限；无首音保持为空。500ms 是项目 CI 故障上限，不是玩家日常听感目标或统一行业标准。报告通过只证明这些功能条件及其余验收项通过，不证明硬件输出链路或真实设备听感已经验证。既有 24 组配对和五对改善等实验采纳条件只留在历史归档，不增加日常验收步骤。
+
+## 射击与失焦的独立诊断
+
+`opening-latency` 工具的 `lifecycle` 模式只在冻结的临时源码副本插桩，记录发送、接收、命令执行或丢弃、暂停应用和实际输出。正式生产源码、TTL、Gain 和 PCM 验收窗口保持原样。Worklet 使用有界记录，播放期间不回传；测量完成后才一次取回。溢出、图身份变化或数据缺失视为证据不完整，不能据此判断功能正常。
+
+在 `web` 目录使用同一 Node、浏览器和音频环境运行以下命令。将 `REPOSITORY` 替换为仓库绝对路径，`NATIVE_WEB` 替换为已安装依赖的原生文件系统 `web` 目录，`NEW_ARCHIVE` 替换为尚不存在的归档目录：
+
+```sh
+node scripts/diagnostics/opening-latency/build.mjs REPOSITORY NATIVE_WEB NEW_ARCHIVE --scenario lifecycle
+LIFECYCLE_ARCHIVE=NEW_ARCHIVE node --experimental-vm-modules --test --test-isolation=none scripts/diagnostics/opening-latency/lifecycle-diagnostic.test.mjs
+node NEW_ARCHIVE/runner/run.mjs NEW_ARCHIVE/config.json
+node NEW_ARCHIVE/runner/analyze.mjs NEW_ARCHIVE
+```
+
+先通过原样与插桩 Worklet 的 PCM 逐样本等价性检查，再运行固定 8 次生命周期尝试：E2E 和 production 两种构建模式各执行 Chromium 1 次诊断、WebKit 1 次原样及 2 次诊断；单 worker、零重试、每次新 context。诊断专用流程保存射击失败后继续失焦检查，不改变正式测试的失败语义。所有尝试保留；未复现时不追加循环。
+
+归档包含源码与构建哈希、插桩差异、原始 PCM、接收端时间线和 trace。可将完整目录保存在 `web/test-results/audio-lifecycle/<run>/`。诊断完成、退出码为零或本轮未复现都不代表产品通过验收，不能替代 `validate:desktop` 或覆盖原失败报告；旧开场诊断模式保持原口径。
+
 ## 报告与发布
 
 每次验收保存在 `web/test-results/acceptance/<run>/`：根目录包含 `report.json`、`source-manifest.json` 和命令日志；`e2e/`、`production/` 分别包含阶段 JSON、`source-binding.json`、`results/` 测试附件，以及启用 HTML reporter 时的 `html/`。

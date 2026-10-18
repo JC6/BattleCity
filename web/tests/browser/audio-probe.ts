@@ -1,4 +1,5 @@
 import { expect, type Page, type TestInfo } from '@playwright/test';
+import { setTimeout as setDiagnosticTimeout, clearTimeout as clearDiagnosticTimeout } from 'node:timers';
 import { observePcmShotFailure, pcmShotWindowFeatures, pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture, type PcmPacket, type PcmFeatures, type PcmComparisonWindow, type PcmShotMatch, type PcmSnapshot, type PcmShotFailure, type PcmShotFailureObserver, type AudioTransportEntry } from './pcm-window';
 export type { PcmShotFailureObserver } from './pcm-window';
 
@@ -15,6 +16,10 @@ export interface PcmMeasurement {
 export type PcmMeasurementFailure = Pick<PcmMeasurement, 'parameters'> & Partial<Omit<PcmMeasurement, 'parameters'>> & {
   stage: 'coverage' | 'sampling' | 'measurement' | 'assertion'; error: unknown;
 };
+export interface PcmOpeningObservation {
+  clock: 'AudioContext'; keyAt: number; onset: number | null; latencyMs: number | null;
+  targetMs: number; targetExceeded: boolean | null; functionalLimitMs: number; rate: number;
+}
 
 export async function attachPcmFailure(testInfo: TestInfo, failure: PcmMeasurementFailure,
   measurement: string, anchors: Readonly<Record<string, number>>): Promise<void> {
@@ -51,15 +56,18 @@ function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOption
         const record = (direction: 'send' | 'receive', message: unknown) => {
           try {
             const value = message as AudioTransportEntry;
-            if (!['reset', 'pause', 'frames', 'ack', 'progress'].includes(value.type)) return;
+            if (!['reset', 'pause', 'commands', 'control-applied', 'frames', 'ack', 'progress'].includes(value.type)) return;
             const entry: AudioTransportEntry = { direction, wall: Date.now(), type: value.type, generation: value.generation };
-            for (const field of ['sequence', 'at', 'tick', 'offset', 'paused', 'reason', 'accepted', 'credits', 'nextAt'] as const) {
+            for (const field of ['sequence', 'at', 'tick', 'offset', 'paused', 'reason', 'confirm', 'accepted', 'credits', 'nextAt', 'sentAt', 'engine'] as const) {
               if (value[field] !== undefined) Object.assign(entry, { [field]: value[field] });
             }
+            if (value.music) entry.music = value.music.slice(0, 28);
+            if (value.commands) entry.commands = value.commands.slice(0, 28).map(command => ({ ...command }));
             if (value.start) entry.start = value.start.slice(0, 28);
             if (value.stop) entry.stop = value.stop.slice(0, 28);
             if (value.recovery) entry.recovery = value.recovery.slice(0, 12).map(group => ({ at: group.at, start: group.start.slice(0, 28) }));
             if (value.frames) entry.frames = value.frames.slice(0, 12).map(frame => ({ tick: frame.tick,
+              ...(frame.createdAt === undefined ? {} : { createdAt: frame.createdAt }),
               start: frame.start.slice(0, 28), stop: frame.stop.slice(0, 28) }));
             if (history.entries.length < 512) history.entries.push(entry);
             else { history.entries[history.next] = entry; history.next = (history.next + 1) % 512; history.dropped++; }
@@ -72,7 +80,7 @@ function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOption
           return result;
         }) as MessagePort['postMessage'];
         port.addEventListener('message', event => record('receive', event.data));
-        // The application's unchanged onmessage assignment starts this port.
+        // The application starts its own port for focus recovery confirmations.
         // Do not call start() or replace its message handler for observation.
       } catch { history.observationErrors++; }
     };
@@ -288,6 +296,49 @@ export async function pcmAssert(page: Page, start: number, end: number, frequenc
     await assertion(measurement.features);
     return measurement.features;
   }, () => ({ ...measurement, stage: 'assertion' as const }), onFailure);
+}
+/** Opening availability and first-note quality have separate windows. The
+ * 90ms observation is not a gate or a hardware keyboard-to-speaker measurement. */
+export async function expectOpeningPcm(page: Page, keyAt: number, options: {
+  checkVoices?: boolean;
+  onFailure?: (failure: PcmMeasurementFailure) => void | Promise<void>;
+  onObservation?: (observation: PcmOpeningObservation) => void | Promise<void>;
+} = {}): Promise<number> {
+  const limit = 0.5, target = 0.09;
+  const opening = await pcmAssert(page, keyAt, keyAt + limit, [], async value => {
+    const latency = value.onset === null ? null : value.onset - keyAt;
+    if (options.onObservation) {
+      let timer: ReturnType<typeof setDiagnosticTimeout> | undefined;
+      try {
+        await Promise.race([
+          Promise.resolve().then(() => options.onObservation!({ clock: 'AudioContext', keyAt, onset: value.onset,
+            latencyMs: latency === null ? null : latency * 1000, targetMs: target * 1000,
+            targetExceeded: latency === null ? null : latency > target,
+            functionalLimitMs: limit * 1000, rate: value.rate })),
+          new Promise<void>(resolve => { timer = setDiagnosticTimeout(resolve, 3000); }),
+        ]);
+      } catch { /* Optional observations cannot replace the PCM verdict. */ }
+      finally { if (timer !== undefined) clearDiagnosticTimeout(timer); }
+    }
+    expect(value.onset, 'Stage music must start within the 500ms PCM window').not.toBeNull();
+    expect(value.onset!).toBeGreaterThanOrEqual(keyAt);
+    expect(value.onset!).toBeLessThan(keyAt + limit);
+    expect(value.peak).toBeLessThan(0.5);
+  }, options.onFailure);
+  const onset = opening.onset!;
+  // Reference timer pitches: C5 pulse, G3 pulse, C3 triangle. Anchor quality
+  // to the first actual onset, so silence before it cannot dilute the RMS.
+  await pcmAssert(page, onset + 0.015, onset + 0.10,
+    options.checkVoices ? [522.714, 195.57, 130.678] : [], value => {
+      expect(value.rms).toBeGreaterThan(0.008);
+      expect(value.peak).toBeLessThan(0.5);
+      if (options.checkVoices) {
+        expect(value.amplitudes[0]).toBeGreaterThan(0.005);
+        expect(value.amplitudes[1]).toBeGreaterThan(0.003);
+        expect(value.amplitudes[2]).toBeGreaterThan(0.001);
+      }
+    }, options.onFailure);
+  return onset;
 }
 export async function pcmIdleWindow(page: Page, start: number, end: number, frequencies: readonly number[], comparison?: PcmComparisonWindow): Promise<PcmFeatures> {
   await waitForAudioTime(page, start + 0.5);

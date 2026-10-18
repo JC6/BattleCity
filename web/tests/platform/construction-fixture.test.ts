@@ -123,7 +123,8 @@ describe('Construction compositor observations', () => {
 });
 
 function keyboardFixture(options: { failPainting?: boolean; missingWall?: boolean; releaseError?: boolean;
-  attachError?: boolean; unmovedCursor?: boolean; stalledSteel?: boolean; latePaintingRead?: boolean } = {}) {
+  attachError?: boolean; unmovedCursor?: boolean; stalledSteel?: boolean; latePaintingRead?: boolean;
+  stalledEntry?: boolean; failMovement?: boolean } = {}) {
   const events: string[] = [], held = new Set<string>();
   // Fixture buffers are immutable. Repeated stalled observations need only one
   // diagnostic scan here; protectedBattlefield still analyzes every real read.
@@ -133,16 +134,22 @@ function keyboardFixture(options: { failPainting?: boolean; missingWall?: boolea
     if (!value) { value = inspectConstruction(rgba); inspections.set(rgba, value); }
     return value;
   };
-  let entered = 0, selected = 0, last = picture(start), pending: Buffer[] = [], pendingCode = false;
+  const initialPixels = picture(origin);
+  let entered = 0, selected = 0, last = picture(null), pending: Buffer[] = [], pendingCode = false;
   let failurePixels: Buffer | undefined;
   const captureError = new Error('compositor read failed');
+  const movementError = new Error('first direction dispatch failed');
   let finishLateRead: ((rgba: Buffer) => void) | undefined;
   const page = {
     keyboard: {
       press: vi.fn(async (key: string) => {
         events.push(`press:${key}`);
+        if (key === 's' && options.failMovement) {
+          held.add(key); throw movementError;
+        }
         if (key === 'Enter') {
           entered++;
+          if (entered === 1) pending = [last, options.stalledEntry ? picture(start) : initialPixels];
           if (entered === 3) pending = [last, picture(origin, 13, options.missingWall ? 12 : 13)];
         }
       }),
@@ -159,7 +166,7 @@ function keyboardFixture(options: { failPainting?: boolean; missingWall?: boolea
       }),
       up: vi.fn(async (key: string) => {
         held.delete(key); events.push(`up:${key}`);
-        if (key === 'd' && options.releaseError) throw new Error('keyboard release failed');
+        if ((key === 'd' || key === 's') && options.releaseError) throw new Error('keyboard release failed');
       }),
     },
     evaluate: vi.fn(async () => {}),
@@ -187,13 +194,19 @@ function keyboardFixture(options: { failPainting?: boolean; missingWall?: boolea
     }
   });
   return { page: page as unknown as Page, testInfo: { attach } as unknown as TestInfo,
-    attach, held, events, captureError, failurePixels: () => failurePixels };
+    attach, held, events, captureError, movementError, initialPixels, failurePixels: () => failurePixels };
 }
 
 describe('Construction keyboard preparation', { timeout: 15000 }, () => {
-  it('awaits each actual block and the right edge, then ignores the stale right-hand cursor after re-entry', async () => {
+  it('awaits the initial cursor before moving, each actual block and the right edge, and the reset cursor after re-entry', async () => {
     const fixture = keyboardFixture();
     await protectedBattlefield(fixture.page, fixture.testInfo);
+    const initial = fixture.events.indexOf('frame:0:0:0,0,0,0');
+    expect(initial).toBeGreaterThan(fixture.events.indexOf('press:Enter'));
+    expect(fixture.events.indexOf('press:s')).toBeGreaterThan(initial);
+    expect(fixture.events.filter(event => event === 'press:s')).toHaveLength(5);
+    expect(fixture.page.keyboard.press).toHaveBeenCalledWith('s', { delay: 34 });
+    expect(fixture.page.evaluate).toHaveBeenCalledTimes(5);
     expect(fixture.page.keyboard.down).toHaveBeenCalledTimes(7);
     expect(fixture.events.filter(event => event === 'down:k')).toHaveLength(6);
     const steel = fixture.events.indexOf(`frame:0:5:${[0xadadad, 0xadadad, 0x666666, 0x666666].join(',')}`);
@@ -201,6 +214,32 @@ describe('Construction keyboard preparation', { timeout: 15000 }, () => {
     expect(fixture.events.indexOf('up:d')).toBeGreaterThan(fixture.events.findIndex(event => event.startsWith('frame:12:5:')));
     expect(fixture.events.at(-1)).toBe('press:Enter');
     expect(fixture.held.size).toBe(0); expect(fixture.attach).not.toHaveBeenCalled();
+  });
+
+  it('does not move or paint when the initial origin cursor never renders', async () => {
+    const fixture = keyboardFixture({ stalledEntry: true });
+    await expect(protectedBattlefield(fixture.page, fixture.testInfo)).rejects.toThrow(/initial cursor before moving down/);
+    expect(fixture.events).not.toContain('press:s');
+    expect(fixture.page.keyboard.down).not.toHaveBeenCalled();
+    expect(fixture.page.evaluate).not.toHaveBeenCalled();
+    expect(fixture.held.size).toBe(0); expect(fixture.attach).toHaveBeenCalled();
+  });
+
+  it.each([false, true])('retains the confirmed initial frame and first movement error (cleanup failure: %s)', async releaseError => {
+    const fixture = keyboardFixture({ failMovement: true, releaseError });
+    await expect(protectedBattlefield(fixture.page, fixture.testInfo)).rejects.toBe(fixture.movementError);
+    expect(fixture.events.filter(event => event === 'press:s')).toHaveLength(1);
+    expect(fixture.page.keyboard.up).toHaveBeenCalledWith('s');
+    expect(fixture.page.keyboard.down).not.toHaveBeenCalled();
+    expect(fixture.page.evaluate).not.toHaveBeenCalled();
+    expect(fixture.held.size).toBe(0);
+    const attachments = fixture.attach.mock.calls.map(([, attachment]) => attachment);
+    expect(attachments.find(value => value.contentType === 'application/octet-stream')?.body.equals(fixture.initialPixels)).toBe(true);
+    const diagnostic = JSON.parse(attachments.find(value => value.contentType === 'application/json')!.body.toString());
+    expect(diagnostic.phase).toBe('move Construction cursor down');
+    expect(diagnostic.pixelsSHA256).toBe(pixelsSHA256(fixture.initialPixels));
+    expect(diagnostic.observation.cursor).toEqual(origin);
+    expect(diagnostic.error.message).toBe(fixture.movementError.message);
   });
 
   it.each([false, true])('retains the analyzed pixels and original error when held painting fails (cleanup failure: %s)', async releaseError => {

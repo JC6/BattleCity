@@ -7,7 +7,6 @@ export interface AudioRuntimeHooks {
   resumed(): void;
   blocked(): void;
   failed(): void;
-  reply(message: AudioReply): void;
 }
 
 /** Owns one native graph. Only a user gesture can create or retry it. */
@@ -17,6 +16,9 @@ export class AudioRuntime {
   private gain?: GainNode;
   private gainParameter?: AudioParam;
   private gainValue?: number;
+  private desiredGain = 0;
+  private focusMuted = false;
+  private pendingControl?: { generation: number; sequence: number };
   private node?: AudioWorkletNode;
   private attempt = 0;
   private retryAt = 0;
@@ -56,8 +58,11 @@ export class AudioRuntime {
             numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1],
           });
           node.connect(this.gain!);
-          node.port.onmessage = event => { if (this.current(attempt)) this.hooks.reply(event.data); };
           node.onprocessorerror = () => this.fail(attempt);
+          node.port.onmessage = (event: MessageEvent<unknown>) => {
+            if (!this.current(attempt) || this.node !== node) return;
+            this.receive(event.data, attempt);
+          };
           this.state = 'ready'; this.resumePending = context.state !== 'running';
           this.hooks.ready();
         }).catch(() => this.fail(attempt));
@@ -77,11 +82,47 @@ export class AudioRuntime {
   }
 
   setGain(value: number): void {
+    this.desiredGain = value;
+    this.applyGain(this.focusMuted ? 0 : value);
+  }
+  private applyGain(value: number): void {
     if (!this.gainParameter || value === this.gainValue) return;
     // Cache only successful writes; a failed native setter must be retryable.
     this.gainParameter.value = value; this.gainValue = value;
   }
-  post(message: AudioMessage): void { this.node?.port.postMessage(message); }
+  post(message: AudioMessage): void {
+    const node = this.node, attempt = this.attempt;
+    if (!node) return;
+    let outgoing = message;
+    try {
+      if (message.type !== 'commands') {
+        if (message.paused && message.reason === 'focus') {
+          this.focusMuted = true; this.pendingControl = undefined;
+          // Mute the output before waiting for the Worklet control message.
+          this.applyGain(0);
+        } else if (this.focusMuted) {
+          this.pendingControl = { generation: message.generation,
+            sequence: message.type === 'reset' ? 0 : message.sequence };
+          outgoing = { ...message, confirm: true };
+        }
+      }
+      node.port.postMessage(outgoing);
+    } catch (error) {
+      if (message.type === 'commands') throw error;
+      this.fail(attempt);
+    }
+  }
+  private receive(data: unknown, attempt: number): void {
+    const pending = this.pendingControl;
+    if (!this.focusMuted || !pending || !data || typeof data !== 'object') return;
+    const reply = data as Partial<AudioReply>;
+    if (reply.type !== 'control-applied' || reply.generation !== pending.generation ||
+      reply.sequence !== pending.sequence) return;
+    try {
+      this.applyGain(this.desiredGain);
+      this.focusMuted = false; this.pendingControl = undefined;
+    } catch { this.fail(attempt); }
+  }
   private current(attempt: number): boolean { return attempt === this.attempt && this.state !== 'disposed'; }
   private fail(attempt: number, unsupported = false): void {
     if (!this.current(attempt)) return;
@@ -98,6 +139,7 @@ export class AudioRuntime {
     const context = this.context, node = this.node, gain = this.gain;
     this.context = undefined; this.node = undefined; this.gain = undefined;
     this.gainParameter = undefined; this.gainValue = undefined;
+    this.desiredGain = 0; this.focusMuted = false; this.pendingControl = undefined;
     // Every cleanup is attempted even when a native operation fails.
     try { if (gain) gain.gain.value = 0; } catch { /* Disconnect below still silences it. */ }
     try { if (node) { node.port.onmessage = null; node.onprocessorerror = null; } } catch { /* Continue releasing. */ }

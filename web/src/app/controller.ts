@@ -98,7 +98,7 @@ export class AppController {
     this.presentationSuspended = false;
     this.scene.draft = null; this.scene.state = engine.state;
     this.scene.resetAnimation(); this.scene.observeStep(engine.state);
-    this.audio.syncState(engine.state);
+    this.audio.syncState(engine.state); this.audio.commitFrame();
     this.present();
   }
 
@@ -190,7 +190,6 @@ export class AppController {
         this.scene.observeStep(this.engine.state);
         this.audio.syncState(this.engine.state);
         if (this.engine.state.phase === 'won' || this.engine.state.phase === 'lost') {
-          this.audio.advanceTick();
           this.audio.commitFrame();
           this.finishBattle(); return;
         }
@@ -212,10 +211,9 @@ export class AppController {
         if (!this.presentationTime) {
           // The boundary tick belongs to the scene it enters. Submit its new
           // cue before that page's first paint, without adding another tick.
-          this.advancePresentation(); this.audio.advanceTick(); this.audio.commitFrame(); return;
+          this.advancePresentation(); this.audio.commitFrame(); return;
         }
       } else this.input.readPads();
-      this.audio.advanceTick();
     }
     this.audio.commitFrame();
     this.present();

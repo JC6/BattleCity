@@ -12,7 +12,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const scriptPath = fileURLToPath(import.meta.url);
 const webRoot = path.resolve(path.dirname(scriptPath), '..');
 const repoRoot = path.resolve(webRoot, '..');
-const expectedCases = { e2e: { chromium: 52, webkit: 52 }, production: { chromium: 12, webkit: 12 } };
+const expectedCases = { e2e: { chromium: 54, webkit: 54 }, production: { chromium: 14, webkit: 14 } };
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const validSHA256 = value => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 const exists = async filename => { try { await access(filename); return true; } catch { return false; } };

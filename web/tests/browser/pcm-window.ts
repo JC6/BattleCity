@@ -6,10 +6,12 @@ export interface AudioEvent { kind: 'keydown' | 'blur'; code: string; at: number
 export interface AudioMark { kind: string; at: number; tick?: number }
 export interface AudioTransportEntry {
   direction: 'send' | 'receive'; wall: number; type: string; generation: number;
-  sequence?: number; at?: number; tick?: number; offset?: number; paused?: boolean; reason?: string;
+  sequence?: number; at?: number; tick?: number; offset?: number; paused?: boolean; reason?: string; confirm?: boolean;
   accepted?: boolean; credits?: number; nextAt?: number; start?: number[]; stop?: number[];
-  frames?: { tick: number; start: number[]; stop: number[] }[];
+  frames?: { tick: number; createdAt?: number; start: number[]; stop: number[] }[];
   recovery?: { at: number; start: number[] }[];
+  music?: number[]; engine?: number | null; sentAt?: number;
+  commands?: { id: number; start: boolean; createdAt: number }[];
 }
 export interface AudioTransportHistory {
   entries: AudioTransportEntry[]; next: number; dropped: number; observationErrors: number;
@@ -102,8 +104,12 @@ export function snapshotPcmWindow({ start, end, measure = false }: { start: numb
       ...(history ? { transport: { dropped: history.dropped, observationErrors: history.observationErrors,
         entries: entries.map(entry => ({ ...entry,
           ...(entry.start ? { start: [...entry.start] } : {}), ...(entry.stop ? { stop: [...entry.stop] } : {}),
+          ...(entry.music ? { music: [...entry.music] } : {}),
+          ...(entry.commands ? { commands: entry.commands.map(command => ({ ...command })) } : {}),
           ...(entry.recovery ? { recovery: entry.recovery.map(group => ({ at: group.at, start: [...group.start] })) } : {}),
-          ...(entry.frames ? { frames: entry.frames.map(frame => ({ tick: frame.tick, start: [...frame.start], stop: [...frame.stop] })) } : {}),
+          ...(entry.frames ? { frames: entry.frames.map(frame => ({ tick: frame.tick,
+            ...(frame.createdAt === undefined ? {} : { createdAt: frame.createdAt }),
+            start: [...frame.start], stop: [...frame.stop] })) } : {}),
         })) } } : {}) };
   } catch { snapshot.diagnostics = { unavailable: true }; }
   if (measure) snapshot.timing = { wall, selectMs: selected - started,

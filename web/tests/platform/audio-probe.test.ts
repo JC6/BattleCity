@@ -79,18 +79,18 @@ describe('deferred native audio event observation', () => {
     port.onmessage = receiver;
     const transfers = [new ArrayBuffer(4)];
     const message = { type: 'frames', generation: 3, sequence: 7, at: 1.25,
-      frames: [{ tick: 40, start: [15], stop: [17] }] };
+      frames: [{ tick: 40, createdAt: 1.2, start: [15], stop: [17] }] };
     expect(Reflect.apply(port.postMessage, port, [message, transfers])).toBe(result);
     expect(post).toHaveBeenCalledExactlyOnceWith(message, transfers); expect(post.mock.contexts[0]).toBe(port);
     const ack = { type: 'ack', generation: 3, sequence: 7, accepted: true, credits: 11, nextAt: 1.27 };
     const event = receive(ack);
     expect(port.onmessage).toBe(receiver); expect(receiver).toHaveBeenCalledExactlyOnceWith(event);
     expect(capture.transport!.entries).toMatchObject([
-      { direction: 'send', type: 'frames', generation: 3, sequence: 7, at: 1.25, frames: [{ tick: 40, start: [15], stop: [17] }] },
+      { direction: 'send', type: 'frames', generation: 3, sequence: 7, at: 1.25, frames: [{ tick: 40, createdAt: 1.2, start: [15], stop: [17] }] },
       { direction: 'receive', type: 'ack', generation: 3, sequence: 7, accepted: true, credits: 11, nextAt: 1.27 },
     ]);
     message.frames[0].start[0] = 1; message.frames[0].stop.push(18);
-    expect(capture.transport!.entries[0].frames).toEqual([{ tick: 40, start: [15], stop: [17] }]);
+    expect(capture.transport!.entries[0].frames).toEqual([{ tick: 40, createdAt: 1.2, start: [15], stop: [17] }]);
     const reset = { type: 'reset', generation: 4, tick: 41, offset: 12, start: [18],
       recovery: Array.from({ length: 13 }, (_, index) => ({ at: 1.2 + index / 60, start: Array.from({ length: 29 }, (_, id) => id) })) };
     port.postMessage(reset);
@@ -100,10 +100,36 @@ describe('deferred native audio event observation', () => {
     expect(recovery[0].at).toBe(1.2); expect(recovery[0].start[0]).toBe(0);
     expect(clock).not.toHaveBeenCalled(); expect(capture.errors).toEqual([]);
   });
+  it('copies command-clock observations and snapshots without changing the native call', async () => {
+    const { capture, port, connect } = await transportFixture(); connect();
+    const message = { type: 'commands', generation: 1, sequence: 2, sentAt: 0.1,
+      commands: [{ id: 19, start: true, createdAt: 0.05 }] };
+    port.postMessage(message); message.commands[0].id = 15;
+    expect(capture.transport!.entries.at(-1)).toMatchObject({ sentAt: 0.1, commands: [{ id: 19, start: true, createdAt: 0.05 }] });
+    capture.rate = 1000; capture.packets = [packet([0])];
+    const snapshot = snapshotPcmWindow({ start: 0, end: 0.128 }, capture);
+    capture.transport!.entries.at(-1)!.commands![0].id = 1;
+    expect(snapshot.diagnostics!.transport!.entries.at(-1)!.commands![0].id).toBe(19);
+  });
+  it('retains focus control requests and receipts without taking over the application receiver', async () => {
+    const { capture, port, connect, receive, clock } = await transportFixture(); connect();
+    const receiver = vi.fn(); port.onmessage = receiver;
+    port.postMessage({ type: 'pause', generation: 3, sequence: 8, paused: false, reason: 'manual', commands: [], confirm: true });
+    const event = receive({ type: 'control-applied', generation: 3, sequence: 8 });
+    expect(port.onmessage).toBe(receiver); expect(receiver).toHaveBeenCalledExactlyOnceWith(event);
+    capture.rate = 1000; capture.packets = [packet([0])];
+    const snapshot = snapshotPcmWindow({ start: 0, end: 0.128 }, capture);
+    expect(snapshot.diagnostics!.transport!.entries).toMatchObject([
+      { direction: 'send', type: 'pause', generation: 3, sequence: 8, paused: false, reason: 'manual', commands: [], confirm: true },
+      { direction: 'receive', type: 'control-applied', generation: 3, sequence: 8 },
+    ]);
+    expect(port.start).not.toHaveBeenCalled(); expect(clock).not.toHaveBeenCalled();
+    expect(capture.transport!.observationErrors).toBe(0); expect(capture.errors).toEqual([]);
+  });
   it('retains the last 512 messages in order and snapshots existing observations without another native read', async () => {
     const { capture, port, connect, clock } = await transportFixture(); connect();
     for (let sequence = 0; sequence < 520; sequence++) port.postMessage({ type: 'frames', generation: 4, sequence,
-      at: sequence / 60, frames: [{ tick: sequence, start: sequence === 519 ? [15] : [], stop: [] }] });
+      at: sequence / 60, frames: [{ tick: sequence, createdAt: sequence / 60 - 0.01, start: sequence === 519 ? [15] : [], stop: [] }] });
     capture.transport!.entries.find(entry => entry.sequence === 519)!.recovery = [{ at: 8.5, start: [15] }];
     capture.events.push({ kind: 'keydown', code: 'KeyJ', at: 8.5 }); capture.marks.push({ kind: 'game', at: 1 });
     capture.rate = 1000; capture.packets = [packet([0])];
@@ -117,6 +143,7 @@ describe('deferred native audio event observation', () => {
     capture.transport!.entries.find(entry => entry.sequence === 519)!.recovery![0].start[0] = 1;
     expect(snapshot.diagnostics!.events![0].at).toBe(8.5); expect(snapshot.diagnostics!.marks![0].at).toBe(1);
     expect(history.entries.at(-1)!.frames![0].start).toEqual([15]);
+    expect(history.entries.at(-1)!.frames![0].createdAt).toBe(519 / 60 - 0.01);
     expect(history.entries.at(-1)!.recovery).toEqual([{ at: 8.5, start: [15] }]);
     const direct = pcmWindowFeatures({ start: 0, end: 0.128, frequencies: [] }, capture);
     expect(pcmWindowFeatures({ start: 0, end: 0.128, frequencies: [] }, restorePcmSnapshot(snapshot))).toEqual(direct);
