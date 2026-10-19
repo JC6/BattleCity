@@ -1,6 +1,7 @@
 import { expect, type Page, type TestInfo } from '@playwright/test';
 import { setTimeout as setDiagnosticTimeout, clearTimeout as clearDiagnosticTimeout } from 'node:timers';
-import { pcmPauseWindowFeatures, type PcmPauseMatch, observePcmShotFailure, pcmShotWindowFeatures, pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture, type PcmPacket, type PcmFeatures, type PcmComparisonWindow, type PcmShotMatch, type PcmSnapshot, type PcmShotFailure, type PcmShotFailureObserver, type AudioTransportEntry } from './pcm-window';
+import type { AudioMessage } from '../../src/platform/audio-protocol';
+import { pcmPauseWindowFeatures, type PcmPauseMatch, observePcmShotFailure, pcmShotWindowFeatures, pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture, type PcmPacket, type PcmFeatures, type PcmComparisonWindow, type PcmShotMatch, type PcmSnapshot, type PcmShotFailure, type PcmShotFailureObserver } from './pcm-window';
 export type { PcmShotFailureObserver } from './pcm-window';
 
 // Playwright invokes function arguments; a string containing a function would
@@ -21,7 +22,7 @@ export interface PcmOpeningObservation {
   targetMs: number; targetExceeded: boolean | null; functionalLimitMs: number; rate: number;
 }
 
-export async function attachPcmFailure(testInfo: TestInfo, failure: PcmMeasurementFailure,
+export async function attachPcmFailure(testInfo: TestInfo, failure: PcmMeasurementFailure | PcmShotFailure,
   measurement: string, anchors: Readonly<Record<string, number>>): Promise<void> {
   const error = failure.error instanceof Error
     ? { name: failure.error.name, message: failure.error.message, stack: failure.error.stack }
@@ -47,36 +48,22 @@ function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOption
     let detachTap: (() => void) | undefined;
     let detachScene: (() => void) | undefined;
     let observedPort: MessagePort | undefined;
-    const observeTransport = (node: AudioWorkletNode) => {
-      const history = capture.transport ??= { entries: [], next: 0, dropped: 0, observationErrors: 0 };
+    const observeFirstReset = (node: AudioWorkletNode) => {
       try {
         const port = node.port;
         if (port === observedPort) return;
         observedPort = port;
-        const record = (direction: 'send' | 'receive', message: unknown) => {
-          try {
-            const value = message as AudioTransportEntry;
-            if (!['reset', 'pause', 'commands', 'control-applied'].includes(value.type)) return;
-            const entry: AudioTransportEntry = { direction, wall: Date.now(), type: value.type, generation: value.generation };
-            for (const field of ['sequence', 'offset', 'paused', 'reason', 'confirm', 'sentAt', 'engine'] as const) {
-              if (value[field] !== undefined) Object.assign(entry, { [field]: value[field] });
-            }
-            if (value.music) entry.music = value.music.slice(0, 28);
-            if (value.commands) entry.commands = value.commands.slice(0, 28).map(command => ({ ...command }));
-            if (history.entries.length < 512) history.entries.push(entry);
-            else { history.entries[history.next] = entry; history.next = (history.next + 1) % 512; history.dropped++; }
-          } catch { history.observationErrors++; }
-        };
         const postMessage = port.postMessage;
         port.postMessage = (function (this: MessagePort, ...args: unknown[]) {
           const result = Reflect.apply(postMessage, this, args);
-          record('send', args[0]);
+          try {
+            const message = args[0] as AudioMessage;
+            if (port === observedPort && !capture.firstReset && message.type === 'reset')
+              capture.firstReset = { ...message, music: [...message.music] };
+          } catch { /* Optional evidence cannot change native message delivery. */ }
           return result;
         }) as MessagePort['postMessage'];
-        port.addEventListener('message', event => record('receive', event.data));
-        // The application starts its own port for focus recovery confirmations.
-        // Do not call start() or replace its message handler for observation.
-      } catch { history.observationErrors++; }
+      } catch { /* The recovery assertion still requires a captured reset. */ }
     };
     const eventTime = (kind: 'keydown' | 'blur', code: string) => {
       if (capture.recording === false || !capture.context) return;
@@ -92,7 +79,7 @@ function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOption
       const result = Reflect.apply(connect, this, args);
       if (this instanceof AudioWorkletNode && args[0] === capture.gain) {
         capture.gameReady = true;
-        observeTransport(this);
+        observeFirstReset(this);
         // Register the sidecar after the real game module has finished loading.
         // Observation must not compete with the application's Worklet startup.
         attachTap?.(); attachTap = undefined;
@@ -105,11 +92,11 @@ function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOption
         // Native clocks restart on a new graph. Retain old evidence separately;
         // never mix its sample labels or key timestamps into the replacement.
         (capture.retiredGraphs ??= []).push({ context: capture.context, gain: capture.gain, rate: capture.rate,
-          packets: capture.packets, events: capture.events, marks: capture.marks, transport: capture.transport });
+          packets: capture.packets, events: capture.events, marks: capture.marks, firstReset: capture.firstReset });
         detachTap?.(); detachScene?.(); observedPort = undefined;
         capture.ready = false; capture.gameReady = false;
         capture.packets = []; capture.events = []; capture.marks = [];
-        capture.transport = undefined; capture.recordFromFrame = undefined;
+        capture.firstReset = undefined; capture.recordFromFrame = undefined;
       }
       capture.context = context; capture.gain = this; capture.rate = context.sampleRate;
       if (observeScenes) {
@@ -255,7 +242,7 @@ async function readPcmSnapshot(page: Page, start: number, end: number): Promise<
   // Send one JSON string, avoiding Playwright's recursive object serializer on
   // the game's thread. PCM remains base64 bytes; Node still validates every
   // quantum label and analyzes the exact snapshot retained for failures.
-  const json = await page.evaluate(snapshotPcmJson, { start, end, measure: true });
+  const json = await page.evaluate(snapshotPcmJson, { start, end });
   return JSON.parse(json) as PcmSnapshot;
 }
 async function measuredPcm(page: Page, parameters: Parameters<typeof pcmWindowFeatures>[0]): Promise<PcmFeatures> {
@@ -277,9 +264,6 @@ export async function pcmMeasurement(page: Page, start: number, end: number, fre
     const features = pcmWindowFeatures(parameters, restorePcmSnapshot(snapshot));
     return { parameters, snapshot, features };
   }, () => ({ parameters, snapshot, stage }), onFailure);
-}
-export async function pcmFeatures(page: Page, start: number, end: number, frequencies: readonly number[] = []): Promise<PcmFeatures> {
-  return (await pcmMeasurement(page, start, end, frequencies)).features;
 }
 /** Acquisition observes its own failures once; assertions retain that same sample. */
 export async function pcmAssert(page: Page, start: number, end: number, frequencies: readonly number[],

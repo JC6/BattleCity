@@ -40,7 +40,6 @@ describe('semantic audio command transport', () => {
     const expected = delay <= 0.1 ? [CUE.countPulse, CUE.countNoise, CUE.shot, CUE.stagePulse1] : [CUE.stagePulse1];
     expect(batches()[0].commands.filter(command => command.start).map(command => command.id)).toEqual(expected);
     expect(batches()[0].commands.every(command => command.createdAt === 0)).toBe(true);
-    expect(batches()[0].sentAt).toBe(delay);
     expect(batches()[0].commands.at(-1)).toMatchObject({ id: CUE.enemyEngine, start: false });
   });
   it.each([0.1, 0.1001])('expires unsent attacks after 100ms at %s seconds', delay => {

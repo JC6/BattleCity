@@ -36,13 +36,13 @@ export class AudioTransport {
   /** Submit changes before painting, without advancing an audio or game tick. */
   commitFrame(): void {
     if (!this.runtime.ready || this.paused || this.volume <= 0) { this.pending.clear(); return; }
-    const sentAt = this.runtime.now;
+    const now = this.runtime.now;
     const commands = [...this.pending.values()].filter(command =>
-      !command.start || isCueFresh(command.id, command.createdAt, sentAt));
+      !command.start || isCueFresh(command.id, command.createdAt, now));
     if (!commands.length) { this.pending.clear(); return; }
     // Retry a failed native gain write before consuming any first attack.
     this.runtime.setGain(this.volume);
-    this.runtime.post({ type: 'commands', generation: this.generation, sequence: ++this.sequence, sentAt, commands });
+    this.runtime.post({ type: 'commands', generation: this.generation, sequence: ++this.sequence, commands });
     this.pending.clear();
   }
   setPaused(paused: boolean, reason: PauseReason = 'manual'): void {

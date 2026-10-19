@@ -1,23 +1,9 @@
-import { expect, test, type TestInfo } from '@playwright/test';
-import { attachPcmFailure, audioMarkTime, audioReady, installPcmProbe, pcmAssert, pcmMeasurement, type PcmMeasurementFailure } from './audio-probe';
-import { observePcmShotFailure } from './pcm-window';
+import { expect, test } from '@playwright/test';
+import { attachPcmFailure, audioMarkTime, audioReady, installPcmProbe, pcmAssert } from './audio-probe';
 import { presentation, ready } from './helpers';
 
 // Native PCM sampling and scene transitions share the desktop case budget.
 test.describe.configure({ timeout: 60000 });
-
-function errorDetails(error: unknown): { name: string; message: string; stack?: string } {
-  return error instanceof Error ? { name: error.name, message: error.message, stack: error.stack }
-    : { name: 'Error', message: String(error) };
-}
-async function attachCountFailure(testInfo: TestInfo, failure: PcmMeasurementFailure,
-  scoreAt: number, countAt: number): Promise<void> {
-  // Save the same local samples and result that caused this failure.
-  await testInfo.attach('audio-count-failure', {
-    contentType: 'application/json',
-    body: Buffer.from(JSON.stringify({ ...failure, error: errorDetails(failure.error), scoreAt, countAt }, null, 2)),
-  });
-}
 
 async function prepared(page: Parameters<typeof ready>[0]): Promise<void> {
   // Limit paint work while measuring native scene audio.
@@ -40,11 +26,9 @@ test('real score counts remain short and GAME OVER music belongs to its presenta
   const countAt = await audioMarkTime(page, 'score-count', { after: scoreAt, timeout: 12000 });
   // Count sound must be present after the 35-frame lead and 9-frame count.
   const countFrameTime = (35 + 9) / 60.0988;
-  const onFailure = (failure: PcmMeasurementFailure) => attachCountFailure(testInfo, failure, scoreAt, countAt);
-  const count = await pcmMeasurement(page, countAt + 0.70 - countFrameTime, countAt + 0.90 - countFrameTime, [], onFailure);
-  await observePcmShotFailure(async () => {
-    expect(count.features.rms).toBeGreaterThan(0.0005);
-  }, () => ({ ...count, stage: 'assertion' as const }), onFailure);
+  await pcmAssert(page, countAt + 0.70 - countFrameTime, countAt + 0.90 - countFrameTime, [], value => {
+    expect(value.rms).toBeGreaterThan(0.0005);
+  }, failure => attachPcmFailure(testInfo, failure, 'score count', { scoreAt, countAt }));
   await pcmAssert(page, countAt + 1.10 - countFrameTime, countAt + 1.30 - countFrameTime, [], value => {
     expect(value.peak).toBeLessThan(0.0001);
   }, failure => attachPcmFailure(testInfo, failure, 'score count silence', { scoreAt, countAt }));

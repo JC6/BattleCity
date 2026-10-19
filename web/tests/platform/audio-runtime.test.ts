@@ -150,7 +150,7 @@ async function readyFixture() {
 describe('focus output mute', () => {
   it('keeps ordinary opening, commands and manual pause independent of replies', async () => {
     const { runtime, node, gain, reply } = await readyFixture();
-    runtime.post({ type: 'commands', generation: 1, sequence: 1, sentAt: 1, commands: [] });
+    runtime.post({ type: 'commands', generation: 1, sequence: 1, commands: [] });
     runtime.post(pause(2, true, 'manual')); runtime.post(pause(3, false, 'manual'));
     expect(node.port.postMessage.mock.calls.every(([message]) => !message.confirm)).toBe(true);
     reply(applied(1, 3)); expect(gain.value).toBe(0.3);
@@ -162,7 +162,7 @@ describe('focus output mute', () => {
     expect(gain.value).toBe(0);
     runtime.post(pause(2, false));
     expect(node.port.postMessage).toHaveBeenLastCalledWith({ ...pause(2, false), confirm: true });
-    runtime.post({ type: 'commands', generation: 1, sequence: 3, sentAt: 1, commands: [] });
+    runtime.post({ type: 'commands', generation: 1, sequence: 3, commands: [] });
     runtime.setGain(0.15); await settle();
     expect(gain.value).toBe(0); // Neither time nor later sound commands replaces the pending control.
     reply(applied(1, 2)); expect(gain.value).toBe(0.15);

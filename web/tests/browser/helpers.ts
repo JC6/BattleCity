@@ -1,20 +1,9 @@
 import { expect, type Page } from '@playwright/test';
-import type { GameMode, GameState, PlayerInput, Tile } from '../../src/core/types';
+import type { GameMode, GameState } from '../../src/core/types';
+import type { AppTestAdapter } from '../../src/app/test-adapter';
 import type { ArenaPresentation, ArenaScene } from '../../src/game/arena';
 
-interface TestHarness {
-  state(): GameState | null;
-  presentation(): ArenaPresentation;
-  start(mode?: GameMode, stage?: number): void;
-  step(count?: number, inputs?: PlayerInput[]): void;
-  debug(patch: Partial<GameState>): void;
-  openEditor(): void;
-  setEditorTile(index: number, tile: Tile): void;
-  getEditorTiles(): Tile[];
-  playEditor(mode?: GameMode): void;
-  editor(): { cursor: { x: number; y: number }; selectedCode: number };
-  renderScene(): ArenaScene;
-}
+type TestHarness = AppTestAdapter & { renderScene(): ArenaScene };
 
 declare global { interface Window { __BATTLECITY__?: TestHarness } }
 

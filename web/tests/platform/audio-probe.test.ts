@@ -27,7 +27,8 @@ describe('deferred native audio event observation', () => {
     class GainNode extends AudioNode {}
     class AudioWorkletNode extends AudioNode {}
     class AudioContext {}
-    const realm = createContext({ window: browserWindow, AudioNode, AudioDestinationNode, GainNode, AudioWorkletNode, AudioContext });
+    const realm = createContext({ window: browserWindow, AudioNode, AudioDestinationNode, GainNode, AudioWorkletNode, AudioContext,
+      Blob, URL: { createObjectURL: () => 'blob:pcm-fixture', revokeObjectURL() {} } });
     const page = {
       addInitScript: vi.fn(async (source: string) => { runInContext(source, realm); }),
       evaluate: vi.fn(async (expression: () => void) => { runInContext(`(${expression.toString()})()`, realm); }),
@@ -44,16 +45,13 @@ describe('deferred native audio event observation', () => {
   async function transportFixture() {
     const clock = vi.fn((): number => { throw new Error('Transport must not read native audio time'); });
     const fixture = await eventFixture(clock);
-    const listeners: ((event: { data: unknown }) => void)[] = [];
     const result = { delegated: true };
     const post = vi.fn(function (this: unknown, ..._args: unknown[]) { return result; });
-    let handler: ((event: { data: unknown }) => void) | null = null;
     const port = {
       postMessage: post,
-      addEventListener: vi.fn((_kind: string, listener: (event: { data: unknown }) => void) => listeners.push(listener)),
+      addEventListener: vi.fn(),
       start: vi.fn(),
-      get onmessage() { return handler; },
-      set onmessage(value: typeof handler) { handler = value; },
+      onmessage: null as null | ((event: { data: unknown }) => void),
     };
     const worklet = new fixture.AudioWorkletNode();
     Object.defineProperty(worklet, 'port', { value: port });
@@ -61,94 +59,44 @@ describe('deferred native audio event observation', () => {
     const connect = () => Reflect.apply(worklet.connect, worklet, [fixture.capture.gain]);
     const receive = (data: unknown) => {
       const event = { data };
-      // A listener alone never activates a port. The real application sets
-      // onmessage after connect(), which performs its own implicit start.
-      if (handler) { handler(event); for (const listener of listeners) listener(event); }
+      port.onmessage?.(event);
       return event;
     };
     return { ...fixture, clock, worklet, port, post, result, connect, receive };
   }
-  it('observes only the game port and delegates original messages, transfers and receiver exactly once', async () => {
-    const fixture = await transportFixture();
-    const { capture, worklet, port, post, result, connect, receive, clock } = fixture;
+  it('delegates original messages, transfers and receiver without listening to replies', async () => {
+    const { capture, worklet, port, post, result, connect, receive, clock } = await transportFixture();
     expect(connect()).toBe(worklet); expect(connect()).toBe(worklet);
-    expect(port.addEventListener).toHaveBeenCalledOnce(); expect(port.start).not.toHaveBeenCalled();
-    const receiver = vi.fn();
-    receive({ type: 'control-applied', generation: 3, sequence: 7 });
-    expect(capture.transport!.entries).toEqual([]);
-    port.onmessage = receiver;
+    expect(port.addEventListener).not.toHaveBeenCalled(); expect(port.start).not.toHaveBeenCalled();
+    const receiver = vi.fn(); port.onmessage = receiver;
     const transfers = [new ArrayBuffer(4)];
-    const message = { type: 'commands', generation: 3, sequence: 7, sentAt: 1.25,
-      commands: [{ id: 15, start: true, createdAt: 1.2 }, { id: 17, start: false, createdAt: 1.2 }] };
+    const message = { type: 'commands', generation: 3, sequence: 7,
+      commands: [{ id: 15, start: true, createdAt: 1.2 }] };
     expect(Reflect.apply(port.postMessage, port, [message, transfers])).toBe(result);
     expect(post).toHaveBeenCalledExactlyOnceWith(message, transfers); expect(post.mock.contexts[0]).toBe(port);
-    const event = receive({ type: 'control-applied', generation: 3, sequence: 7 });
-    expect(port.onmessage).toBe(receiver); expect(receiver).toHaveBeenCalledExactlyOnceWith(event);
-    expect(capture.transport!.entries).toMatchObject([
-      { direction: 'send', type: 'commands', generation: 3, sequence: 7, sentAt: 1.25,
-        commands: [{ id: 15, start: true, createdAt: 1.2 }, { id: 17, start: false, createdAt: 1.2 }] },
-      { direction: 'receive', type: 'control-applied', generation: 3, sequence: 7 },
-    ]);
-    message.commands[0].id = 1; message.commands.push({ id: 18, start: false, createdAt: 1.2 });
-    expect(capture.transport!.entries[0].commands).toEqual([
-      { id: 15, start: true, createdAt: 1.2 }, { id: 17, start: false, createdAt: 1.2 },
-    ]);
-    const reset = { type: 'reset', generation: 4, offset: 12, engine: 17, paused: false, reason: 'manual',
-      music: Array.from({ length: 29 }, (_, id) => id) };
-    port.postMessage(reset);
-    const music = capture.transport!.entries.at(-1)!.music!;
-    expect(music).toEqual(Array.from({ length: 28 }, (_, id) => id));
-    reset.music[0] = 99;
-    expect(music[0]).toBe(0);
-    expect(clock).not.toHaveBeenCalled(); expect(capture.errors).toEqual([]);
-  });
-  it('copies command-clock observations and snapshots without changing the native call', async () => {
-    const { capture, port, connect } = await transportFixture(); connect();
-    const message = { type: 'commands', generation: 1, sequence: 2, sentAt: 0.1,
-      commands: Array.from({ length: 29 }, (_, id) => ({ id, start: true, createdAt: 0.05 })) };
-    port.postMessage(message); message.commands[0].id = 15;
-    expect(capture.transport!.entries.at(-1)).toMatchObject({ sentAt: 0.1,
-      commands: Array.from({ length: 28 }, (_, id) => ({ id, start: true, createdAt: 0.05 })) });
-    capture.rate = 1000; capture.packets = [packet([0])];
-    const snapshot = snapshotPcmWindow({ start: 0, end: 0.128 }, capture);
-    capture.transport!.entries.at(-1)!.commands![0].id = 1;
-    expect(snapshot.diagnostics!.transport!.entries.at(-1)!.commands![0].id).toBe(0);
-  });
-  it('retains focus control requests and receipts without taking over the application receiver', async () => {
-    const { capture, port, connect, receive, clock } = await transportFixture(); connect();
-    const receiver = vi.fn(); port.onmessage = receiver;
     port.postMessage({ type: 'pause', generation: 3, sequence: 8, paused: false, reason: 'manual', commands: [], confirm: true });
     const event = receive({ type: 'control-applied', generation: 3, sequence: 8 });
     expect(port.onmessage).toBe(receiver); expect(receiver).toHaveBeenCalledExactlyOnceWith(event);
-    capture.rate = 1000; capture.packets = [packet([0])];
-    const snapshot = snapshotPcmWindow({ start: 0, end: 0.128 }, capture);
-    expect(snapshot.diagnostics!.transport!.entries).toMatchObject([
-      { direction: 'send', type: 'pause', generation: 3, sequence: 8, paused: false, reason: 'manual', commands: [], confirm: true },
-      { direction: 'receive', type: 'control-applied', generation: 3, sequence: 8 },
-    ]);
-    expect(port.start).not.toHaveBeenCalled(); expect(clock).not.toHaveBeenCalled();
-    expect(capture.transport!.observationErrors).toBe(0); expect(capture.errors).toEqual([]);
+    expect(capture.firstReset).toBeUndefined();
+    expect(clock).not.toHaveBeenCalled(); expect(capture.errors).toEqual([]);
   });
-  it('retains the last 512 messages in order and snapshots existing observations without another native read', async () => {
+  it('retains only the first reset and snapshots independent music, events and marks', async () => {
     const { capture, port, connect, clock } = await transportFixture(); connect();
-    port.postMessage({ type: 'reset', generation: 4, offset: 0, music: [1, 2, 3], engine: null, paused: false, reason: 'manual' });
-    for (let sequence = 0; sequence < 519; sequence++) port.postMessage({ type: 'commands', generation: 4, sequence,
-      sentAt: sequence / 60, commands: [{ id: 15, start: true, createdAt: sequence / 60 - 0.01 }] });
-    port.postMessage({ type: 'reset', generation: 5, offset: 0, music: [1, 2, 3], engine: null, paused: false, reason: 'manual' });
+    const reset = { type: 'reset', generation: 4, offset: 12, music: [1, 2, 3], engine: null, paused: false, reason: 'manual' };
+    port.postMessage(reset);
+    expect(capture.firstReset).toEqual(reset); expect(capture.firstReset).not.toBe(reset);
+    reset.music[0] = 99;
+    port.postMessage({ ...reset, generation: 5, offset: 0 });
+    expect(capture.firstReset).toMatchObject({ generation: 4, offset: 12, music: [1, 2, 3] });
     capture.events.push({ kind: 'keydown', code: 'KeyJ', at: 8.5 }); capture.marks.push({ kind: 'game', at: 1 });
     capture.rate = 1000; capture.packets = [packet([0])];
     const snapshot = snapshotPcmWindow({ start: 0, end: 0.128 }, capture);
-    const history = snapshot.diagnostics!.transport!;
-    expect(history.entries).toHaveLength(512); expect(history.dropped).toBe(9); expect(history.observationErrors).toBe(0);
-    expect(history.entries.slice(0, -1).map(entry => entry.sequence)).toEqual(Array.from({ length: 511 }, (_, index) => index + 8));
-    expect(history.entries.at(-1)).toMatchObject({ type: 'reset', generation: 5 });
-    expect(snapshot.diagnostics!.events).toEqual([{ kind: 'keydown', code: 'KeyJ', at: 8.5 }]);
     capture.events[0].at = 99; capture.marks[0].at = 99;
-    capture.transport!.entries.find(entry => entry.sequence === 518)!.commands![0].id = 1;
-    capture.transport!.entries.find(entry => entry.generation === 5)!.music![0] = 99;
-    expect(snapshot.diagnostics!.events![0].at).toBe(8.5); expect(snapshot.diagnostics!.marks![0].at).toBe(1);
-    expect(history.entries.at(-2)!.commands).toEqual([{ id: 15, start: true, createdAt: 518 / 60 - 0.01 }]);
-    expect(history.entries.at(-1)!.music).toEqual([1, 2, 3]);
+    Object.assign(capture.firstReset!.music, { 0: 99 });
+    expect(snapshot.diagnostics).toEqual({
+      events: [{ kind: 'keydown', code: 'KeyJ', at: 8.5 }], marks: [{ kind: 'game', at: 1 }],
+      firstReset: { ...reset, music: [1, 2, 3] },
+    });
     const direct = pcmWindowFeatures({ start: 0, end: 0.128, frequencies: [] }, capture);
     expect(pcmWindowFeatures({ start: 0, end: 0.128, frequencies: [] }, restorePcmSnapshot(snapshot))).toEqual(direct);
     expect(clock).not.toHaveBeenCalled(); expect(capture.errors).toEqual([]);
@@ -159,14 +107,16 @@ describe('deferred native audio event observation', () => {
     const malformed = { get type(): string { throw new Error('Broken diagnostic value'); } };
     expect(Reflect.apply(port.postMessage, port, [malformed])).toEqual({ delegated: true });
     receive(malformed); expect(receiver).toHaveBeenCalledOnce();
-    expect(capture.transport!.observationErrors).toBe(2); expect(capture.errors).toEqual([]);
+    expect(capture.errors).toEqual([]);
+    const reset = { type: 'reset', generation: 4, offset: 12, music: [1, 2, 3], engine: null, paused: false, reason: 'manual' };
     const failure = new Error('Native post failed'); post.mockImplementationOnce(() => { throw failure; });
-    expect(() => port.postMessage({ type: 'commands', generation: 4, sequence: 1, sentAt: 0, commands: [] })).toThrow(failure);
-    expect(post).toHaveBeenCalledTimes(2); expect(capture.transport!.entries).toEqual([]);
+    expect(() => port.postMessage(reset)).toThrow(failure);
+    expect(post).toHaveBeenCalledTimes(2); expect(capture.firstReset).toBeUndefined();
+    port.postMessage(reset); expect(capture.firstReset).toEqual(reset);
   });
   it('keeps a failing optional diagnostic snapshot separate from validated raw PCM', async () => {
     const { capture } = await transportFixture(); capture.rate = 1000; capture.packets = [packet([0])];
-    Object.defineProperty(capture, 'transport', { get() { throw new Error('Broken optional history'); } });
+    Object.defineProperty(capture, 'firstReset', { get() { throw new Error('Broken optional reset'); } });
     const snapshot = snapshotPcmWindow({ start: 0, end: 0.128 }, capture);
     expect(snapshot.diagnostics).toEqual({ unavailable: true });
     expect(pcmWindowFeatures({ start: 0, end: 0.128, frequencies: [] }, restorePcmSnapshot(snapshot)).rms).toBeGreaterThan(0);
@@ -223,21 +173,36 @@ describe('deferred native audio event observation', () => {
     expect(context).not.toHaveBeenCalled();
   });
   it('archives a replaced graph and observes its new clock without clearing previous errors', async () => {
-    const { capture, AudioContext, AudioDestinationNode, GainNode } = await eventFixture(() => 5);
+    const { capture, port, connect, AudioContext, AudioDestinationNode, GainNode, AudioWorkletNode } = await transportFixture();
+    connect();
+    const reset = { type: 'reset', generation: 4, offset: 12, music: [1, 2, 3], engine: null, paused: false, reason: 'manual' };
+    port.postMessage(reset);
     const old = capture.context!, packets = capture.packets, events = capture.events;
     events.push({ kind: 'keydown', code: 'Enter', at: 5 });
     capture.errors.push('retained diagnostic');
-    const replacement = Object.assign(new AudioContext(), { destination: new AudioDestinationNode(), sampleRate: 48000 });
+    const replacement = Object.assign(new AudioContext(), { destination: new AudioDestinationNode(), sampleRate: 48000,
+      audioWorklet: { addModule: () => new Promise<void>(() => {}) } });
     const gain = new GainNode(); Object.defineProperty(gain, 'context', { value: replacement });
     expect(Reflect.apply(gain.connect, gain, [replacement.destination])).toBe(gain);
     expect(capture.retiredGraphs).toHaveLength(1);
-    expect(capture.retiredGraphs![0]).toMatchObject({ context: old, packets, events });
+    expect(capture.retiredGraphs![0].context).toBe(old);
+    expect(capture.retiredGraphs![0]).toMatchObject({ packets, events, firstReset: reset });
     expect(capture.context).toBe(replacement); expect(capture.rate).toBe(48000);
     expect(capture.ready).toBe(false); expect(capture.gameReady).toBe(false);
     expect(capture.packets).toEqual([]); expect(capture.events).toEqual([]);
     expect(capture.errors).toEqual(['retained diagnostic']);
     Reflect.apply(gain.connect, gain, [replacement.destination]);
     expect(capture.retiredGraphs).toHaveLength(1);
+    port.postMessage({ ...reset, generation: 5 });
+    expect(capture.firstReset).toBeUndefined();
+    const worklet = new AudioWorkletNode(), newPort = { postMessage: vi.fn() };
+    Object.defineProperty(worklet, 'port', { value: newPort });
+    Reflect.apply(worklet.connect, worklet, [gain]);
+    const newReset = { ...reset, generation: 6, offset: 30 };
+    newPort.postMessage(newReset);
+    port.postMessage({ ...reset, generation: 7 });
+    expect(capture.firstReset).toEqual(newReset);
+    expect(capture.retiredGraphs![0].firstReset).toEqual(reset);
   });
 });
 

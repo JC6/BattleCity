@@ -1,6 +1,6 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { attachPcmFailure, audioEventTime, audioReady, audioTime, beginPcmCapture, expectOpeningPcm, installPcmProbe, pcmAssert, pcmBandWindow, pcmIdleWindow, pcmPauseWindow, pcmShotWindow, waitForAudioTime, type PcmOpeningObservation } from './audio-probe';
-import { pcmResponseObservation, type PcmShotFailure, type PcmResponseObservation } from './pcm-window';
+import { pcmResponseObservation, type PcmResponseObservation } from './pcm-window';
 import { probeCanvas, waitForCanvasMenu } from './visual-probes';
 import { protectedBattlefield } from './construction-fixture';
 
@@ -49,19 +49,6 @@ async function failFirstModule(page: Page): Promise<void> {
         };
       }
     };
-  });
-}
-
-function errorDetails(error: unknown): { name: string; message: string; stack?: string } {
-  return error instanceof Error ? { name: error.name, message: error.message, stack: error.stack }
-    : { name: 'Error', message: String(error) };
-}
-async function attachShotFailure(testInfo: TestInfo, failure: PcmShotFailure, idleShotPeak: number): Promise<void> {
-  // Retain the exact snapshot analyzed by the failed assertion. A later read
-  // of the PCM tap cannot replace evidence from that original bounded window.
-  await testInfo.attach('audio-shot-failure', {
-    contentType: 'application/json',
-    body: Buffer.from(JSON.stringify({ ...failure, error: errorDetails(failure.error), idleShotPeak }, null, 2)),
   });
 }
 
@@ -123,10 +110,10 @@ recoveryTest('a failed Worklet load recovers on a fresh graph and resumes the cu
     return { oldGraphs: pcm.retiredGraphs?.length, oldState: pcm.retiredGraphs?.[0].context.state,
       oldGain: pcm.retiredGraphs?.[0].gain?.gain.value, newState: pcm.context?.state,
       different: pcm.context !== pcm.retiredGraphs?.[0].context,
-      reset: pcm.transport?.entries.find(entry => entry.direction === 'send' && entry.type === 'reset') };
+      reset: pcm.firstReset };
   })).toMatchObject({ oldGraphs: 1, oldState: 'closed', oldGain: 0, newState: 'running', different: true,
     reset: { offset: expect.any(Number), music: expect.arrayContaining([1, 2, 3]) } });
-  expect(await page.evaluate(() => window.__AUDIO_PCM__!.transport!.entries.find(entry => entry.type === 'reset')!.offset)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => window.__AUDIO_PCM__!.firstReset!.offset)).toBeGreaterThan(0);
   const recoveredAt = await audioTime(page);
   await pcmAssert(page, recoveredAt + 0.02, recoveredAt + 0.32, [], value => {
     expect(value.rms).toBeGreaterThan(0.001); expect(value.peak).toBeLessThan(0.5);
@@ -216,7 +203,7 @@ lifecycleTest('real keyboard movement, shot, manual pause and focus pause preser
   // PCM. Each tone and the same attack's original 25ms wide-band window must
   // exceed the unchanged idle margin; explosions cannot substitute for a shot.
   const shot = await pcmShotWindow(page, shotAt, shotAt + 0.5, shotBand,
-    Math.max(0.002, idleShotPeak * 3), failure => attachShotFailure(testInfo, failure, idleShotPeak),
+    Math.max(0.002, idleShotPeak * 3), failure => attachPcmFailure(testInfo, failure, 'player shot', { idleShotPeak }),
     // The end of the first confirmed 8ms tone window is a conservative onset
     // bound. Background engine samples cannot establish the shot's response.
     (match, rate) => expectResponse(testInfo, 'shot', shotAt, match.phases[0].start + 0.008, rate));

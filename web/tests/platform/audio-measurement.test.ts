@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Page } from '@playwright/test';
 import { createContext, runInContext } from 'node:vm';
-import { expectOpeningPcm, pcmAssert, pcmFeatures, pcmMeasurement, type PcmMeasurementFailure, type PcmOpeningObservation } from '../browser/audio-probe';
+import { expectOpeningPcm, pcmAssert, pcmMeasurement, type PcmMeasurementFailure, type PcmOpeningObservation } from '../browser/audio-probe';
 import { pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture } from '../browser/pcm-window';
 
 vi.mock('node:timers', () => ({
@@ -192,13 +192,11 @@ describe('exact PCM measurement diagnostics', () => {
   it('exports a standalone browser snapshot as one string with unchanged PCM bytes, labels and observations', async () => {
     const value = browserSerializationFixture();
     value.capture.events.push({ kind: 'keydown', code: 'KeyJ', at: 0.03 });
-    value.capture.transport = { next: 0, dropped: 3, observationErrors: 0,
-      entries: Array.from({ length: 512 }, (_, sequence) => ({ direction: 'send', type: 'commands',
-        generation: 2, wall: 1700000000000 + sequence, sequence, sentAt: sequence / 60,
-        commands: [{ id: 15, start: true, createdAt: sequence / 60 - 0.01 }] })) };
+    value.capture.firstReset = { type: 'reset', generation: 2, music: [1, 2, 3], offset: 12,
+      engine: null, paused: false, reason: 'manual' };
     const expected = snapshotPcmWindow(value.parameters, value.capture);
     const result = await pcmMeasurement(value.page, value.parameters.start, value.parameters.end, value.parameters.frequencies);
-    expect(result.snapshot).toEqual({ ...expected, timing: expect.any(Object) });
+    expect(result.snapshot).toEqual(expected);
     expect(result.features).toEqual(pcmWindowFeatures(value.parameters, value.capture));
     expect(value.evaluate).toHaveBeenCalledOnce();
   });
@@ -270,14 +268,8 @@ describe('exact PCM measurement diagnostics', () => {
     expect(value.waitForFunction).toHaveBeenCalledOnce();
     expect(value.waitForFunction.mock.calls[0][1]).toBe(value.parameters.end);
     expect(value.evaluate).toHaveBeenCalledOnce();
-    expect(value.evaluate.mock.calls[0][1]).toEqual({ start: value.parameters.start, end: value.parameters.end, measure: true });
+    expect(value.evaluate.mock.calls[0][1]).toEqual({ start: value.parameters.start, end: value.parameters.end });
     expect(value.dispose).toHaveBeenCalledOnce(); expect(observer).not.toHaveBeenCalled();
-  });
-  it('keeps the existing pcmFeatures result and its wait and sample behavior', async () => {
-    const value = fixture();
-    const result = await pcmFeatures(value.page, value.parameters.start, value.parameters.end, value.parameters.frequencies);
-    expect(result).toEqual(pcmWindowFeatures(value.parameters, restorePcmSnapshot(value.snapshot)));
-    expect(value.waitForFunction).toHaveBeenCalledOnce(); expect(value.evaluate).toHaveBeenCalledOnce();
   });
   it('preserves the coverage or sampling error with no nonexistent sample or measured features', async () => {
     for (const stage of ['coverage', 'sampling'] as const) {

@@ -1,24 +1,16 @@
 import { Buffer } from 'node:buffer';
 import { setTimeout as setDiagnosticTimeout, clearTimeout as clearDiagnosticTimeout } from 'node:timers';
-import type { AudioCommand, AudioMessage, AudioReply, PauseReason } from '../../src/platform/audio-protocol';
+import type { AudioMessage } from '../../src/platform/audio-protocol';
 
 export interface PcmPacket { frame: number; times: number[]; frames: number[]; lengths: number[]; samples: Float32Array }
 export interface AudioEvent { kind: 'keydown' | 'blur'; code: string; at: number }
 export interface AudioMark { kind: string; at: number; tick?: number }
-export interface AudioTransportEntry {
-  direction: 'send' | 'receive'; wall: number; type: AudioMessage['type'] | AudioReply['type']; generation: number;
-  sequence?: number; offset?: number; paused?: boolean; reason?: PauseReason; confirm?: boolean;
-  music?: number[]; engine?: number | null; sentAt?: number;
-  commands?: AudioCommand[];
-}
-export interface AudioTransportHistory {
-  entries: AudioTransportEntry[]; next: number; dropped: number; observationErrors: number;
-}
+type AudioReset = Extract<AudioMessage, { type: 'reset' }>;
 export interface AudioCapture {
   ready: boolean; gameReady: boolean; errors: string[]; rate: number; context?: AudioContext; gain?: GainNode; packets: PcmPacket[];
-  events: AudioEvent[]; marks: AudioMark[]; recording?: boolean; recordFromFrame?: number; transport?: AudioTransportHistory;
+  events: AudioEvent[]; marks: AudioMark[]; recording?: boolean; recordFromFrame?: number; firstReset?: AudioReset;
   retiredGraphs?: Array<{ context: AudioContext; gain?: GainNode; rate: number; packets: PcmPacket[];
-    events: AudioEvent[]; marks: AudioMark[]; transport?: AudioTransportHistory }>;
+    events: AudioEvent[]; marks: AudioMark[]; firstReset?: AudioReset }>;
 }
 declare global { interface Window { __AUDIO_PCM__?: AudioCapture } }
 export interface PcmFeatures { rms: number; peak: number; onset: number | null; amplitudes: number[]; samples: number; rate: number; idleReady?: boolean }
@@ -49,9 +41,8 @@ export function pcmResponseObservation(kind: PcmResponseObservation['kind'], key
 export interface PcmSnapshot {
   ready: boolean; gameReady: boolean; errors: string[]; rate: number;
   packets: (Omit<PcmPacket, 'samples'> & { samplesBase64: string })[];
-  timing?: { wall: number; selectMs: number; encodeMs: number; diagnosticsMs: number };
   diagnostics?: { events?: AudioEvent[]; marks?: AudioMark[];
-    transport?: Omit<AudioTransportHistory, 'next'>; unavailable?: boolean };
+    firstReset?: AudioReset; unavailable?: boolean };
 }
 export interface PcmShotParameters { start: number; end: number; frequencies: readonly number[]; minimumAmplitude: number }
 export interface PcmShotFailure {
@@ -87,15 +78,13 @@ export async function observePcmShotFailure<T, Evidence extends object = Omit<Pc
 /** This self-contained function is the only measurement code sent to the page.
  * Copy complete intersecting packets, retaining their offsets and labels. The
  * final real packet also proves how much native audio has actually arrived. */
-export function snapshotPcmWindow({ start, end, measure = false }: { start: number; end: number; measure?: boolean }, capture?: AudioCapture): PcmSnapshot {
-  const wall = measure ? Date.now() : 0, started = measure ? performance.now() : 0;
+export function snapshotPcmWindow({ start, end }: { start: number; end: number }, capture?: AudioCapture): PcmSnapshot {
   const pcm = capture ?? window.__AUDIO_PCM__!;
   if (pcm.errors.length) throw new Error(pcm.errors.join('\n'));
   if (pcm.packets.length > 768) throw new Error('PCM capture exceeded its bounded packet capacity');
   const first = Math.ceil(start * pcm.rate), last = Math.floor(end * pcm.rate);
   const packets = pcm.packets.filter((packet, index) => index === pcm.packets.length - 1 ||
     packet.frames.some((frame, index) => frame < last && frame + packet.lengths[index] > first));
-  const selected = measure ? performance.now() : 0;
   const snapshot: PcmSnapshot = { ready: pcm.ready, gameReady: pcm.gameReady, errors: [...pcm.errors], rate: pcm.rate,
     packets: packets.map(packet => {
       if (!(packet.samples instanceof Float32Array)) throw new Error('Malformed PCM packet');
@@ -113,21 +102,14 @@ export function snapshotPcmWindow({ start, end, measure = false }: { start: numb
       return { frame: packet.frame, times: [...packet.times], frames: [...packet.frames], lengths: [...packet.lengths],
         samplesBase64 };
     }) };
-  const encoded = measure ? performance.now() : 0;
   // These optional observations never participate in PCM validation or require
   // another browser read. A broken observer must not replace the PCM result.
   try {
-    const history = pcm.transport;
-    const entries = history ? [...history.entries.slice(history.next), ...history.entries.slice(0, history.next)] : [];
-    if (history || pcm.events.length || pcm.marks.length) snapshot.diagnostics = { events: pcm.events.map(event => ({ ...event })), marks: pcm.marks.map(mark => ({ ...mark })),
-      ...(history ? { transport: { dropped: history.dropped, observationErrors: history.observationErrors,
-        entries: entries.map(entry => ({ ...entry,
-          ...(entry.music ? { music: [...entry.music] } : {}),
-          ...(entry.commands ? { commands: entry.commands.map(command => ({ ...command })) } : {}),
-        })) } } : {}) };
+    const firstReset = pcm.firstReset;
+    if (firstReset || pcm.events.length || pcm.marks.length) snapshot.diagnostics = {
+      events: pcm.events.map(event => ({ ...event })), marks: pcm.marks.map(mark => ({ ...mark })),
+      ...(firstReset ? { firstReset: { ...firstReset, music: [...firstReset.music] } } : {}) };
   } catch { snapshot.diagnostics = { unavailable: true }; }
-  if (measure) snapshot.timing = { wall, selectMs: selected - started,
-    encodeMs: encoded - selected, diagnosticsMs: performance.now() - encoded };
   return snapshot;
 }
 

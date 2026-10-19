@@ -9,7 +9,7 @@ describe('sample-clock APU playback', () => {
   it.each([44100, 48000].flatMap(rate => [64, 128, 256].map(quantum => [rate, quantum])))('plays an entire phrase at %i Hz with %i-sample blocks after one command', async (rate, quantum) => {
     const { processor, send, render } = await processorFixture(rate);
     const tick = vi.spyOn(processor.driver, 'tick');
-    send({ type: 'commands', generation: 1, sequence: 1, sentAt: 0,
+    send({ type: 'commands', generation: 1, sequence: 1,
       commands: intro.map(id => ({ id, start: true, createdAt: 0 })) });
     const pcm = render(rate * 5, quantum), frame = rate / AUDIO_TICK_HZ;
     expect(pcm.subarray(0, Math.ceil(frame)).every(value => value === 0)).toBe(true);
@@ -30,7 +30,7 @@ describe('sample-clock APU playback', () => {
       if (channel === 1 && register === 0) writes.push({ at: now() * 44100, value });
       write(channel, register, value);
     });
-    const message = { type: 'commands' as const, generation: 1, sequence: 1, sentAt: 0,
+    const message = { type: 'commands' as const, generation: 1, sequence: 1,
       commands: [CUE.countPulse, CUE.countNoise, CUE.shot].map(id => ({ id, start: true, createdAt: 0 })) };
     send(message); const pcm = render(6000, 1), fresh = delay <= 4410;
     expect(audible(pcm)).toBe(fresh);
@@ -47,17 +47,17 @@ describe('sample-clock APU playback', () => {
   it.each([CUE.countPulse, CUE.countNoise, CUE.shot])('does not rejuvenate cue %i after an 80ms sender and 30ms delivery delay', async id => {
     const { processor, send, render } = await processorFixture(); render(4851);
     const trigger = vi.spyOn(processor.driver, 'trigger');
-    send({ type: 'commands', generation: 1, sequence: 1, sentAt: 0.08,
+    send({ type: 'commands', generation: 1, sequence: 1,
       commands: [{ id, start: true, createdAt: 0 }] });
     expect(audible(render(6000))).toBe(false); expect(trigger).not.toHaveBeenCalled();
   });
   it.each([44100, 48000])('checks the 100ms boundary on execution at %i Hz, not just on receipt', async rate => {
-    const { processor, send, render, now } = await processorFixture(rate);
+    const { processor, send, render } = await processorFixture(rate);
     render(Math.round(rate * 0.01));
     send({ type: 'reset', generation: 2, music: [], offset: 0, engine: CUE.enemyEngine, paused: false, reason: 'manual' });
     render(Math.round(rate * 0.098));
     const trigger = vi.spyOn(processor.driver, 'trigger');
-    send({ type: 'commands', generation: 2, sequence: 1, sentAt: now(),
+    send({ type: 'commands', generation: 2, sequence: 1,
       commands: [{ id: CUE.shot, start: true, createdAt: 0.009 }] });
     // Received at age 99ms; the next 60.0988Hz tick crosses its deadline.
     render(Math.round(rate * 0.020));
@@ -65,7 +65,7 @@ describe('sample-clock APU playback', () => {
   });
   it.each([150, 300])('continues the same music through a %i ms main-thread stall without replies', async ms => {
     const { processor, send, render, rate } = await processorFixture();
-    send({ type: 'commands', generation: 1, sequence: 1, sentAt: 0, commands: intro.map(id => ({ id, start: true, createdAt: 0 })) });
+    send({ type: 'commands', generation: 1, sequence: 1, commands: intro.map(id => ({ id, start: true, createdAt: 0 })) });
     const tick = vi.spyOn(processor.driver, 'tick'), length = Math.round(rate * ms / 1000);
     const pcm = render(length);
     expect(audible(pcm.subarray(Math.ceil(rate / AUDIO_TICK_HZ)))).toBe(true);
@@ -74,21 +74,21 @@ describe('sample-clock APU playback', () => {
   });
   it.each(['manual', 'focus'] as const)('freezes music and its fractional phase during %s pause', async reason => {
     const { processor, send, render, now } = await processorFixture();
-    send({ type: 'commands', generation: 1, sequence: 1, sentAt: 0, commands: intro.map(id => ({ id, start: true, createdAt: 0 })) });
+    send({ type: 'commands', generation: 1, sequence: 1, commands: intro.map(id => ({ id, start: true, createdAt: 0 })) });
     render(3000); const remaining = processor.remaining, tick = vi.spyOn(processor.driver, 'tick');
     send({ type: 'pause', generation: 1, sequence: 2, paused: true, reason, commands: [] });
     const paused = render(44100);
     expect(audible(paused.subarray(0, 22050))).toBe(reason === 'manual');
     expect(paused.subarray(30000).every(value => value === 0)).toBe(true);
     expect(tick).not.toHaveBeenCalled(); expect(processor.remaining).toBe(remaining);
-    send({ type: 'commands', generation: 1, sequence: 3, sentAt: now(), commands: [{ id: CUE.shot, start: true, createdAt: now() }] });
+    send({ type: 'commands', generation: 1, sequence: 3, commands: [{ id: CUE.shot, start: true, createdAt: now() }] });
     send({ type: 'pause', generation: 1, sequence: 4, paused: false, reason, commands: [] });
     expect(audible(render(4410))).toBe(true); expect(processor.driver.active(CUE.shot)).toBe(false);
     expect(tick.mock.calls.length).toBeLessThanOrEqual(7);
   });
   it.each(['pending', 'playing'] as const)('discards a %s shot across a pause without a resumed fragment', async state => {
     const { send, render } = await processorFixture();
-    send({ type: 'commands', generation: 1, sequence: 1, sentAt: 0, commands: [{ id: CUE.shot, start: true, createdAt: 0 }] });
+    send({ type: 'commands', generation: 1, sequence: 1, commands: [{ id: CUE.shot, start: true, createdAt: 0 }] });
     if (state === 'playing') expect(audible(render(2000))).toBe(true);
     send({ type: 'pause', generation: 1, sequence: 2, paused: true, reason: 'focus', commands: [] }); render(4410);
     send({ type: 'pause', generation: 1, sequence: 3, paused: false, reason: 'manual', commands: [] });
@@ -109,8 +109,8 @@ describe('sample-clock APU playback', () => {
   });
   it('merges changes by slot, using the final operation and the original note priority', async () => {
     const { processor, send, render } = await processorFixture(); const trigger = vi.spyOn(processor.driver, 'trigger');
-    send({ type: 'commands', generation: 1, sequence: 1, sentAt: 0, commands: [CUE.playerEngine, CUE.shot].map(id => ({ id, start: true, createdAt: 0 })) });
-    send({ type: 'commands', generation: 1, sequence: 2, sentAt: 0, commands: [{ id: CUE.playerEngine, start: false, createdAt: 0 },
+    send({ type: 'commands', generation: 1, sequence: 1, commands: [CUE.playerEngine, CUE.shot].map(id => ({ id, start: true, createdAt: 0 })) });
+    send({ type: 'commands', generation: 1, sequence: 2, commands: [{ id: CUE.playerEngine, start: false, createdAt: 0 },
       { id: CUE.enemyEngine, start: true, createdAt: 0 }] });
     render(2205);
     expect(trigger.mock.calls.map(call => call[0])).toEqual([CUE.shot, CUE.enemyEngine]);
@@ -124,8 +124,8 @@ describe('sample-clock APU playback', () => {
     expect(render(4410).every(value => value === 0)).toBe(true);
   });
   it('confirms pause controls only after clearing attacks and applying the new pause state', async () => {
-    const { processor, send, render, now } = await processorFixture();
-    send({ type: 'commands', generation: 1, sequence: 1, sentAt: 0,
+    const { processor, send, render } = await processorFixture();
+    send({ type: 'commands', generation: 1, sequence: 1,
       commands: [...intro, CUE.shot].map(id => ({ id, start: true, createdAt: 0 })) });
     expect(audible(render(3000))).toBe(true);
     const remaining = processor.remaining;
@@ -142,12 +142,12 @@ describe('sample-clock APU playback', () => {
       expect(processor.driver.active(CUE.shot)).toBe(false);
     });
     send({ type: 'pause', generation: 1, sequence: 3, paused: false, reason: 'manual', commands: [], confirm: true });
-    send({ type: 'commands', generation: 1, sequence: 4, sentAt: now(), commands: [] });
+    send({ type: 'commands', generation: 1, sequence: 4, commands: [] });
     expect(processor.port.postMessage).toHaveBeenCalledTimes(2);
   });
   it('confirms reset at sequence zero only after restoring state and applying focus silence', async () => {
     const { processor, send, render } = await processorFixture();
-    send({ type: 'commands', generation: 1, sequence: 10, sentAt: 0,
+    send({ type: 'commands', generation: 1, sequence: 10,
       commands: [{ id: CUE.shot, start: true, createdAt: 0 }] });
     expect(audible(render(2000))).toBe(true);
     processor.port.postMessage.mockImplementationOnce(reply => {
@@ -170,7 +170,7 @@ describe('sample-clock APU playback', () => {
     send({ ...pause, generation: 0, sequence: 4 }); send({ ...pause, generation: 2, sequence: 4 });
     send({ ...reset, generation: 0 }); send({ ...reset, generation: 1 });
     send(reset); send(reset); send({ ...pause, sequence: 4 });
-    send({ type: 'commands', generation: 2, sequence: 5, sentAt: 0, commands: [] });
+    send({ type: 'commands', generation: 2, sequence: 5, commands: [] });
     send({ ...pause, generation: 2, sequence: 4 }); send({ ...pause, generation: 2, sequence: 5 });
     expect(processor.port.postMessage.mock.calls).toEqual([
       [{ type: 'control-applied', generation: 1, sequence: 3 }],
@@ -184,7 +184,7 @@ describe('sample-clock APU playback', () => {
       const capture = (samples: number) => chunks.push(render(samples, quantum));
       send({ type: 'reset', generation: 2, music: intro, offset: 0, engine: CUE.playerEngine,
         paused: false, reason: 'manual', confirm }); capture(2000);
-      send({ type: 'commands', generation: 2, sequence: 1, sentAt: now(),
+      send({ type: 'commands', generation: 2, sequence: 1,
         commands: [{ id: CUE.shot, start: true, createdAt: now() }] }); capture(777);
       send({ type: 'pause', generation: 2, sequence: 2, paused: true, reason: 'focus', commands: [], confirm }); capture(1000);
       send({ type: 'pause', generation: 2, sequence: 3, paused: false, reason: 'manual', commands: [], confirm }); capture(777);
