@@ -1,6 +1,6 @@
 import { ApuDriver } from './apu-driver';
 import { ApuSynth } from './apu-synth';
-import { AUDIO_TICK_HZ, AUDIO_TRACKS, CUE, isCountCue, isCueFresh, isPersistentCue } from './audio-cues';
+import { AUDIO_TICK_HZ, AUDIO_TRACKS, CUE, isCueFresh, isPersistentCue } from './audio-cues';
 import type { AudioCommand, AudioMessage, AudioReply } from './audio-protocol';
 export type { AudioMessage } from './audio-protocol';
 
@@ -11,7 +11,6 @@ declare abstract class AudioWorkletProcessor {
   readonly port: MessagePort;
   abstract process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
 }
-interface PendingCommand extends AudioCommand { sentAt: number }
 
 class BattleCityApu extends AudioWorkletProcessor {
   private readonly synth = new ApuSynth(sampleRate);
@@ -20,7 +19,7 @@ class BattleCityApu extends AudioWorkletProcessor {
   private readonly pauseDriver = new ApuDriver((channel, register, value) => this.pauseSynth.write(channel, register, value));
   private generation = -1;
   private sequence = 0;
-  private readonly pending = new Map<number, PendingCommand>();
+  private readonly pending = new Map<number, AudioCommand>();
   private paused = false;
   private focusPaused = false;
   private remaining = 0;
@@ -51,7 +50,7 @@ class BattleCityApu extends AudioWorkletProcessor {
     if (message.type === 'pause') {
       // Preserve music received before its first audio tick, without decoding an
       // extra tick or replaying an attack discarded by the pause boundary.
-      for (const command of message.commands) if (AUDIO_TRACKS[command.id]) this.pending.set(command.id, { ...command, sentAt: currentFrame / sampleRate });
+      for (const command of message.commands) if (AUDIO_TRACKS[command.id]) this.pending.set(command.id, command);
       if (message.paused) {
         for (const command of this.pending.values()) {
           if (!command.start) this.driver.stop(command.id);
@@ -70,7 +69,7 @@ class BattleCityApu extends AudioWorkletProcessor {
     }
     if (this.paused) return;
     for (const command of message.commands) if (AUDIO_TRACKS[command.id])
-      this.pending.set(command.id, { ...command, sentAt: message.sentAt });
+      this.pending.set(command.id, command);
   }
   private confirmControl(generation: number, sequence: number): void {
     const reply: AudioReply = { type: 'control-applied', generation, sequence };
@@ -84,8 +83,7 @@ class BattleCityApu extends AudioWorkletProcessor {
   private step(now: number): void {
     for (const command of this.pending.values()) {
       if (!command.start) this.driver.stop(command.id);
-      else if (isPersistentCue(command.id) || isCueFresh(command.id,
-        isCountCue(command.id) ? command.createdAt : command.sentAt, now)) this.driver.trigger(command.id);
+      else if (isCueFresh(command.id, command.createdAt, now)) this.driver.trigger(command.id);
     }
     this.pending.clear(); this.driver.tick(); this.resumeSilent = false;
     const active = this.driver.hasActivity();

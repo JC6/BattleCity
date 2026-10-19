@@ -22,7 +22,7 @@ describe('sample-clock APU playback', () => {
     expect(tick.mock.calls.length).toBeLessThan(273);
     expect(processor.port.postMessage).not.toHaveBeenCalled();
   });
-  it.each([2294, 3837, 4410, 4411])('expires counts at original sample age %i and preserves a full first output frame', async delay => {
+  it.each([1535, 2294, 3837, 4410, 4411])('expires attacks at original sample age %i and preserves a full first output frame', async delay => {
     const { processor, send, render, now } = await processorFixture(); render(delay);
     const trigger = vi.spyOn(processor.driver, 'trigger');
     const writes: { at: number; value: number }[] = [], write = processor.synth.write.bind(processor.synth);
@@ -34,24 +34,34 @@ describe('sample-clock APU playback', () => {
       commands: [CUE.countPulse, CUE.countNoise, CUE.shot].map(id => ({ id, start: true, createdAt: 0 })) };
     send(message); const pcm = render(6000, 1), fresh = delay <= 4410;
     expect(audible(pcm)).toBe(fresh);
-    expect(trigger.mock.calls.map(call => call[0])).toEqual(fresh ? [CUE.countPulse, CUE.countNoise] : []);
+    expect(trigger.mock.calls.map(call => call[0])).toEqual(fresh ? [CUE.countPulse, CUE.countNoise, CUE.shot] : []);
     if (fresh) {
       const note = writes.find(event => event.value === 0x80)!;
       const mute = writes.find(event => event.value === 0x10 && event.at > note.at)!;
       expect(mute.at - note.at).toBeCloseTo(Math.ceil(44100 / AUDIO_TICK_HZ), 6);
     }
-    send(message); expect(audible(render(6000))).toBe(false);
+    render(22050); // Let an accepted shot and its filter tail finish before testing duplicates.
+    trigger.mockClear(); send(message);
+    expect(audible(render(6000))).toBe(false); expect(trigger).not.toHaveBeenCalled();
   });
-  it('does not rejuvenate an old count with a fresh send time, but retains the shot delivery budget', async () => {
-    const { processor, send, render } = await processorFixture(); render(2205);
+  it.each([CUE.countPulse, CUE.countNoise, CUE.shot])('does not rejuvenate cue %i after an 80ms sender and 30ms delivery delay', async id => {
+    const { processor, send, render } = await processorFixture(); render(4851);
     const trigger = vi.spyOn(processor.driver, 'trigger');
-    send({ type: 'commands', generation: 1, sequence: 1, sentAt: 0.03,
-      commands: [{ id: CUE.shot, start: true, createdAt: 0 }] });
-    expect(audible(render(6000))).toBe(true); expect(trigger).toHaveBeenCalledWith(CUE.shot);
-    render(20000); // Let the independent shot and its filter tail finish.
-    send({ type: 'commands', generation: 1, sequence: 2, sentAt: 1,
-      commands: [{ id: CUE.countPulse, start: true, createdAt: 0 }] });
-    trigger.mockClear(); expect(audible(render(6000))).toBe(false); expect(trigger).not.toHaveBeenCalled();
+    send({ type: 'commands', generation: 1, sequence: 1, sentAt: 0.08,
+      commands: [{ id, start: true, createdAt: 0 }] });
+    expect(audible(render(6000))).toBe(false); expect(trigger).not.toHaveBeenCalled();
+  });
+  it.each([44100, 48000])('checks the 100ms boundary on execution at %i Hz, not just on receipt', async rate => {
+    const { processor, send, render, now } = await processorFixture(rate);
+    render(Math.round(rate * 0.01));
+    send({ type: 'reset', generation: 2, music: [], offset: 0, engine: CUE.enemyEngine, paused: false, reason: 'manual' });
+    render(Math.round(rate * 0.098));
+    const trigger = vi.spyOn(processor.driver, 'trigger');
+    send({ type: 'commands', generation: 2, sequence: 1, sentAt: now(),
+      commands: [{ id: CUE.shot, start: true, createdAt: 0.009 }] });
+    // Received at age 99ms; the next 60.0988Hz tick crosses its deadline.
+    render(Math.round(rate * 0.020));
+    expect(trigger).not.toHaveBeenCalledWith(CUE.shot);
   });
   it.each([150, 300])('continues the same music through a %i ms main-thread stall without replies', async ms => {
     const { processor, send, render, rate } = await processorFixture();

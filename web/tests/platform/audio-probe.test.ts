@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Page } from '@playwright/test';
 import { createContext, runInContext } from 'node:vm';
 import { beginPcmCapture, installPcmProbe, pcmShotWindow } from '../browser/audio-probe';
-import { observePcmShotFailure, pcmShotWindowFeatures, pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture, type PcmPacket } from '../browser/pcm-window';
+import { observePcmShotFailure, pcmResponseObservation, pcmShotWindowFeatures, pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture, type PcmPacket } from '../browser/pcm-window';
 import { ApuDriver } from '../../src/platform/apu-driver';
 import { ApuSynth } from '../../src/platform/apu-synth';
 
@@ -74,42 +74,45 @@ describe('deferred native audio event observation', () => {
     expect(connect()).toBe(worklet); expect(connect()).toBe(worklet);
     expect(port.addEventListener).toHaveBeenCalledOnce(); expect(port.start).not.toHaveBeenCalled();
     const receiver = vi.fn();
-    receive({ type: 'ack', generation: 3, sequence: 7, accepted: true, credits: 11 });
+    receive({ type: 'control-applied', generation: 3, sequence: 7 });
     expect(capture.transport!.entries).toEqual([]);
     port.onmessage = receiver;
     const transfers = [new ArrayBuffer(4)];
-    const message = { type: 'frames', generation: 3, sequence: 7, at: 1.25,
-      frames: [{ tick: 40, createdAt: 1.2, start: [15], stop: [17] }] };
+    const message = { type: 'commands', generation: 3, sequence: 7, sentAt: 1.25,
+      commands: [{ id: 15, start: true, createdAt: 1.2 }, { id: 17, start: false, createdAt: 1.2 }] };
     expect(Reflect.apply(port.postMessage, port, [message, transfers])).toBe(result);
     expect(post).toHaveBeenCalledExactlyOnceWith(message, transfers); expect(post.mock.contexts[0]).toBe(port);
-    const ack = { type: 'ack', generation: 3, sequence: 7, accepted: true, credits: 11, nextAt: 1.27 };
-    const event = receive(ack);
+    const event = receive({ type: 'control-applied', generation: 3, sequence: 7 });
     expect(port.onmessage).toBe(receiver); expect(receiver).toHaveBeenCalledExactlyOnceWith(event);
     expect(capture.transport!.entries).toMatchObject([
-      { direction: 'send', type: 'frames', generation: 3, sequence: 7, at: 1.25, frames: [{ tick: 40, createdAt: 1.2, start: [15], stop: [17] }] },
-      { direction: 'receive', type: 'ack', generation: 3, sequence: 7, accepted: true, credits: 11, nextAt: 1.27 },
+      { direction: 'send', type: 'commands', generation: 3, sequence: 7, sentAt: 1.25,
+        commands: [{ id: 15, start: true, createdAt: 1.2 }, { id: 17, start: false, createdAt: 1.2 }] },
+      { direction: 'receive', type: 'control-applied', generation: 3, sequence: 7 },
     ]);
-    message.frames[0].start[0] = 1; message.frames[0].stop.push(18);
-    expect(capture.transport!.entries[0].frames).toEqual([{ tick: 40, createdAt: 1.2, start: [15], stop: [17] }]);
-    const reset = { type: 'reset', generation: 4, tick: 41, offset: 12, start: [18],
-      recovery: Array.from({ length: 13 }, (_, index) => ({ at: 1.2 + index / 60, start: Array.from({ length: 29 }, (_, id) => id) })) };
+    message.commands[0].id = 1; message.commands.push({ id: 18, start: false, createdAt: 1.2 });
+    expect(capture.transport!.entries[0].commands).toEqual([
+      { id: 15, start: true, createdAt: 1.2 }, { id: 17, start: false, createdAt: 1.2 },
+    ]);
+    const reset = { type: 'reset', generation: 4, offset: 12, engine: 17, paused: false, reason: 'manual',
+      music: Array.from({ length: 29 }, (_, id) => id) };
     port.postMessage(reset);
-    const recovery = capture.transport!.entries.at(-1)!.recovery!;
-    expect(recovery).toHaveLength(12); expect(recovery[0]).toEqual({ at: 1.2, start: Array.from({ length: 28 }, (_, id) => id) });
-    reset.recovery[0].at = 99; reset.recovery[0].start[0] = 99;
-    expect(recovery[0].at).toBe(1.2); expect(recovery[0].start[0]).toBe(0);
+    const music = capture.transport!.entries.at(-1)!.music!;
+    expect(music).toEqual(Array.from({ length: 28 }, (_, id) => id));
+    reset.music[0] = 99;
+    expect(music[0]).toBe(0);
     expect(clock).not.toHaveBeenCalled(); expect(capture.errors).toEqual([]);
   });
   it('copies command-clock observations and snapshots without changing the native call', async () => {
     const { capture, port, connect } = await transportFixture(); connect();
     const message = { type: 'commands', generation: 1, sequence: 2, sentAt: 0.1,
-      commands: [{ id: 19, start: true, createdAt: 0.05 }] };
+      commands: Array.from({ length: 29 }, (_, id) => ({ id, start: true, createdAt: 0.05 })) };
     port.postMessage(message); message.commands[0].id = 15;
-    expect(capture.transport!.entries.at(-1)).toMatchObject({ sentAt: 0.1, commands: [{ id: 19, start: true, createdAt: 0.05 }] });
+    expect(capture.transport!.entries.at(-1)).toMatchObject({ sentAt: 0.1,
+      commands: Array.from({ length: 28 }, (_, id) => ({ id, start: true, createdAt: 0.05 })) });
     capture.rate = 1000; capture.packets = [packet([0])];
     const snapshot = snapshotPcmWindow({ start: 0, end: 0.128 }, capture);
     capture.transport!.entries.at(-1)!.commands![0].id = 1;
-    expect(snapshot.diagnostics!.transport!.entries.at(-1)!.commands![0].id).toBe(19);
+    expect(snapshot.diagnostics!.transport!.entries.at(-1)!.commands![0].id).toBe(0);
   });
   it('retains focus control requests and receipts without taking over the application receiver', async () => {
     const { capture, port, connect, receive, clock } = await transportFixture(); connect();
@@ -128,23 +131,24 @@ describe('deferred native audio event observation', () => {
   });
   it('retains the last 512 messages in order and snapshots existing observations without another native read', async () => {
     const { capture, port, connect, clock } = await transportFixture(); connect();
-    for (let sequence = 0; sequence < 520; sequence++) port.postMessage({ type: 'frames', generation: 4, sequence,
-      at: sequence / 60, frames: [{ tick: sequence, createdAt: sequence / 60 - 0.01, start: sequence === 519 ? [15] : [], stop: [] }] });
-    capture.transport!.entries.find(entry => entry.sequence === 519)!.recovery = [{ at: 8.5, start: [15] }];
+    port.postMessage({ type: 'reset', generation: 4, offset: 0, music: [1, 2, 3], engine: null, paused: false, reason: 'manual' });
+    for (let sequence = 0; sequence < 519; sequence++) port.postMessage({ type: 'commands', generation: 4, sequence,
+      sentAt: sequence / 60, commands: [{ id: 15, start: true, createdAt: sequence / 60 - 0.01 }] });
+    port.postMessage({ type: 'reset', generation: 5, offset: 0, music: [1, 2, 3], engine: null, paused: false, reason: 'manual' });
     capture.events.push({ kind: 'keydown', code: 'KeyJ', at: 8.5 }); capture.marks.push({ kind: 'game', at: 1 });
     capture.rate = 1000; capture.packets = [packet([0])];
     const snapshot = snapshotPcmWindow({ start: 0, end: 0.128 }, capture);
     const history = snapshot.diagnostics!.transport!;
-    expect(history.entries).toHaveLength(512); expect(history.dropped).toBe(8); expect(history.observationErrors).toBe(0);
-    expect(history.entries.map(entry => entry.sequence)).toEqual(Array.from({ length: 512 }, (_, index) => index + 8));
+    expect(history.entries).toHaveLength(512); expect(history.dropped).toBe(9); expect(history.observationErrors).toBe(0);
+    expect(history.entries.slice(0, -1).map(entry => entry.sequence)).toEqual(Array.from({ length: 511 }, (_, index) => index + 8));
+    expect(history.entries.at(-1)).toMatchObject({ type: 'reset', generation: 5 });
     expect(snapshot.diagnostics!.events).toEqual([{ kind: 'keydown', code: 'KeyJ', at: 8.5 }]);
     capture.events[0].at = 99; capture.marks[0].at = 99;
-    capture.transport!.entries.find(entry => entry.sequence === 519)!.frames![0].start[0] = 1;
-    capture.transport!.entries.find(entry => entry.sequence === 519)!.recovery![0].start[0] = 1;
+    capture.transport!.entries.find(entry => entry.sequence === 518)!.commands![0].id = 1;
+    capture.transport!.entries.find(entry => entry.generation === 5)!.music![0] = 99;
     expect(snapshot.diagnostics!.events![0].at).toBe(8.5); expect(snapshot.diagnostics!.marks![0].at).toBe(1);
-    expect(history.entries.at(-1)!.frames![0].start).toEqual([15]);
-    expect(history.entries.at(-1)!.frames![0].createdAt).toBe(519 / 60 - 0.01);
-    expect(history.entries.at(-1)!.recovery).toEqual([{ at: 8.5, start: [15] }]);
+    expect(history.entries.at(-2)!.commands).toEqual([{ id: 15, start: true, createdAt: 518 / 60 - 0.01 }]);
+    expect(history.entries.at(-1)!.music).toEqual([1, 2, 3]);
     const direct = pcmWindowFeatures({ start: 0, end: 0.128, frequencies: [] }, capture);
     expect(pcmWindowFeatures({ start: 0, end: 0.128, frequencies: [] }, restorePcmSnapshot(snapshot))).toEqual(direct);
     expect(clock).not.toHaveBeenCalled(); expect(capture.errors).toEqual([]);
@@ -157,7 +161,7 @@ describe('deferred native audio event observation', () => {
     receive(malformed); expect(receiver).toHaveBeenCalledOnce();
     expect(capture.transport!.observationErrors).toBe(2); expect(capture.errors).toEqual([]);
     const failure = new Error('Native post failed'); post.mockImplementationOnce(() => { throw failure; });
-    expect(() => port.postMessage({ type: 'frames', generation: 4 })).toThrow(failure);
+    expect(() => port.postMessage({ type: 'commands', generation: 4, sequence: 1, sentAt: 0, commands: [] })).toThrow(failure);
     expect(post).toHaveBeenCalledTimes(2); expect(capture.transport!.entries).toEqual([]);
   });
   it('keeps a failing optional diagnostic snapshot separate from validated raw PCM', async () => {
@@ -645,6 +649,17 @@ describe('player-shot PCM signature', () => {
   const gateFor = (capture: AudioCapture) => Math.max(0.002, Math.max(...pcmWindowFeatures({
     start: 0, end: 0.5, frequencies, idle: true, comparison: { duration: 0.025, step: 0.008 },
   }, capture).amplitudes) * 3);
+
+  it.each([44100, 48000])('rejects a complete but late %i Hz shot and retains its original matching PCM', async rate => {
+    const snapshot = snapshotPcmWindow(parameters, independent(rate, 0.16)), onFailure = vi.fn();
+    const evaluate = vi.fn(async () => JSON.stringify(snapshot));
+    const page = { evaluate, waitForFunction: vi.fn(async () => ({ dispose: vi.fn() })) } as unknown as Page;
+    await expect(pcmShotWindow(page, 0, 0.5, frequencies, 0.002, onFailure, (match, capturedRate) => {
+      expect(pcmResponseObservation('shot', 0, match.phases[0].start + 0.008, capturedRate).limitExceeded).toBe(false);
+    })).rejects.toThrow();
+    expect(evaluate).toHaveBeenCalledOnce(); expect(onFailure).toHaveBeenCalledOnce();
+    expect(onFailure.mock.calls[0][0]).toMatchObject({ snapshot, match: { phases: expect.any(Array) }, stage: 'assertion' });
+  });
 
   it('waits for the original complete window before exporting once, with unchanged sweep analysis', async () => {
     const capture = independent(), snapshot = snapshotPcmWindow(parameters, capture);

@@ -27,7 +27,6 @@ export class AudioRuntime {
   constructor(private readonly hooks: AudioRuntimeHooks, private readonly clock = () => performance.now()) {}
   get status(): AudioRuntimeState { return this.state; }
   get connected(): boolean { return this.node !== undefined; }
-  get resumeSyncNeeded(): boolean { return this.resumePending; }
   get ready(): boolean { return this.connected && this.context?.state === 'running' && !this.resumePending; }
   get now(): number { return this.context?.currentTime ?? 0; }
 

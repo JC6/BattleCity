@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { readFile, readdir } from 'node:fs/promises';
 import type {} from './helpers';
 import { controllerKey, probeCanvas, readyCanvasWithClock, renderedStageTwo, waitForCanvasMenu } from './visual-probes';
 
@@ -46,17 +47,27 @@ test('production entry loads assets and responds to controller keys without erro
   expect((await probeCanvas(page)).bullet, 'J must render an upward projectile in the empty corridor').toBe(true);
   if (process.env.BATTLECITY_PRODUCTION === '1') {
     expect(await page.evaluate(() => typeof window.__BATTLECITY__)).toBe('undefined');
-    const scripts = await page.locator('script[src]').evaluateAll(elements => elements.map(element => (element as HTMLScriptElement).src));
-    for (const script of scripts) {
-      const javascript = await (await page.request.get(script)).text();
-      expect(javascript).not.toMatch(/__BATTLECITY__|setEditorTile|getEditorTiles/);
+    // Include lazy chunks and the Worklet, not just scripts linked by index.html.
+    const assets = await readdir(new URL('../../dist/assets/', import.meta.url), { withFileTypes: true });
+    expect(assets.length).toBeGreaterThan(0);
+    for (const asset of assets) {
+      expect(asset.isFile(), asset.name).toBe(true);
+      expect(asset.name).toMatch(/^[a-zA-Z0-9._-]+$/);
+      const response = await page.request.get(`/assets/${asset.name}`);
+      expect(response.ok(), asset.name).toBe(true);
+      const bytes = await response.body();
+      expect(bytes.length, asset.name).toBeGreaterThan(0);
+      if (asset.name.endsWith('.js')) expect(bytes.toString('utf8'), asset.name)
+        .not.toMatch(/__BATTLECITY__|setEditorTile|getEditorTiles|renderScene/);
     }
-    const license = await page.request.get('LICENSE.txt');
-    expect(license.ok()).toBe(true);
-    expect(await license.text()).toContain('GNU GENERAL PUBLIC LICENSE');
-    const notices = await page.request.get('THIRD_PARTY_NOTICES.md');
-    expect(notices.ok()).toBe(true);
-    expect(await notices.text()).toContain('Arnout Kazemier');
+    for (const [published, source] of [
+      ['LICENSE.txt', '../../../LICENSE'],
+      ['THIRD_PARTY_NOTICES.md', '../../THIRD_PARTY_NOTICES.md'],
+    ]) {
+      const response = await page.request.get(published);
+      expect(response.ok(), published).toBe(true);
+      expect((await response.body()).equals(await readFile(new URL(source, import.meta.url))), published).toBe(true);
+    }
   } else {
     expect(await page.evaluate(() => window.__BATTLECITY__!.state())).toMatchObject({ stage: 2, phase: 'playing' });
   }

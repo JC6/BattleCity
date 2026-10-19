@@ -1,6 +1,6 @@
 import { expect, type Page, type TestInfo } from '@playwright/test';
 import { setTimeout as setDiagnosticTimeout, clearTimeout as clearDiagnosticTimeout } from 'node:timers';
-import { observePcmShotFailure, pcmShotWindowFeatures, pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture, type PcmPacket, type PcmFeatures, type PcmComparisonWindow, type PcmShotMatch, type PcmSnapshot, type PcmShotFailure, type PcmShotFailureObserver, type AudioTransportEntry } from './pcm-window';
+import { pcmPauseWindowFeatures, type PcmPauseMatch, observePcmShotFailure, pcmShotWindowFeatures, pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture, type PcmPacket, type PcmFeatures, type PcmComparisonWindow, type PcmShotMatch, type PcmSnapshot, type PcmShotFailure, type PcmShotFailureObserver, type AudioTransportEntry } from './pcm-window';
 export type { PcmShotFailureObserver } from './pcm-window';
 
 // Playwright invokes function arguments; a string containing a function would
@@ -56,19 +56,13 @@ function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOption
         const record = (direction: 'send' | 'receive', message: unknown) => {
           try {
             const value = message as AudioTransportEntry;
-            if (!['reset', 'pause', 'commands', 'control-applied', 'frames', 'ack', 'progress'].includes(value.type)) return;
+            if (!['reset', 'pause', 'commands', 'control-applied'].includes(value.type)) return;
             const entry: AudioTransportEntry = { direction, wall: Date.now(), type: value.type, generation: value.generation };
-            for (const field of ['sequence', 'at', 'tick', 'offset', 'paused', 'reason', 'confirm', 'accepted', 'credits', 'nextAt', 'sentAt', 'engine'] as const) {
+            for (const field of ['sequence', 'offset', 'paused', 'reason', 'confirm', 'sentAt', 'engine'] as const) {
               if (value[field] !== undefined) Object.assign(entry, { [field]: value[field] });
             }
             if (value.music) entry.music = value.music.slice(0, 28);
             if (value.commands) entry.commands = value.commands.slice(0, 28).map(command => ({ ...command }));
-            if (value.start) entry.start = value.start.slice(0, 28);
-            if (value.stop) entry.stop = value.stop.slice(0, 28);
-            if (value.recovery) entry.recovery = value.recovery.slice(0, 12).map(group => ({ at: group.at, start: group.start.slice(0, 28) }));
-            if (value.frames) entry.frames = value.frames.slice(0, 12).map(frame => ({ tick: frame.tick,
-              ...(frame.createdAt === undefined ? {} : { createdAt: frame.createdAt }),
-              start: frame.start.slice(0, 28), stop: frame.stop.slice(0, 28) }));
             if (history.entries.length < 512) history.entries.push(entry);
             else { history.entries[history.next] = entry; history.next = (history.next + 1) % 512; history.dropped++; }
           } catch { history.observationErrors++; }
@@ -361,20 +355,38 @@ export async function pcmBandWindow(page: Page, start: number, end: number, freq
   return measured!;
 }
 export async function pcmShotWindow(page: Page, start: number, end: number, frequencies: readonly number[], minimumAmplitude: number,
-  onFailure?: PcmShotFailureObserver): Promise<PcmShotMatch> {
+  onFailure?: PcmShotFailureObserver, assertion?: (match: PcmShotMatch, rate: number) => void | Promise<void>): Promise<PcmShotMatch> {
   const parameters = { start, end, frequencies, minimumAmplitude };
   let snapshot: PcmSnapshot | undefined;
   let stage: PcmShotFailure['stage'] = 'coverage';
+  let match: PcmShotMatch | undefined;
   return observePcmShotFailure(async () => {
     // Observe coverage cheaply until the original bounded window is complete.
     // Exporting partial PCM while the attack is still playing can itself stall
-    // the main thread, delaying the real tick/ACK traffic being measured.
+    // the main thread, delaying the native command delivery being measured.
     await waitForAudioTime(page, end);
     stage = 'sampling';
     snapshot = await readPcmSnapshot(page, start, end);
     stage = 'measurement';
-    const measured = pcmShotWindowFeatures({ ...parameters, frequencies: [...frequencies] }, restorePcmSnapshot(snapshot));
+    const measured = match = pcmShotWindowFeatures({ ...parameters, frequencies: [...frequencies] }, restorePcmSnapshot(snapshot)) ?? undefined;
     if (!measured) throw new Error('The original PCM shot window was not fully captured');
+    stage = 'assertion';
+    await assertion?.(measured, snapshot.rate);
     return measured;
-  }, () => ({ parameters, snapshot, stage }), onFailure);
+  }, () => ({ parameters, snapshot, match, stage }), onFailure);
+}
+
+/** Acquire once after the bounded response, complete phrase and silence fit. */
+export async function pcmPauseWindow(page: Page, start: number,
+  onFailure?: (failure: PcmMeasurementFailure & { match?: PcmPauseMatch }) => void | Promise<void>,
+  assertion?: (match: PcmPauseMatch, rate: number) => void | Promise<void>): Promise<PcmPauseMatch> {
+  const measurement = await pcmMeasurement(page, start, start + 1, [], onFailure);
+  let match: PcmPauseMatch | undefined;
+  let stage: PcmMeasurementFailure['stage'] = 'measurement';
+  return observePcmShotFailure(async () => {
+    match = pcmPauseWindowFeatures(start, restorePcmSnapshot(measurement.snapshot));
+    stage = 'assertion';
+    await assertion?.(match, measurement.snapshot.rate);
+    return match;
+  }, () => ({ ...measurement, match, stage }), onFailure);
 }

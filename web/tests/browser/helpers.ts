@@ -49,7 +49,7 @@ export async function advancePresentation(
   let advancedMs = 0;
   while (advancedMs < budgetMs) {
     const stepMs = Math.min(250, budgetMs - advancedMs);
-    // runFor executes Phaser's actual timer-driven frame callbacks. Each step is shorter than
+    // runFor executes Phaser's actual animation-frame callbacks. Each step is shorter than
     // the two-second scenes; paused RPCs cannot consume their observation window.
     await page.clock.runFor(stepMs);
     advancedMs += stepMs;

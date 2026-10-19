@@ -193,9 +193,9 @@ describe('exact PCM measurement diagnostics', () => {
     const value = browserSerializationFixture();
     value.capture.events.push({ kind: 'keydown', code: 'KeyJ', at: 0.03 });
     value.capture.transport = { next: 0, dropped: 3, observationErrors: 0,
-      entries: Array.from({ length: 512 }, (_, sequence) => ({ direction: 'send', type: 'frames',
-        generation: 2, wall: 1700000000000 + sequence, sequence, at: sequence / 60,
-        frames: [{ tick: sequence, start: sequence === 511 ? [15] : [], stop: [] }] })) };
+      entries: Array.from({ length: 512 }, (_, sequence) => ({ direction: 'send', type: 'commands',
+        generation: 2, wall: 1700000000000 + sequence, sequence, sentAt: sequence / 60,
+        commands: [{ id: 15, start: true, createdAt: sequence / 60 - 0.01 }] })) };
     const expected = snapshotPcmWindow(value.parameters, value.capture);
     const result = await pcmMeasurement(value.page, value.parameters.start, value.parameters.end, value.parameters.frequencies);
     expect(result.snapshot).toEqual({ ...expected, timing: expect.any(Object) });

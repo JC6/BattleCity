@@ -27,6 +27,8 @@ flowchart LR
 
 音符由 Worklet 的采样时钟独立推进；主线程只提交声音状态和事件。主线程短暂卡顿时音乐继续，游戏仍按原固定步进规则运行。Start 在状态同步后、首帧绘制前提交开场命令。
 
+Phaser 使用浏览器原生动画帧并关闭 delta 平滑，把实际帧间时间交给控制器的固定步长累加器。更新不再强制使用 `setTimeout`；`60.0988Hz` 游戏 tick、100ms 帧间隔上限和每帧最多六次步进保持不变。
+
 控制器不读取 `window`、`document`、`crypto` 或 WebAudio。bootstrap 把可见性/焦点转换为 `frame(delta, active)` 和 `inactive()`，把种子生成函数和会话最高分存储注入控制器。
 
 渲染端接收借用的只读顶层游戏视图和只读草稿数组，嵌套实体仍由引擎持有；约定渲染器不修改它们。每帧不复制整个世界。独立失败世界在进入演出时创建，测试快照在跨测试接口时 `structuredClone`。
@@ -36,6 +38,8 @@ flowchart LR
 ## 检查与变更
 
 测试宿主使用 Node 24 类型和 ES2023 库类型；应用保持自己的目标配置。开发命令见 [README](../../README.md#开发)，完整检查流程见 [桌面验收](validation.md)。
+
+`validate:desktop` 串联现有 npm 检查命令，CI 使用同一入口。Playwright 管理浏览器、测试服务和报告；生产冒烟同时检查发布资源与许可文件。
 
 单元测试按规则、应用端口、浏览器适配、音频资源/传输、实际 Worklet 与合成器分层。原有键盘集成测试仍验证 bootstrap 与控制器的真实接线。Construction 的模拟像素在测试 fixture 内缓存诊断扫描，字节一致性使用 `Buffer.equals`；仅键盘准备测试组使用 15 秒预算，不启用重试。
 

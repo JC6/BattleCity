@@ -62,10 +62,12 @@ Firefox 不主动拦截，但不属于本轮兼容承诺或发布门禁；移动
 在 `web` 目录运行：
 
 ```sh
-npm run validate:desktop -- --install
+npm ci
+npx playwright install --with-deps chromium webkit
+npm run validate:desktop
 ```
 
-从 Linux 或普通 WSL 终端运行；已有依赖时使用 `npm run validate:desktop`。环境准备、完整验收标准、报告和 CI 说明集中在 [桌面验收](web/docs/validation.md)。
+从 Linux 或普通 WSL 终端运行；已有依赖时只运行最后一条命令。检查依次执行类型检查、单元测试、双浏览器 E2E、生产打包和生产冒烟，任一步失败即停止。环境、报告和 CI 说明见 [桌面验收](web/docs/validation.md)。
 
 ## 原 Android 工程
 

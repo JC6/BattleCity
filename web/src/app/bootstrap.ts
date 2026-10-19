@@ -27,8 +27,8 @@ export function mountBattleCity(app: HTMLElement) {
     parent: 'game-canvas', backgroundColor: '#000000', pixelArt: true,
     roundPixels: true, antialias: false, scene: [scene],
     audio: { noAudio: true }, input: { mouse: false, touch: false },
-    // The timer supplies real elapsed time to the bounded fixed-step accumulator.
-    fps: { smoothStep: false, forceSetTimeOut: true },
+    // Native animation frames supply elapsed time to the bounded fixed-step accumulator.
+    fps: { smoothStep: false },
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   });
   const inactive = () => controller.inactive();

@@ -32,14 +32,17 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
       - run: npx playwright install --with-deps chromium webkit
-      - name: Validate desktop acceptance
+      - name: Validate desktop
         run: npm run validate:desktop
-      - name: Keep desktop browser acceptance reports
+      - name: Keep desktop browser reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: desktop-browser-reports
-          path: web/test-results/acceptance/
+          path: |
+            web/playwright-report/
+            web/test-results/e2e/
+            web/test-results/production/
           if-no-files-found: ignore
           retention-days: 7
       - uses: actions/configure-pages@v5

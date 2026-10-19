@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AudioTransport, type AudioEndpoint } from '../../src/platform/audio-transport';
 import type { AudioMessage, PersistentAudio } from '../../src/platform/audio-protocol';
 import type { AudioRuntimeHooks } from '../../src/platform/audio-runtime';
-import { AUDIO_TICK_HZ, CUE } from '../../src/platform/audio-cues';
+import { CUE } from '../../src/platform/audio-cues';
 function fixture(volume = 0.3) {
   const messages: AudioMessage[] = [], persistent: PersistentAudio = { music: [], offset: 0, engine: null };
   let now = 0, hooks!: AudioRuntimeHooks;
@@ -33,19 +33,19 @@ describe('semantic audio command transport', () => {
       { id: CUE.enemyEngine, start: true, createdAt: 0 },
     ]);
   });
-  it.each([0.052, 0.087, 0.1, 0.101])('retains count creation time across a %s-second sender delay', delay => {
+  it.each([0.0348, 0.052, 0.087, 0.1, 0.101])('retains attack creation time across a %s-second sender delay', delay => {
     const { transport, batches, time } = fixture();
     transport.cue(CUE.countPulse); transport.cue(CUE.countNoise); transport.cue(CUE.shot);
     transport.cue(CUE.stagePulse1); transport.stop(CUE.enemyEngine); time(delay); transport.commitFrame();
-    const expected = delay <= 0.1 ? [CUE.countPulse, CUE.countNoise, CUE.stagePulse1] : [CUE.stagePulse1];
+    const expected = delay <= 0.1 ? [CUE.countPulse, CUE.countNoise, CUE.shot, CUE.stagePulse1] : [CUE.stagePulse1];
     expect(batches()[0].commands.filter(command => command.start).map(command => command.id)).toEqual(expected);
     expect(batches()[0].commands.every(command => command.createdAt === 0)).toBe(true);
     expect(batches()[0].sentAt).toBe(delay);
     expect(batches()[0].commands.at(-1)).toMatchObject({ id: CUE.enemyEngine, start: false });
   });
-  it.each([2 / AUDIO_TICK_HZ, 2 / AUDIO_TICK_HZ + 0.0001])('uses the existing two-tick sender budget at %s seconds', delay => {
+  it.each([0.1, 0.1001])('expires unsent attacks after 100ms at %s seconds', delay => {
     const { transport, batches, time } = fixture(); transport.cue(CUE.shot); time(delay); transport.commitFrame();
-    expect(batches()).toHaveLength(delay <= 2 / AUDIO_TICK_HZ ? 1 : 0);
+    expect(batches()).toHaveLength(delay <= 0.1 ? 1 : 0);
   });
   it.each(['manual', 'focus'] as const)('preserves pending music but discards attacks across %s pause', reason => {
     const { transport, messages, batches, endpoint } = fixture();

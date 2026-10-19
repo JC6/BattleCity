@@ -1,17 +1,15 @@
 import { Buffer } from 'node:buffer';
 import { setTimeout as setDiagnosticTimeout, clearTimeout as clearDiagnosticTimeout } from 'node:timers';
+import type { AudioCommand, AudioMessage, AudioReply, PauseReason } from '../../src/platform/audio-protocol';
 
 export interface PcmPacket { frame: number; times: number[]; frames: number[]; lengths: number[]; samples: Float32Array }
 export interface AudioEvent { kind: 'keydown' | 'blur'; code: string; at: number }
 export interface AudioMark { kind: string; at: number; tick?: number }
 export interface AudioTransportEntry {
-  direction: 'send' | 'receive'; wall: number; type: string; generation: number;
-  sequence?: number; at?: number; tick?: number; offset?: number; paused?: boolean; reason?: string; confirm?: boolean;
-  accepted?: boolean; credits?: number; nextAt?: number; start?: number[]; stop?: number[];
-  frames?: { tick: number; createdAt?: number; start: number[]; stop: number[] }[];
-  recovery?: { at: number; start: number[] }[];
+  direction: 'send' | 'receive'; wall: number; type: AudioMessage['type'] | AudioReply['type']; generation: number;
+  sequence?: number; offset?: number; paused?: boolean; reason?: PauseReason; confirm?: boolean;
   music?: number[]; engine?: number | null; sentAt?: number;
-  commands?: { id: number; start: boolean; createdAt: number }[];
+  commands?: AudioCommand[];
 }
 export interface AudioTransportHistory {
   entries: AudioTransportEntry[]; next: number; dropped: number; observationErrors: number;
@@ -28,6 +26,26 @@ export interface PcmBandScan { duration: number; step: number; minimumAmplitude:
 export interface PcmComparisonWindow { duration: number; step: number }
 export interface PcmShotPhase { start: number; frequency: number; amplitude: number; concentration: number }
 export interface PcmShotMatch { band: PcmFeatures; bandStart: number; phases: [PcmShotPhase, PcmShotPhase, PcmShotPhase] }
+export interface PcmPauseMatch {
+  onset: number; notes: { frequency: number; start: number; end: number; minimumAmplitude: number }[];
+  phrase: PcmFeatures; silence: PcmFeatures;
+}
+export interface PcmResponseObservation {
+  clock: 'AudioContext'; kind: 'shot' | 'pause'; keyAt: number; onset: number | null;
+  latencyMs: number | null; resolutionMs: number; targetMs: number; targetExceeded: boolean | null;
+  functionalLimitMs: number; limitExceeded: boolean; rate: number;
+}
+/** Compare sample coordinates, avoiding floating-point boundary errors at 150ms. */
+export function pcmResponseObservation(kind: PcmResponseObservation['kind'], keyAt: number, onset: number | null,
+  rate: number): PcmResponseObservation {
+  if (!Number.isFinite(keyAt) || keyAt < 0 || !Number.isInteger(rate) || rate <= 0 ||
+      (onset !== null && (!Number.isFinite(onset) || onset < keyAt))) throw new Error('Invalid PCM response timing');
+  const frames = onset === null ? null : Math.round((onset - keyAt) * rate);
+  return { clock: 'AudioContext', kind, keyAt, onset, rate, latencyMs: frames === null ? null : frames / rate * 1000,
+    resolutionMs: kind === 'shot' ? 8 : 1000 / rate, targetMs: 50, functionalLimitMs: 150,
+    targetExceeded: frames === null ? null : frames > Math.floor(rate * 0.05),
+    limitExceeded: frames === null || frames > Math.floor(rate * 0.15) };
+}
 export interface PcmSnapshot {
   ready: boolean; gameReady: boolean; errors: string[]; rate: number;
   packets: (Omit<PcmPacket, 'samples'> & { samplesBase64: string })[];
@@ -37,9 +55,10 @@ export interface PcmSnapshot {
 }
 export interface PcmShotParameters { start: number; end: number; frequencies: readonly number[]; minimumAmplitude: number }
 export interface PcmShotFailure {
-  parameters: PcmShotParameters; snapshot?: PcmSnapshot; error: unknown;
-  stage: 'coverage' | 'sampling' | 'measurement' | 'polling';
+  parameters: PcmShotParameters; snapshot?: PcmSnapshot; match?: PcmShotMatch; error: unknown;
+  stage: 'coverage' | 'sampling' | 'measurement' | 'polling' | 'assertion';
 }
+
 export type PcmShotFailureObserver = (failure: PcmShotFailure) => void | Promise<void>;
 
 /** Failure attachments are diagnostic only: retain the exact original failure,
@@ -103,13 +122,8 @@ export function snapshotPcmWindow({ start, end, measure = false }: { start: numb
     if (history || pcm.events.length || pcm.marks.length) snapshot.diagnostics = { events: pcm.events.map(event => ({ ...event })), marks: pcm.marks.map(mark => ({ ...mark })),
       ...(history ? { transport: { dropped: history.dropped, observationErrors: history.observationErrors,
         entries: entries.map(entry => ({ ...entry,
-          ...(entry.start ? { start: [...entry.start] } : {}), ...(entry.stop ? { stop: [...entry.stop] } : {}),
           ...(entry.music ? { music: [...entry.music] } : {}),
           ...(entry.commands ? { commands: entry.commands.map(command => ({ ...command })) } : {}),
-          ...(entry.recovery ? { recovery: entry.recovery.map(group => ({ at: group.at, start: [...group.start] })) } : {}),
-          ...(entry.frames ? { frames: entry.frames.map(frame => ({ tick: frame.tick,
-            ...(frame.createdAt === undefined ? {} : { createdAt: frame.createdAt }),
-            start: [...frame.start], stop: [...frame.stop] })) } : {}),
         })) } } : {}) };
   } catch { snapshot.diagnostics = { unavailable: true }; }
   if (measure) snapshot.timing = { wall, selectMs: selected - started,
@@ -200,35 +214,7 @@ export function pcmWindowFeatures({ start, end, frequencies, scan, idle, compari
     if (availableEnd >= end) throw new Error(`PCM band was absent throughout the bounded interval ${start}–${end}`);
     return measured;
   }
-  const first = Math.ceil(start * pcm.rate), last = Math.floor(end * pcm.rate);
-  if (last - first < 2) throw new Error('PCM measurement interval is too short');
-  const samples = new Float32Array(last - first);
-  let filled = 0, expectedFrame: number | undefined;
-  // A startup gap before this window cannot invalidate later measured audio.
-  // Inside the window, gaps, duplicates and reordered quanta remain failures;
-  // no deduplication, zero filling or timestamp repair is performed.
-  for (const packet of pcm.packets) {
-    if (!packet.frames.some((frame, index) => frame < last && frame + packet.lengths[index] > first)) continue;
-    if (packet.frames.length !== packet.lengths.length || packet.frames.length !== packet.times.length ||
-        packet.frame !== packet.frames[0] || !(packet.samples instanceof Float32Array)) throw new Error('Malformed PCM packet');
-    let offset = 0;
-    for (let index = 0; index < packet.frames.length; index++) {
-      const frame = packet.frames[index], length = packet.lengths[index];
-      if (!Number.isInteger(frame) || frame < 0 || !Number.isInteger(length) || length <= 0) throw new Error('Invalid PCM quantum labels');
-      if (!Number.isFinite(packet.times[index]) || Math.abs(packet.times[index] * pcm.rate - frame) > 1) throw new Error('PCM frame/time labels disagree');
-      const lo = Math.max(frame, first), hi = Math.min(frame + length, last);
-      if (hi > lo) {
-        if (expectedFrame !== undefined && frame !== expectedFrame) throw new Error(`Discontinuous PCM quantum in measurement: ${frame} != ${expectedFrame}`);
-        expectedFrame = frame + length;
-        const source = packet.samples.subarray(offset + lo - frame, offset + hi - frame);
-        if (source.length !== hi - lo) throw new Error('PCM packet sample count disagrees with raw quantum lengths');
-        samples.set(source, lo - first); filled += hi - lo;
-      }
-      offset += length;
-    }
-    if (offset !== packet.samples.length) throw new Error('PCM packet sample count disagrees with raw quantum lengths');
-  }
-  if (filled !== samples.length) throw new Error(`Incomplete PCM interval ${filled}/${samples.length}`);
+  const { first, samples } = pcmSamples(start, end, pcm);
   let energy = 0, peak = 0, onset: number | null = null;
   for (let index = 0; index < samples.length; index++) {
     const value = samples[index];
@@ -322,4 +308,82 @@ export function pcmShotWindowFeatures({ start, end, frequencies, minimumAmplitud
   }
   if (availableEnd >= end) throw new Error(`Player-shot PCM signature was absent throughout the bounded interval ${start}–${end}`);
   return null;
+}
+
+/** Shared raw-window validation; neither analyzer fills gaps or repairs timestamps. */
+function pcmSamples(start: number, end: number, pcm: AudioCapture): { first: number; samples: Float32Array } {
+  const first = Math.ceil(start * pcm.rate), last = Math.floor(end * pcm.rate);
+  if (last - first < 2) throw new Error('PCM measurement interval is too short');
+  const samples = new Float32Array(last - first);
+  let filled = 0, expectedFrame: number | undefined;
+  // A startup gap before this window cannot invalidate later measured audio.
+  // Inside the window, gaps, duplicates and reordered quanta remain failures;
+  // no deduplication, zero filling or timestamp repair is performed.
+  for (const packet of pcm.packets) {
+    if (!packet.frames.some((frame, index) => frame < last && frame + packet.lengths[index] > first)) continue;
+    if (packet.frames.length !== packet.lengths.length || packet.frames.length !== packet.times.length ||
+        packet.frame !== packet.frames[0] || !(packet.samples instanceof Float32Array)) throw new Error('Malformed PCM packet');
+    let offset = 0;
+    for (let index = 0; index < packet.frames.length; index++) {
+      const frame = packet.frames[index], length = packet.lengths[index];
+      if (!Number.isInteger(frame) || frame < 0 || !Number.isInteger(length) || length <= 0) throw new Error('Invalid PCM quantum labels');
+      if (!Number.isFinite(packet.times[index]) || Math.abs(packet.times[index] * pcm.rate - frame) > 1) throw new Error('PCM frame/time labels disagree');
+      const lo = Math.max(frame, first), hi = Math.min(frame + length, last);
+      if (hi > lo) {
+        if (expectedFrame !== undefined && frame !== expectedFrame) throw new Error(`Discontinuous PCM quantum in measurement: ${frame} != ${expectedFrame}`);
+        expectedFrame = frame + length;
+        const source = packet.samples.subarray(offset + lo - frame, offset + hi - frame);
+        if (source.length !== hi - lo) throw new Error('PCM packet sample count disagrees with raw quantum lengths');
+        samples.set(source, lo - first); filled += hi - lo;
+      }
+      offset += length;
+    }
+    if (offset !== packet.samples.length) throw new Error('PCM packet sample count disagrees with raw quantum lengths');
+  }
+  if (filled !== samples.length) throw new Error(`Incomplete PCM interval ${filled}/${samples.length}`);
+  return { first, samples };
+}
+
+/** EE2C pause: C5 D5 E5 C6 D6 E6 (four ticks each), G5 (twelve).
+ * Literal reference pitches/durations deliberately do not import game tables.
+ * The independent pause voice begins after a silent decode frame. This finds
+ * candidates only; all seven timed notes must match before accepting an onset.
+ */
+export function pcmPauseWindowFeatures(start: number, pcm: AudioCapture): PcmPauseMatch {
+  const end = start + 1;
+  if (pcm.packets.length > 768) throw new Error('PCM capture exceeded its bounded packet capacity');
+  pcmWindowFeatures({ start, end, frequencies: [] }, pcm); // Validate the entire interval, including its tail.
+  const { first, samples } = pcmSamples(start, end, pcm);
+  const frequencies = [522.714077, 585.658704, 658.004779, 1045.428154, 1165.216797, 1316.009559, 782.243444];
+  const tick = 1 / 60.0988, minimumSilence = Math.ceil(pcm.rate * 0.008);
+  let zeroes = 0, armed = false;
+  for (let index = 0; index < samples.length; index++) {
+    if (samples[index] === 0) { if (++zeroes >= minimumSilence) armed = true; continue; }
+    zeroes = 0;
+    if (!armed || Math.abs(samples[index]) <= 0.002) continue;
+    armed = false;
+    const onset = (first + index) / pcm.rate;
+    if (onset + 0.82 > end) break;
+    const notes: PcmPauseMatch['notes'] = [];
+    for (let note = 0; note < frequencies.length; note++) {
+      const noteStart = onset + note * 4 * tick, duration = (note === 6 ? 12 : 4) * tick;
+      let minimumAmplitude = Infinity;
+      // Overlapping 20ms windows cover every note except its 8ms transition
+      // margins. In particular, the long final note cannot be replaced by a blip.
+      for (let offset = 0.008; offset + 0.020 <= duration - 0.008; offset += 0.010) {
+        const value = pcmWindowFeatures({ start: noteStart + offset, end: noteStart + offset + 0.020, frequencies }, pcm);
+        const amplitude = value.amplitudes[note];
+        if (amplitude <= 0.002 || value.amplitudes.some((other, at) => at !== note && other >= amplitude)) {
+          minimumAmplitude = 0; break;
+        }
+        minimumAmplitude = Math.min(minimumAmplitude, amplitude);
+      }
+      if (!minimumAmplitude) break;
+      notes.push({ frequency: frequencies[note], start: noteStart, end: noteStart + duration, minimumAmplitude });
+    }
+    if (notes.length === frequencies.length) return { onset, notes,
+      phrase: pcmWindowFeatures({ start: onset + 0.08, end: onset + 0.22, frequencies: [] }, pcm),
+      silence: pcmWindowFeatures({ start: onset + 0.68, end: onset + 0.82, frequencies: [] }, pcm) };
+  }
+  throw new Error(`Complete pause PCM signature was absent throughout ${start}–${end}`);
 }

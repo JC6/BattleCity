@@ -23,7 +23,7 @@ async function draw(page: Page, value: Fixture): Promise<void> {
     scene.onFrame = () => {}; scene.resetAnimation(); Object.assign(scene, value);
     if (scene.state) scene.observeStep(scene.state);
   }, value);
-  // Allow several timer-driven frame callbacks for Phaser depth sorting and WebKit's
+  // Allow several animation-frame callbacks for Phaser depth sorting and WebKit's
   // compositor to publish the replaced fixture. The simulation stays frozen.
   await page.clock.runFor(67);
 }

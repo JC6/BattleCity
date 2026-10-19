@@ -44,13 +44,9 @@ export function isPersistentCue(id: number): boolean {
     id === CUE.playerEngine || id === CUE.enemyEngine ||
     (id >= CUE.hiscorePulse1 && id <= CUE.gameoverTriangle);
 }
-export function isCountCue(id: number): boolean {
-  return id === CUE.countPulse || id === CUE.countNoise;
-}
-/** Unsent/recovered attack lifetime; counts also retain this clock in the Worklet. */
+/** One end-to-end lifetime, measured from creation through the executing audio tick. */
 export function isCueFresh(id: number, createdAt: number, now: number): boolean {
-  const lifetime = isCountCue(id) ? 0.1 : 2 / AUDIO_TICK_HZ;
-  return isPersistentCue(id) || now <= createdAt + lifetime;
+  return isPersistentCue(id) || now <= createdAt + 0.1;
 }
 export const AUDIO_TRACKS: readonly (readonly number[] | null)[] = [
   [0x02, 0x82, 0x7f, 0x40, 0x64, 0x1b, 0x2b, 0x3b, 0x1c, 0x2c, 0x3c, 0x6c, 0x53, 0xe8], // 00 pause

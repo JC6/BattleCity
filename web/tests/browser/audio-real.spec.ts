@@ -1,6 +1,6 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
-import { attachPcmFailure, audioEventTime, audioReady, audioTime, beginPcmCapture, expectOpeningPcm, installPcmProbe, pcmAssert, pcmBandWindow, pcmIdleWindow, pcmShotWindow, waitForAudioTime, type PcmOpeningObservation } from './audio-probe';
-import type { PcmShotFailure } from './pcm-window';
+import { attachPcmFailure, audioEventTime, audioReady, audioTime, beginPcmCapture, expectOpeningPcm, installPcmProbe, pcmAssert, pcmBandWindow, pcmIdleWindow, pcmPauseWindow, pcmShotWindow, waitForAudioTime, type PcmOpeningObservation } from './audio-probe';
+import { pcmResponseObservation, type PcmShotFailure, type PcmResponseObservation } from './pcm-window';
 import { probeCanvas, waitForCanvasMenu } from './visual-probes';
 import { protectedBattlefield } from './construction-fixture';
 
@@ -69,6 +69,15 @@ async function attachOpeningObservation(testInfo: TestInfo, observation: PcmOpen
   await testInfo.attach('audio-opening-observation', {
     contentType: 'application/json', body: Buffer.from(JSON.stringify(observation, null, 2)),
   });
+}
+
+async function expectResponse(testInfo: TestInfo, kind: PcmResponseObservation['kind'], keyAt: number,
+  onset: number, rate: number): Promise<void> {
+  const observation = pcmResponseObservation(kind, keyAt, onset, rate);
+  await testInfo.attach(`audio-${kind}-response`, {
+    contentType: 'application/json', body: Buffer.from(JSON.stringify(observation, null, 2)),
+  });
+  expect(observation.limitExceeded, `${kind} PCM must start within 150ms (50ms performance target)`).toBe(false);
 }
 
 async function stageSelection(page: Page, testInfo: TestInfo, protectPlayer = false): Promise<void> {
@@ -207,18 +216,22 @@ lifecycleTest('real keyboard movement, shot, manual pause and focus pause preser
   // PCM. Each tone and the same attack's original 25ms wide-band window must
   // exceed the unchanged idle margin; explosions cannot substitute for a shot.
   const shot = await pcmShotWindow(page, shotAt, shotAt + 0.5, shotBand,
-    Math.max(0.002, idleShotPeak * 3), failure => attachShotFailure(testInfo, failure, idleShotPeak));
+    Math.max(0.002, idleShotPeak * 3), failure => attachShotFailure(testInfo, failure, idleShotPeak),
+    // The end of the first confirmed 8ms tone window is a conservative onset
+    // bound. Background engine samples cannot establish the shot's response.
+    (match, rate) => expectResponse(testInfo, 'shot', shotAt, match.phases[0].start + 0.008, rate));
   const shotPeak = Math.max(...shot.band.amplitudes);
   expect(shotPeak, 'The swept player-shot band must be present above native idle harmonics').toBeGreaterThan(0.002);
   expect(shotPeak).toBeGreaterThan(idleShotPeak * 3);
   // Pause has its own 36-tick phrase; ordinary engine/music are frozen.
   await page.keyboard.press('Enter'); const pausedAt = await audioEventTime(page, 'Enter');
-  await pcmAssert(page, pausedAt + 0.08, pausedAt + 0.22, [], value => {
-    expect(value.rms).toBeGreaterThan(0.003);
-  }, failure => attachPcmFailure(testInfo, failure, 'manual pause phrase', { pausedAt }));
-  await pcmAssert(page, pausedAt + 0.68, pausedAt + 0.82, [], value => {
-    expect(value.peak).toBe(0);
-  }, failure => attachPcmFailure(testInfo, failure, 'manual pause silence', { pausedAt }));
+  await pcmPauseWindow(page, pausedAt,
+    failure => attachPcmFailure(testInfo, failure, 'manual pause lifecycle', { pausedAt }),
+    async (match, rate) => {
+      await expectResponse(testInfo, 'pause', pausedAt, match.onset, rate);
+      expect(match.phrase.rms).toBeGreaterThan(0.003);
+      expect(match.silence.peak).toBe(0);
+    });
   await page.keyboard.press('Enter'); const resumedAt = await audioEventTime(page, 'Enter');
   await pcmAssert(page, resumedAt + 0.05, resumedAt + 0.22, [], value => {
     expect(value.rms).toBeGreaterThan(0.001);
