@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="64" height="64" shape-rendering="crispEdges">
+  <!-- Initial 1P tank facing up: PLAYER and PALETTE in src/game/pixel-assets.ts. -->
+  <rect width="16" height="16" fill="#000000" />
+  <path fill="#f8b800" d="M7 2h1v1H7z M7 3h1v1H7z M1 4h3v1H1z M7 4h1v1H7z M12 4h2v1H12z M3 5h1v1H3z M7 5h1v1H7z M1 6h3v1H1z M7 6h1v1H7z M12 6h2v1H12z M3 7h7v1H3z M1 8h6v1H1z M9 8h1v1H9z M12 8h2v1H12z M3 9h5v1H3z M9 9h1v1H9z M1 10h7v1H1z M9 10h1v1H9z M12 10h2v1H12z M3 11h7v1H3z M1 12h8v1H1z M12 12h2v1H12z M3 13h1v1H3z M5 13h5v1H5z M1 14h3v1H1z M11 14h3v1H11z" />
+  <path fill="#687000" d="M11 4h1v1H11z M1 5h2v1H1z M11 5h3v1H11z M5 6h2v1H5z M8 6h2v1H8z M11 6h1v1H11z M1 7h2v1H1z M10 7h4v1H10z M7 8h2v1H7z M10 8h2v1H10z M1 9h2v1H1z M8 9h1v1H8z M10 9h4v1H10z M8 10h1v1H8z M10 10h2v1H10z M1 11h2v1H1z M10 11h4v1H10z M9 12h3v1H9z M1 13h2v1H1z M11 13h3v1H11z" />
+</svg>
