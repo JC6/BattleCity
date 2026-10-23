@@ -402,7 +402,10 @@ describe('lives, scoring and power-ups', () => {
     tank.carryingPowerUp = true;
     for (let hit = 1; hit <= 4; hit++) {
       shot(engine, tank.x + 8, tank.y - 2);
-      engine.step([]);
+      const events = engine.step([]);
+      expect(events.filter(event => event.type === 'powerup' && event.action === 'appear'))
+        .toHaveLength(hit === 1 ? 1 : 0);
+      expect(tank.carryingPowerUp).toBe(false);
       if (hit < 4) {
         expect(tank.hp).toBe(4 - hit);
         expect(engine.state.killed).toBe(0);
@@ -592,18 +595,45 @@ describe('lives, scoring and power-ups', () => {
     if (kind === 'tank') expect(engine.state.players[0]!.lives).toBe(3);
   });
 
-  it('grenades destroy active armor without kill points or harming an enemy still spawning', () => {
+  it.each([
+    ['basic', false], ['basic', true], ['armor', false], ['armor', true],
+  ] as const)('grenades destroy active %s (carrier: %s) without drops or kill credit and spare spawning carriers', (kind, carryingPowerUp) => {
     const engine = game();
-    enemy(engine, 'armor');
-    const spawning = enemy(engine, 'basic', 32, 16);
+    const active = enemy(engine, kind);
+    active.carryingPowerUp = carryingPowerUp;
+    const spawning = enemy(engine, 'armor', 32, 16);
     spawning.spawnTicks = 28;
+    spawning.carryingPowerUp = true;
     const player = engine.state.tanks[0]!;
     engine.state.powerUp = { kind: 'grenade', x: player.x, y: player.y };
-    engine.step([]);
+    const events = engine.step([]);
     expect(engine.state.killed).toBe(1);
-    expect(engine.state.tanks.some(tank => tank.id === spawning.id)).toBe(true);
+    expect(engine.state.tanks).not.toContain(active);
+    expect(engine.state.tanks).toContain(spawning);
+    expect(spawning).toMatchObject({ hp: 4, carryingPowerUp: true });
+    expect(spawning.spawnTicks).toBeGreaterThan(0);
+    expect(engine.state.powerUp).toBeNull();
+    expect(events.filter(event => event.type === 'powerup' && event.action === 'appear')).toHaveLength(0);
+    expect(events).toContainEqual({ type: 'powerup', action: 'pickup', kind: 'grenade', playerIndex: 0 });
+    expect(events).toContainEqual({ type: 'explosion', owner: 'enemy', playerIndex: null, enemyKind: kind });
     expect(engine.state.players[0]!.score).toBe(500);
     expect(engine.state.players[0]!.kills).toEqual([0, 0, 0, 0]);
+  });
+
+  it.each([
+    [3, false], [4, true], [10, false], [11, true], [17, false], [18, true],
+  ] as const)('enemy %i spawns with carrier=%s and only carriers clear an uncollected power-up', (number, carryingPowerUp) => {
+    const engine = game();
+    engine.state.spawned = engine.state.killed = number - 1;
+    engine.state.spawnTimer = 0;
+    const powerUp = { kind: 'star' as const, x: 24, y: 24 };
+    engine.state.powerUp = powerUp;
+    engine.step([]);
+    expect(engine.state.spawned).toBe(number);
+    const enemies = engine.state.tanks.filter(tank => tank.team === 'enemy');
+    expect(enemies).toHaveLength(1);
+    expect(enemies[0]!.carryingPowerUp).toBe(carryingPowerUp);
+    expect(engine.state.powerUp).toBe(carryingPowerUp ? null : powerUp);
   });
 
   it('does not expire an uncollected power-up', () => {

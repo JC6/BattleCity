@@ -52,6 +52,8 @@ export function collectPowerUp(context: CoreContext,
       playerTank.stars = player.stars;
       break;
     case 'grenade':
+      // NES EA17–EA3D destroys carriers without spawning their bonus;
+      // bonus drops belong to bullet hits (E7D1–E7E0), not destruction.
       // Grenades remove active enemies without kill-score credit. The
       // 500 points for picking up the item still belong to the collector.
       for (const tank of [...state.tanks]) {
