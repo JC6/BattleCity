@@ -38,15 +38,11 @@ export const CUE = {
   gameoverTriangle: 0x1a,
   bonus1000: 0x1b,
 } as const;
-/** Sustained state survives transport catch-up; transient attacks expire. */
+/** Only sustained state survives pause and graph recovery. */
 export function isPersistentCue(id: number): boolean {
   return id === CUE.stagePulse1 || id === CUE.stageTriangle || id === CUE.stagePulse2 ||
     id === CUE.playerEngine || id === CUE.enemyEngine ||
     (id >= CUE.hiscorePulse1 && id <= CUE.gameoverTriangle);
-}
-/** One end-to-end lifetime, measured from creation through the executing audio tick. */
-export function isCueFresh(id: number, createdAt: number, now: number): boolean {
-  return isPersistentCue(id) || now <= createdAt + 0.1;
 }
 export const AUDIO_TRACKS: readonly (readonly number[] | null)[] = [
   [0x02, 0x82, 0x7f, 0x40, 0x64, 0x1b, 0x2b, 0x3b, 0x1c, 0x2c, 0x3c, 0x6c, 0x53, 0xe8], // 00 pause

@@ -5,13 +5,13 @@ import type { AudioRuntimeHooks } from '../../src/platform/audio-runtime';
 import { CUE } from '../../src/platform/audio-cues';
 function fixture(volume = 0.3) {
   const messages: AudioMessage[] = [], persistent: PersistentAudio = { music: [], offset: 0, engine: null };
-  let now = 0, hooks!: AudioRuntimeHooks;
-  const endpoint: AudioEndpoint = { status: 'ready', connected: true, ready: true, get now() { return now; },
+  let hooks!: AudioRuntimeHooks;
+  const endpoint: AudioEndpoint = { status: 'ready', connected: true, ready: true,
     unlock: vi.fn(), setGain: vi.fn(), post: message => { messages.push(message); }, dispose: vi.fn(async () => {}) };
   const transport = new AudioTransport(volume, () => persistent, callbacks => { hooks = callbacks; return endpoint; });
   hooks.ready();
   const batches = () => messages.filter((message): message is Extract<AudioMessage, { type: 'commands' }> => message.type === 'commands');
-  return { transport, endpoint, messages, persistent, hooks, batches, time: (value: number) => { now = value; } };
+  return { transport, endpoint, messages, persistent, hooks, batches };
 }
 describe('semantic audio command transport', () => {
   it('submits the first attack without receiving a reply and never sends heartbeat frames', () => {
@@ -29,28 +29,15 @@ describe('semantic audio command transport', () => {
     transport.cue(CUE.playerEngine); transport.stop(CUE.playerEngine); transport.cue(CUE.enemyEngine);
     transport.cue(100); transport.commitFrame();
     expect(batches()[0].commands).toEqual([
-      { id: CUE.shot, start: false, createdAt: 0 }, { id: CUE.playerEngine, start: false, createdAt: 0 },
-      { id: CUE.enemyEngine, start: true, createdAt: 0 },
+      { id: CUE.shot, start: false }, { id: CUE.playerEngine, start: false },
+      { id: CUE.enemyEngine, start: true },
     ]);
-  });
-  it.each([0.0348, 0.052, 0.087, 0.1, 0.101])('retains attack creation time across a %s-second sender delay', delay => {
-    const { transport, batches, time } = fixture();
-    transport.cue(CUE.countPulse); transport.cue(CUE.countNoise); transport.cue(CUE.shot);
-    transport.cue(CUE.stagePulse1); transport.stop(CUE.enemyEngine); time(delay); transport.commitFrame();
-    const expected = delay <= 0.1 ? [CUE.countPulse, CUE.countNoise, CUE.shot, CUE.stagePulse1] : [CUE.stagePulse1];
-    expect(batches()[0].commands.filter(command => command.start).map(command => command.id)).toEqual(expected);
-    expect(batches()[0].commands.every(command => command.createdAt === 0)).toBe(true);
-    expect(batches()[0].commands.at(-1)).toMatchObject({ id: CUE.enemyEngine, start: false });
-  });
-  it.each([0.1, 0.1001])('expires unsent attacks after 100ms at %s seconds', delay => {
-    const { transport, batches, time } = fixture(); transport.cue(CUE.shot); time(delay); transport.commitFrame();
-    expect(batches()).toHaveLength(delay <= 0.1 ? 1 : 0);
   });
   it.each(['manual', 'focus'] as const)('preserves pending music but discards attacks across %s pause', reason => {
     const { transport, messages, batches, endpoint } = fixture();
     transport.cue(CUE.stagePulse1); transport.cue(CUE.shot); transport.setPaused(true, reason);
     expect(messages.at(-1)).toMatchObject({ type: 'pause', paused: true, reason,
-      commands: [{ id: CUE.stagePulse1, start: true, createdAt: 0 }] });
+      commands: [{ id: CUE.stagePulse1, start: true }] });
     transport.cue(CUE.countPulse); transport.commitFrame(); transport.setPaused(false); transport.commitFrame();
     expect(batches()).toHaveLength(0); expect(endpoint.setGain).toHaveBeenLastCalledWith(0.3);
   });
@@ -75,7 +62,7 @@ describe('semantic audio command transport', () => {
     const { transport, endpoint, batches } = fixture(); transport.cue(CUE.shot);
     vi.mocked(endpoint.setGain).mockImplementationOnce(() => { throw new Error('gain failed'); });
     expect(() => transport.commitFrame()).toThrow('gain failed'); expect(batches()).toHaveLength(0);
-    transport.commitFrame(); expect(batches()[0].commands).toEqual([{ id: CUE.shot, start: true, createdAt: 0 }]);
+    transport.commitFrame(); expect(batches()[0].commands).toEqual([{ id: CUE.shot, start: true }]);
   });
   it('never submits attacks with zero volume', () => {
     const { transport, batches } = fixture(0); transport.cue(CUE.shot); transport.commitFrame(); expect(batches()).toHaveLength(0);

@@ -1,63 +1,48 @@
 import { decodeTerrainCode } from '../data/levels';
-import { BASE_X, BASE_Y, GRID_SIZE } from './constants';
+import { BASE_X, BASE_Y, GRID_SIZE, TILE_SIZE } from './constants';
 import { VECTORS } from './geometry';
 import { FORTRESS_CELLS } from './rules';
 import { Tile, type Direction } from './types';
 
 export const CONSTRUCTION_SIZE = GRID_SIZE / 2;
 export const CONSTRUCTION_CODE_COUNT = 14;
+const BASE_BLOCK = BASE_Y / TILE_SIZE / 2 * CONSTRUCTION_SIZE + BASE_X / TILE_SIZE / 2;
 
 /** One volatile Construction map, independent of the game's destructible terrain. */
 export class ConstructionState {
-  private codes = Array<number>(CONSTRUCTION_SIZE * CONSTRUCTION_SIZE).fill(13);
-  private painted = Array<boolean>(CONSTRUCTION_SIZE * CONSTRUCTION_SIZE).fill(false);
-  private readonly tilePatches = new Map<number, Tile>();
+  private readonly terrain = Array<Tile>(GRID_SIZE * GRID_SIZE);
+  private readonly paintedCodes = new Int8Array(CONSTRUCTION_SIZE * CONSTRUCTION_SIZE);
+  private eagleVisible = true;
   private position = { x: 0, y: 0 };
   private actedSinceMovement = false;
   selectedCode = 0;
 
+  constructor() { this.reset(); }
+
   get cursor(): Readonly<{ x: number; y: number }> { return { ...this.position }; }
 
   /** The editor's initial eagle disappears when its block or any glyph cell is overwritten. */
-  get baseVisible(): boolean {
-    const block = (BASE_Y / 16) * CONSTRUCTION_SIZE + BASE_X / 16;
-    const cell = (BASE_Y / 8) * GRID_SIZE + BASE_X / 8;
-    return !this.painted[block] &&
-      ![cell, cell + 1, cell + GRID_SIZE, cell + GRID_SIZE + 1].some(index => this.tilePatches.has(index));
-  }
+  get baseVisible(): boolean { return this.eagleVisible; }
 
-  get tiles(): Tile[] {
-    const tiles = Array<Tile>(GRID_SIZE * GRID_SIZE).fill(Tile.Empty);
-    this.codes.forEach((code, index) => {
-      const x = (index % CONSTRUCTION_SIZE) * 2;
-      const y = Math.floor(index / CONSTRUCTION_SIZE) * 2;
-      decodeTerrainCode(code).forEach((tile, quadrant) => {
-        tiles[(y + (quadrant >> 1)) * GRID_SIZE + x + (quadrant & 1)] = tile;
-      });
-    });
-    // Initial base bricks occupy single 8px cells that a half-wall block code
-    // cannot represent. Painting a macro-block can replace them as before.
-    for (const index of FORTRESS_CELLS) {
-      const block = Math.floor(Math.floor(index / GRID_SIZE) / 2) * CONSTRUCTION_SIZE +
-        Math.floor((index % GRID_SIZE) / 2);
-      if (!this.painted[block]) tiles[index] = Tile.Brick;
-    }
-    for (const [index, tile] of this.tilePatches) tiles[index] = tile;
-    return tiles;
-  }
+  get tiles(): Tile[] { return [...this.terrain]; }
 
   /** Accept an 8px fixture edit; valid same-value writes are accepted too. */
   setTile(index: number, tile: Tile): boolean {
     if (!Number.isInteger(index) || index < 0 || index >= GRID_SIZE * GRID_SIZE ||
       !Number.isInteger(tile) || tile < Tile.Empty || tile > Tile.Ice) return false;
-    this.tilePatches.set(index, tile);
+    const block = Math.floor(index / GRID_SIZE / 2) * CONSTRUCTION_SIZE + Math.floor(index % GRID_SIZE / 2);
+    this.terrain[index] = tile;
+    // Even a same-value edit must be consumed by the next block paint.
+    this.paintedCodes[block] = -1;
+    if (block === BASE_BLOCK) this.eagleVisible = false;
     return true;
   }
 
   reset(): void {
-    this.codes.fill(13);
-    this.painted.fill(false);
-    this.tilePatches.clear();
+    this.terrain.fill(Tile.Empty);
+    for (const index of FORTRESS_CELLS) this.terrain[index] = Tile.Brick;
+    this.paintedCodes.fill(-1);
+    this.eagleVisible = true;
     this.enter();
   }
 
@@ -99,13 +84,12 @@ export class ConstructionState {
     const { x, y } = this.position;
     const index = y * CONSTRUCTION_SIZE + x;
     const cell = y * 2 * GRID_SIZE + x * 2;
-    let patched = false;
-    for (const tileIndex of [cell, cell + 1, cell + GRID_SIZE, cell + GRID_SIZE + 1]) {
-      if (this.tilePatches.delete(tileIndex)) patched = true;
-    }
-    if (!patched && this.painted[index] && this.codes[index] === this.selectedCode) return false;
-    this.codes[index] = this.selectedCode;
-    this.painted[index] = true;
+    if (this.paintedCodes[index] === this.selectedCode) return false;
+    decodeTerrainCode(this.selectedCode).forEach((tile, quadrant) => {
+      this.terrain[cell + (quadrant >> 1) * GRID_SIZE + (quadrant & 1)] = tile;
+    });
+    this.paintedCodes[index] = this.selectedCode;
+    if (index === BASE_BLOCK) this.eagleVisible = false;
     return true;
   }
 }

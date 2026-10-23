@@ -4,30 +4,10 @@ import { GameEngine } from '../../src/core/engine';
 import { getLevel } from '../../src/data/levels';
 import { AUDIO_TICK_HZ, CUE } from '../../src/platform/audio-cues';
 import { SCORE_TIMING } from '../../src/game/score-timeline';
-import type { AudioMessage, AudioReply } from '../../src/platform/audio-protocol';
+import type { AudioMessage } from '../../src/platform/audio-protocol';
 import { processorFixture } from './audio-processor-fixture';
-class Context {
-  static instances: Context[] = [];
-  static load = () => Promise.resolve();
-  static initialState = 'running';
-  static resumeContext = async (context: Context) => { context.state = 'running'; };
-  state = Context.initialState; currentTime = 0; destination = {}; sampleRate = 44100;
-  gain = { gain: { value: 0 }, connect: vi.fn(), disconnect: vi.fn() };
-  audioWorklet = { addModule: vi.fn(() => Context.load()) };
-  resume = vi.fn(() => Context.resumeContext(this));
-  close = vi.fn(async () => { this.state = 'closed'; });
-  createGain() { return this.gain; }
-  constructor() { Context.instances.push(this); }
-}
-class Node {
-  static instances: Node[] = [];
-  messages: AudioMessage[] = [];
-  connect = vi.fn(); disconnect = vi.fn(); onprocessorerror?: () => void;
-  port = { close: vi.fn(), onmessage: null as ((event: { data: AudioReply }) => void) | null,
-    postMessage: (message: AudioMessage) => { this.messages.push(message); } };
-  constructor() { Node.instances.push(this); }
-}
-async function settle() { for (let index = 0; index < 10; index++) await Promise.resolve(); }
+import { Context, Node, installNativeAudio, settle } from './native-audio-fixture';
+
 async function enabled(clock?: () => number) {
   const audio = new GameAudio(0.3, clock); audio.unlock(); await settle();
   return { audio, context: Context.instances[0], node: Node.instances[0] };
@@ -40,11 +20,7 @@ function cues(node: Node): number[] {
   return node.messages.flatMap(message => message.type === 'commands' ? message.commands.filter(command => command.start).map(command => command.id) : []);
 }
 const shot = { type: 'fire' as const, team: 'player' as const, playerIndex: 0 as const, enemyKind: null, stars: 0 };
-beforeEach(() => {
-  Context.instances = []; Node.instances = []; Context.load = () => Promise.resolve(); Context.initialState = 'running';
-  Context.resumeContext = async context => { context.state = 'running'; };
-  vi.stubGlobal('AudioContext', Context); vi.stubGlobal('AudioWorkletNode', Node);
-});
+beforeEach(installNativeAudio);
 afterEach(() => vi.unstubAllGlobals());
 describe('semantic game audio and recovery', () => {
   it('maps player attacks, collisions, explosions, and both bonus actions to reference slots', async () => {
@@ -123,7 +99,7 @@ describe('semantic game audio and recovery', () => {
   it.each(['load-first', 'resume-first'] as const)('recovers the current music at active elapsed time with %s completion', async order => {
     let now = 0, finishLoad!: () => void, finishResume!: () => void;
     Context.initialState = 'suspended'; Context.load = () => new Promise<void>(resolve => { finishLoad = resolve; });
-    Context.resumeContext = context => new Promise<void>(resolve => { finishResume = () => { context.state = 'running'; resolve(); }; });
+    Context.resume = context => new Promise<void>(resolve => { finishResume = () => { context.state = 'running'; resolve(); }; });
     const audio = new GameAudio(0.3, () => now); audio.unlock(); audio.play([{ type: 'stage-start' }, shot]);
     now = 1200;
     if (order === 'load-first') { finishLoad(); await settle(); finishResume(); } else { finishResume(); await settle(); finishLoad(); }
@@ -160,6 +136,23 @@ describe('semantic game audio and recovery', () => {
     audio.play([shot]); audio.commitFrame(); audio.unlock();
     expect(node.port.close).toHaveBeenCalledOnce(); expect(Context.instances[0].gain.gain.value).toBe(0);
     expect(cues(node)).toEqual([]);
+  });
+  it.each([44100, 48000].flatMap(rate => [[80, 30], [100.1, 0], [300, 0]].map(([sender, delivery]) => [rate, sender, delivery])))
+    ('plays one shot at %i Hz after %s ms sender and %s ms delivery delays', async (rate, sender, delivery) => {
+    const receiver = await processorFixture(rate);
+    const { audio, node, context } = await enabled(() => receiver.now() * 1000);
+    for (const message of node.messages) receiver.send(message);
+    const delivered = node.messages.length;
+    audio.play([shot]);
+    receiver.render(Math.round(rate * sender / 1000)); context.currentTime = receiver.now();
+    audio.commitFrame();
+    receiver.render(Math.round(rate * delivery / 1000)); context.currentTime = receiver.now();
+    const trigger = vi.spyOn(receiver.processor.driver, 'trigger');
+    for (const message of node.messages.slice(delivered)) receiver.send(message);
+    expect(receiver.render(Math.round(rate * 0.3)).some(value => Math.abs(value) > 0.002)).toBe(true);
+    expect(trigger).toHaveBeenCalledExactlyOnceWith(CUE.shot);
+    audio.commitFrame();
+    expect(cues(node)).toEqual([CUE.shot]);
   });
   it.each([150, 300])('starts real driver/synth PCM while the main thread does nothing for %i ms', async ms => {
     const receiver = await processorFixture(); const { audio, node, context } = await enabled(() => 0);

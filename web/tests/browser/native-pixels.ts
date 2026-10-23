@@ -26,7 +26,40 @@ export async function canvasScreenshot(page: Page): Promise<Buffer> {
 
 /** Decode the compositor screenshot without reading a discarded WebGL buffer. */
 export async function nativePixels(page: Page, checkIntegerBlocks = false): Promise<Buffer> {
-  const png = await canvasScreenshot(page);
+  return decodeNativePixels(await canvasScreenshot(page), checkIntegerBlocks);
+}
+
+export type PixelReadProgress = (operation: 'screenshot' | 'decode', completed: boolean) => void;
+
+/** Construction owns a fixed native-size viewport. Confirm it once, before keys,
+ * then read compositor pixels without querying the element for every frame. */
+export async function createNativePixelReader(page: Page): Promise<
+  (deadline: number, progress?: PixelReadProgress) => Promise<Buffer>> {
+  const geometry = await page.locator('#game-canvas canvas').evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+      viewportWidth: innerWidth, viewportHeight: innerHeight, scrollX, scrollY };
+  }, undefined, { timeout: 20000 });
+  expect(geometry, 'Construction requires a visible native-size canvas and a fixed viewport').toEqual({
+    x: 0, y: 0, width: 256, height: 240, viewportWidth: 256, viewportHeight: 240, scrollX: 0, scrollY: 0,
+  });
+  return async (deadline, progress) => {
+    expect(page.viewportSize(), 'Construction viewport changed after preparing its pixel reader')
+      .toEqual({ width: 256, height: 240 });
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) throw new Error('Construction pixel observation deadline exceeded');
+    progress?.('screenshot', false);
+    const png = await page.screenshot({ clip: { x: 0, y: 0, width: 256, height: 240 },
+      scale: 'css', timeout: remaining });
+    progress?.('screenshot', true);
+    progress?.('decode', false);
+    const rgba = decodeNativePixels(png);
+    progress?.('decode', true);
+    return rgba;
+  };
+}
+
+function decodeNativePixels(png: Buffer, checkIntegerBlocks = false): Buffer {
   expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
   let width = 0, height = 0, channels = 0;
   const chunks: Buffer[] = [];

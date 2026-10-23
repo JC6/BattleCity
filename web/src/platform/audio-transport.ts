@@ -1,9 +1,8 @@
-import { AUDIO_TRACKS, isCueFresh, isPersistentCue } from './audio-cues';
+import { AUDIO_TRACKS, isPersistentCue } from './audio-cues';
 import type { AudioCommand, PersistentAudio, PauseReason } from './audio-protocol';
 import { AudioRuntime, type AudioRuntimeHooks } from './audio-runtime';
-export type { PersistentAudio } from './audio-protocol';
 
-export type AudioEndpoint = Pick<AudioRuntime, 'status' | 'connected' | 'ready' | 'now' | 'unlock' | 'setGain' | 'post' | 'dispose'>;
+export type AudioEndpoint = Pick<AudioRuntime, 'status' | 'connected' | 'ready' | 'unlock' | 'setGain' | 'post' | 'dispose'>;
 export type AudioRuntimeFactory = (hooks: AudioRuntimeHooks) => AudioEndpoint;
 
 /** Coalesces semantic changes. The receiver's sample clock owns playback. */
@@ -31,15 +30,13 @@ export class AudioTransport {
   stop(id: number): void { this.queue(id, false); }
   private queue(id: number, start: boolean): void {
     if (AUDIO_TRACKS[id] && this.runtime.ready && !this.paused && this.volume > 0)
-      this.pending.set(id, { id, start, createdAt: this.runtime.now });
+      this.pending.set(id, { id, start });
   }
   /** Submit changes before painting, without advancing an audio or game tick. */
   commitFrame(): void {
     if (!this.runtime.ready || this.paused || this.volume <= 0) { this.pending.clear(); return; }
-    const now = this.runtime.now;
-    const commands = [...this.pending.values()].filter(command =>
-      !command.start || isCueFresh(command.id, command.createdAt, now));
-    if (!commands.length) { this.pending.clear(); return; }
+    if (!this.pending.size) return;
+    const commands = [...this.pending.values()];
     // Retry a failed native gain write before consuming any first attack.
     this.runtime.setGain(this.volume);
     this.runtime.post({ type: 'commands', generation: this.generation, sequence: ++this.sequence, commands });

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { expect, type Page, type TestInfo } from '@playwright/test';
-import { nativePixels } from './native-pixels';
+import { createNativePixelReader } from './native-pixels';
 
 interface Cursor { column: number; row: number }
 type Signature = [number, number, number, number];
@@ -62,11 +62,24 @@ export function inspectConstruction(rgba: Uint8Array): ConstructionInspection {
 /** Prepare the real-keyboard audio fixture without advancing or replacing either native clock. */
 export async function protectedBattlefield(page: Page, testInfo: TestInfo): Promise<void> {
   let lastRgba: Buffer | undefined, last: ConstructionInspection | undefined;
-  let phase = 'enter Construction', expected: unknown, barrierRow: number | undefined;
+  let phase = 'prepare Construction pixel reader', expected: unknown, barrierRow: number | undefined;
+  let phaseStarted = performance.now(), operation = 'geometry', lastCompletedOperation: string | null = null;
+  let failedOperation: { operation: string; lastCompletedOperation: string | null; elapsedMs: number } | undefined;
+  const freezeFailure = () => { failedOperation ??= { operation, lastCompletedOperation,
+    elapsedMs: performance.now() - phaseStarted }; };
+  const setPhase = (name: string) => { phase = name; phaseStarted = performance.now(); };
+  const perform = async <T>(name: string, action: () => Promise<T>): Promise<T> => {
+    operation = name;
+    try { const result = await action(); lastCompletedOperation = name; return result; }
+    catch (error) { freezeFailure(); throw error; }
+  };
+  let readPixels: Awaited<ReturnType<typeof createNativePixelReader>>;
   let failed = false, failure: unknown, cleanupError: unknown;
   const held = new Set<string>();
   const press = async (key: string, delay?: number) => {
-    held.add(key); await page.keyboard.press(key, delay === undefined ? {} : { delay }); held.delete(key);
+    held.add(key);
+    await perform(`press ${key}`, () => page.keyboard.press(key, delay === undefined ? {} : { delay }));
+    held.delete(key);
   };
   const release = async (key: string) => {
     if (!held.has(key)) return;
@@ -74,49 +87,62 @@ export async function protectedBattlefield(page: Page, testInfo: TestInfo): Prom
     catch (error) { cleanupError ??= error; }
   };
   const wait = async (message: string, predicate: (inspection: ConstructionInspection) => boolean) => {
-    phase = message;
+    setPhase(message);
+    const deadline = phaseStarted + 20000;
     let active = true;
     try {
       await expect.poll(async () => {
-        const rgba = await nativePixels(page);
-        // A deadline does not cancel a pending screenshot. A late result must
-        // not replace the exact frame retained for failure attachments.
+        const rgba = await readPixels(deadline, (name, completed) => {
+          if (!active || failedOperation) return;
+          if (completed) lastCompletedOperation = name;
+          else operation = name;
+        });
+        // Keep the exact failure evidence even if a late browser result arrives.
         if (!active) return false;
         lastRgba = rgba; last = undefined;
+        operation = 'inspect pixels';
         last = inspectConstruction(rgba);
-        return predicate(last);
+        lastCompletedOperation = operation;
+        operation = 'match expected pixels';
+        const matches = predicate(last);
+        lastCompletedOperation = operation;
+        return matches;
       }, { timeout: 20000, message }).toBe(true);
-    } finally { active = false; }
+    } catch (error) { freezeFailure(); throw error; }
+    finally { active = false; }
     return last!;
   };
   const matches = (inspection: ConstructionInspection, code: keyof typeof signatures) =>
     inspection.signature?.every((color, index) => color === signatures[code][index]) === true;
   try {
+    readPixels = await perform('geometry', () => createNativePixelReader(page));
+    setPhase('enter Construction');
     await press('ShiftRight'); await press('ShiftRight'); await press('Enter');
     expected = { column: 0, row: 0 };
     await wait('Construction must render its initial cursor before moving down', value =>
       value.cursor?.column === 0 && value.cursor.row === 0);
-    phase = 'move Construction cursor down';
+    setPhase('move Construction cursor down');
     expected = { column: 0, row: '1..5' };
     for (let row = 0; row < 5; row++) {
       await press('s', 34);
-      await page.evaluate(ms => new Promise<void>(resolve => setTimeout(resolve, ms)), 34);
+      await perform('observe direction release', () =>
+        page.evaluate(ms => new Promise<void>(resolve => setTimeout(resolve, ms)), 34));
     }
     for (const code of [0, 13, 12, 11, 10] as const) {
       expected = { column: 0, row: barrierRow ?? '1..5', code, signature: signatures[code] };
-      held.add('k'); await page.keyboard.down('k');
+      held.add('k'); await perform('keydown k', () => page.keyboard.down('k'));
       const inspection = await wait(`Construction block ${code} must be committed before the next B press`, value =>
         value.cursor?.column === 0 && value.cursor.row >= 1 && value.cursor.row <= 5 &&
         (barrierRow === undefined || value.cursor.row === barrierRow) && matches(value, code));
       barrierRow ??= inspection.cursor!.row;
-      await page.keyboard.up('k'); held.delete('k');
+      await perform('keyup k', () => page.keyboard.up('k')); held.delete('k');
     }
-    held.add('k'); await page.keyboard.down('k');
+    held.add('k'); await perform('keydown k', () => page.keyboard.down('k'));
     try {
       expected = { column: 0, row: barrierRow, code: 9, signature: signatures[9] };
       await wait('Construction must commit full steel before moving right', value =>
         value.cursor?.column === 0 && value.cursor.row === barrierRow && matches(value, 9));
-      held.add('d'); await page.keyboard.down('d');
+      held.add('d'); await perform('keydown d', () => page.keyboard.down('d'));
       expected = { column: 12, row: barrierRow, code: 9, signature: signatures[9] };
       await wait('Construction must paint full steel through its clamped right edge', value =>
         value.cursor?.column === 12 && value.cursor.row === barrierRow && matches(value, 9));
@@ -127,11 +153,13 @@ export async function protectedBattlefield(page: Page, testInfo: TestInfo): Prom
     expected = { column: 0, row: 0 };
     await wait('Construction must render its reset cursor before inspecting the wall', value =>
       value.cursor?.column === 0 && value.cursor.row === 0);
-    phase = 'verify continuous full steel barrier';
+    setPhase('verify continuous full steel barrier');
+    operation = 'verify steel row';
     expected = { steelRows: 1, palette: steelPalette };
     expect(last!.steelRows, 'Construction must create one continuous full steel barrier in the upper battlefield').toHaveLength(1);
+    lastCompletedOperation = operation;
     await press('Enter');
-  } catch (error) { failed = true; failure = error; }
+  } catch (error) { freezeFailure(); failed = true; failure = error; }
   finally { await Promise.allSettled([...held].map(release)); }
   if (!failed && cleanupError) { failed = true; failure = cleanupError; }
   if (failed) {
@@ -146,7 +174,7 @@ export async function protectedBattlefield(page: Page, testInfo: TestInfo): Prom
     try {
       await testInfo.attach('construction-fixture-failure', {
         contentType: 'application/json',
-        body: Buffer.from(JSON.stringify({ phase, expected, barrierRow, width: 256, height: 240, pixelsSHA256,
+        body: Buffer.from(JSON.stringify({ phase, ...failedOperation, expected, barrierRow, width: 256, height: 240, pixelsSHA256,
           observation: last ?? null, error }, null, 2)),
       });
     } catch { /* Preserve the fixture failure if attaching its evidence fails. */ }

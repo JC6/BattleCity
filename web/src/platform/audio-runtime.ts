@@ -28,7 +28,6 @@ export class AudioRuntime {
   get status(): AudioRuntimeState { return this.state; }
   get connected(): boolean { return this.node !== undefined; }
   get ready(): boolean { return this.connected && this.context?.state === 'running' && !this.resumePending; }
-  get now(): number { return this.context?.currentTime ?? 0; }
 
   unlock(): void {
     if (this.state === 'disposed' || this.state === 'unsupported') return;

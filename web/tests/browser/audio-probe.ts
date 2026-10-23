@@ -1,7 +1,7 @@
 import { expect, type Page, type TestInfo } from '@playwright/test';
 import { setTimeout as setDiagnosticTimeout, clearTimeout as clearDiagnosticTimeout } from 'node:timers';
 import type { AudioMessage } from '../../src/platform/audio-protocol';
-import { pcmPauseWindowFeatures, type PcmPauseMatch, observePcmShotFailure, pcmShotWindowFeatures, pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture, type PcmPacket, type PcmFeatures, type PcmComparisonWindow, type PcmShotMatch, type PcmSnapshot, type PcmShotFailure, type PcmShotFailureObserver } from './pcm-window';
+import { pcmResponseObservation, pcmPauseWindowFeatures, type PcmPauseMatch, observePcmShotFailure, pcmShotWindowFeatures, pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture, type PcmPacket, type PcmFeatures, type PcmComparisonWindow, type PcmShotMatch, type PcmSnapshot, type PcmShotFailure, type PcmShotFailureObserver } from './pcm-window';
 export type { PcmShotFailureObserver } from './pcm-window';
 
 // Playwright invokes function arguments; a string containing a function would
@@ -10,7 +10,7 @@ const snapshotPcmJson = new Function('request',
   `return JSON.stringify((${snapshotPcmWindow.toString()})(request));`) as
   (request: Parameters<typeof snapshotPcmWindow>[0]) => string;
 
-interface PcmProbeOptions { observeScenes?: boolean; deferRecording?: boolean }
+interface PcmProbeOptions { observeScenes?: boolean; deferRecording?: boolean; observeDelivery?: boolean }
 export interface PcmMeasurement {
   parameters: Parameters<typeof pcmWindowFeatures>[0]; snapshot: PcmSnapshot; features: PcmFeatures;
 }
@@ -27,9 +27,18 @@ export async function attachPcmFailure(testInfo: TestInfo, failure: PcmMeasureme
   const error = failure.error instanceof Error
     ? { name: failure.error.name, message: failure.error.message, stack: failure.error.stack }
     : { name: 'Error', message: String(failure.error) };
+  let response: ReturnType<typeof pcmResponseObservation> | null = null;
+  if (measurement === 'player shot' && failure.snapshot) {
+    try {
+      const onset = 'match' in failure && failure.match ? failure.match.phases[0].start + 0.008 : null;
+      response = pcmResponseObservation('shot', failure.parameters.start, onset,
+        failure.snapshot.rate, failure.snapshot.diagnostics);
+    } catch { /* Invalid sampling evidence still retains its original failure. */ }
+  }
   await testInfo.attach('audio-measurement-failure', {
     contentType: 'application/json',
-    body: Buffer.from(JSON.stringify({ ...failure, error, measurement, anchors }, null, 2)),
+    body: Buffer.from(JSON.stringify({ ...failure, error, measurement, anchors,
+      ...(measurement === 'player shot' ? { response } : {}) }, null, 2)),
   });
 }
 
@@ -40,15 +49,23 @@ export async function installPcmProbe(page: Page, options: PcmProbeOptions = {})
   await page.addInitScript(`(${installPcmProbeInPage.toString()})(${JSON.stringify(options)});`);
 }
 
-function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOptions): void {
+function installPcmProbeInPage({ observeScenes, deferRecording, observeDelivery }: PcmProbeOptions): void {
     const capture: AudioCapture = { ready: false, gameReady: false, errors: [], rate: 0, packets: [], events: [], marks: [] };
     window.__AUDIO_PCM__ = capture;
     capture.recording = !deferRecording;
+    if (observeDelivery) capture.delivery = { entries: [], overflow: false };
     let attachTap: (() => void) | undefined;
+    let tapEnabled = !deferRecording;
+    const startTap = () => {
+      if (!tapEnabled || !capture.gameReady || !attachTap) return;
+      const attach = attachTap; attachTap = undefined;
+      try { attach(); } catch (error) { capture.errors.push(String(error)); }
+    };
+    capture.activateTap = () => { tapEnabled = true; startTap(); };
     let detachTap: (() => void) | undefined;
     let detachScene: (() => void) | undefined;
     let observedPort: MessagePort | undefined;
-    const observeFirstReset = (node: AudioWorkletNode) => {
+    const observePort = (node: AudioWorkletNode) => {
       try {
         const port = node.port;
         if (port === observedPort) return;
@@ -57,10 +74,27 @@ function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOption
         port.postMessage = (function (this: MessagePort, ...args: unknown[]) {
           const result = Reflect.apply(postMessage, this, args);
           try {
+            if (port !== observedPort) return result;
             const message = args[0] as AudioMessage;
-            if (port === observedPort && !capture.firstReset && message.type === 'reset')
+            if (!capture.firstReset && message.type === 'reset')
               capture.firstReset = { ...message, music: [...message.music] };
-          } catch { /* Optional evidence cannot change native message delivery. */ }
+            const delivery = capture.delivery;
+            if (delivery && capture.recording && capture.context) {
+              // Observe shot slot $0F and controls only; ordinary engine updates
+              // do not consume this lifecycle case's bounded diagnostic log.
+              const commands = message.type === 'commands' ? message.commands.filter(command => command.id === 0x0f) : [];
+              if (message.type !== 'commands' || commands.length) {
+                if (delivery.entries.length >= 64) delivery.overflow = true;
+                else delivery.entries.push({ at: capture.context.currentTime,
+                  message: message.type === 'reset' ? { ...message, music: [...message.music] }
+                    : { ...message, commands: (message.type === 'commands' ? commands : message.commands)
+                      .map(command => ({ ...command })) } });
+              }
+            }
+          } catch {
+            // Optional evidence cannot change native message delivery.
+            try { if (capture.delivery) capture.delivery.unavailable = true; } catch { /* Preserve the native result. */ }
+          }
           return result;
         }) as MessagePort['postMessage'];
       } catch { /* The recovery assertion still requires a captured reset. */ }
@@ -79,10 +113,10 @@ function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOption
       const result = Reflect.apply(connect, this, args);
       if (this instanceof AudioWorkletNode && args[0] === capture.gain) {
         capture.gameReady = true;
-        observeFirstReset(this);
+        observePort(this);
         // Register the sidecar after the real game module has finished loading.
         // Observation must not compete with the application's Worklet startup.
-        attachTap?.(); attachTap = undefined;
+        startTap();
       }
       if (!(this instanceof GainNode) || !(args[0] instanceof AudioDestinationNode)) return result;
       const context = this.context;
@@ -92,11 +126,13 @@ function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOption
         // Native clocks restart on a new graph. Retain old evidence separately;
         // never mix its sample labels or key timestamps into the replacement.
         (capture.retiredGraphs ??= []).push({ context: capture.context, gain: capture.gain, rate: capture.rate,
-          packets: capture.packets, events: capture.events, marks: capture.marks, firstReset: capture.firstReset });
+          packets: capture.packets, events: capture.events, marks: capture.marks, firstReset: capture.firstReset,
+          ...(capture.delivery ? { delivery: capture.delivery } : {}) });
         detachTap?.(); detachScene?.(); observedPort = undefined;
         capture.ready = false; capture.gameReady = false;
         capture.packets = []; capture.events = []; capture.marks = [];
         capture.firstReset = undefined; capture.recordFromFrame = undefined;
+        if (observeDelivery) capture.delivery = { entries: [], overflow: false };
       }
       capture.context = context; capture.gain = this; capture.rate = context.sampleRate;
       if (observeScenes) {
@@ -179,6 +215,14 @@ function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOption
 }
 
 export async function beginPcmCapture(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const pcm = window.__AUDIO_PCM__;
+    if (!pcm) throw new Error('Actual PCM observation is not installed');
+    if (pcm.errors.length) throw new Error(pcm.errors.join('\n'));
+    if (pcm.recording !== false || pcm.packets.length) throw new Error('PCM recording has already started');
+    pcm.activateTap?.();
+  });
+  await audioReady(page);
   await page.evaluate(() => {
     const pcm = window.__AUDIO_PCM__;
     if (pcm?.errors.length) throw new Error(pcm.errors.join('\n'));
@@ -339,7 +383,8 @@ export async function pcmBandWindow(page: Page, start: number, end: number, freq
   return measured!;
 }
 export async function pcmShotWindow(page: Page, start: number, end: number, frequencies: readonly number[], minimumAmplitude: number,
-  onFailure?: PcmShotFailureObserver, assertion?: (match: PcmShotMatch, rate: number) => void | Promise<void>): Promise<PcmShotMatch> {
+  onFailure?: PcmShotFailureObserver,
+  assertion?: (match: PcmShotMatch, rate: number, diagnostics?: PcmSnapshot['diagnostics']) => void | Promise<void>): Promise<PcmShotMatch> {
   const parameters = { start, end, frequencies, minimumAmplitude };
   let snapshot: PcmSnapshot | undefined;
   let stage: PcmShotFailure['stage'] = 'coverage';
@@ -355,7 +400,7 @@ export async function pcmShotWindow(page: Page, start: number, end: number, freq
     const measured = match = pcmShotWindowFeatures({ ...parameters, frequencies: [...frequencies] }, restorePcmSnapshot(snapshot)) ?? undefined;
     if (!measured) throw new Error('The original PCM shot window was not fully captured');
     stage = 'assertion';
-    await assertion?.(measured, snapshot.rate);
+    await assertion?.(measured, snapshot.rate, snapshot.diagnostics);
     return measured;
   }, () => ({ parameters, snapshot, match, stage }), onFailure);
 }
@@ -363,14 +408,14 @@ export async function pcmShotWindow(page: Page, start: number, end: number, freq
 /** Acquire once after the bounded response, complete phrase and silence fit. */
 export async function pcmPauseWindow(page: Page, start: number,
   onFailure?: (failure: PcmMeasurementFailure & { match?: PcmPauseMatch }) => void | Promise<void>,
-  assertion?: (match: PcmPauseMatch, rate: number) => void | Promise<void>): Promise<PcmPauseMatch> {
+  assertion?: (match: PcmPauseMatch, rate: number, diagnostics?: PcmSnapshot['diagnostics']) => void | Promise<void>): Promise<PcmPauseMatch> {
   const measurement = await pcmMeasurement(page, start, start + 1, [], onFailure);
   let match: PcmPauseMatch | undefined;
   let stage: PcmMeasurementFailure['stage'] = 'measurement';
   return observePcmShotFailure(async () => {
     match = pcmPauseWindowFeatures(start, restorePcmSnapshot(measurement.snapshot));
     stage = 'assertion';
-    await assertion?.(match, measurement.snapshot.rate);
+    await assertion?.(match, measurement.snapshot.rate, measurement.snapshot.diagnostics);
     return match;
   }, () => ({ ...measurement, match, stage }), onFailure);
 }

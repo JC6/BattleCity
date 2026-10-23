@@ -1,7 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import type { Textures } from 'phaser';
-import type { ArenaPresentation, ArenaScene } from '../../src/game/arena';
+import type { ArenaPresentation } from '../../src/app/presentation';
+import type { ArenaScene } from '../../src/game/arena';
 import type { GameState, Tile } from '../../src/core/types';
 import { renderFixtures } from '../game/render-fixtures';
 import { readyWithClock } from './helpers';

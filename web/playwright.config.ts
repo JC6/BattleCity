@@ -11,10 +11,12 @@ export default defineConfig({
   // Each game needs foreground animation and focus; simultaneous browser
   // windows make fixed-tick intro timing depend on headless throttling.
   workers: 1,
+  metadata: { build: kind },
   outputDir: `test-results/${kind}`,
   reporter: [
     [process.env.CI ? 'github' : 'list'],
     ['html', { open: 'never', outputFolder: `playwright-report/${kind}` }],
+    ['json', { outputFile: `test-results/${kind}/report.json` }],
   ],
   use: {
     baseURL: 'http://127.0.0.1:4173/',

@@ -22,6 +22,7 @@ export class AppController {
   private get scene() { return this.ports.render; }
   private get audio() { return this.ports.audio; }
   private get input() { return this.ports.input; }
+  private get highScore() { return this.ports.records.getHighScore(); }
   private get screen() { return this.state.kind; }
   private get engine() { return 'engine' in this.state ? this.state.engine : null; }
   private get lossWorld() { return this.state.kind === 'loss' ? this.state.world : null; }
@@ -30,7 +31,6 @@ export class AppController {
     return isTimedState(this.state) ? Math.max(0, this.state.duration - this.state.ticks * TICK_MS) : 0;
   }
   private construction = new ConstructionState();
-  private draft = this.construction.tiles;
   private customMapReady = false;
   private accumulator = 0;
   private selectedStage = 1;
@@ -39,18 +39,17 @@ export class AppController {
   private editorHeld = 0;
   private editorHoldTicks = 0;
   private presentationSuspended = false;
-  private highScore: number;
   private runHighScore: number;
   private lastScores = [0];
   constructor(private readonly ports: AppPorts) {
-    this.highScore = this.runHighScore = ports.records.getHighScore();
+    this.runHighScore = this.highScore;
     this.menu();
     if (import.meta.env.MODE === 'test') this.testing = createAppTestAdapter({
       engine: () => this.engine, inGame: () => this.screen === 'game',
       construction: this.construction, render: this.scene,
       start: (mode, stage) => this.start(mode, stage), openEditor: () => this.openEditor(),
       updateDraft: () => {
-        this.draft = this.construction.tiles; this.customMapReady = true; this.scene.draft = this.draft;
+        this.customMapReady = true; this.scene.draft = this.construction.tiles;
       },
       playEditor: mode => this.start(mode, this.selectedStage, undefined, true),
       finish: () => this.finishBattle(), present: () => this.present(),
@@ -83,7 +82,7 @@ export class AppController {
     } else {
       const level = getLevel(normalizedStage);
       if (custom) {
-        level.tiles = [...this.draft];
+        level.tiles = this.construction.tiles;
         // Starting a constructed stage restores the eagle without rebuilding
         // its surrounding walls. Player/enemy spawning clears its own terrain.
         const cell = BASE_Y / TILE_SIZE * GRID_SIZE + BASE_X / TILE_SIZE;
@@ -129,7 +128,7 @@ export class AppController {
   private openEditor(): void {
     this.clearLossPresentation();
     this.construction.enter();
-    this.state = { kind: 'editor' }; this.scene.state = null; this.scene.draft = this.draft;
+    this.state = { kind: 'editor' }; this.scene.state = null; this.scene.draft = this.construction.tiles;
     this.customMapReady = true;
     this.input.clear(); this.audio.stopScene();
     this.accumulator = 0; this.presentationSuspended = false;
@@ -236,7 +235,7 @@ export class AppController {
     const direction: Direction | null = movement & 1 ? 'right' : movement & 2 ? 'left' : movement & 4 ? 'down' : movement & 8 ? 'up' : null;
     if (direction) this.construction.move(direction);
     if (held && (pad.a || pad.b)) changed = this.construction.paint() || changed;
-    if (changed) { this.draft = this.construction.tiles; this.scene.draft = this.draft; }
+    if (changed) this.scene.draft = this.construction.tiles;
   }
 
   private finishBattle(): void {
@@ -273,7 +272,7 @@ export class AppController {
         this.start(state.mode, state.stage === 70 ? 1 : state.stage + 1, players, false);
       } else {
         this.state = { kind: 'gameover', engine: this.engine, duration: GAMEOVER_TIME, ticks: 0 };
-        this.construction.reset(); this.draft = this.construction.tiles; this.customMapReady = false;
+        this.construction.reset(); this.customMapReady = false;
         this.input.clear(); this.audio.stopScene(); this.audio.startPresentation('gameover'); this.present();
       }
       return;
@@ -292,7 +291,7 @@ export class AppController {
 
   private recordHighScore(): void {
     const score = Math.max(0, ...(this.engine?.state.players.map(player => player.score) ?? []));
-    this.highScore = this.ports.records.highScore(score);
+    this.ports.records.highScore(score);
   }
 
   private present(): void {

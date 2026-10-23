@@ -3,37 +3,13 @@ import { AudioRuntime, type AudioRuntimeHooks } from '../../src/platform/audio-r
 import { AudioTransport } from '../../src/platform/audio-transport';
 import { CUE } from '../../src/platform/audio-cues';
 import type { AudioMessage } from '../../src/platform/audio-protocol';
+import { Context, Node, installNativeAudio, settle } from './native-audio-fixture';
 
 function deferred() {
   let resolve!: () => void, reject!: (error: Error) => void;
   const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
-class Gain {
-  gain = { value: 0 }; connect = vi.fn(); disconnect = vi.fn();
-}
-class Context {
-  static instances: Context[] = [];
-  static load = () => Promise.resolve();
-  static resume = () => Promise.resolve();
-  static close = () => Promise.resolve();
-  state = 'running'; currentTime = 1; destination = {}; gain = new Gain();
-  audioWorklet = { addModule: vi.fn(() => Context.load()) };
-  resume = vi.fn(() => Context.resume());
-  close = vi.fn(() => { this.state = 'closed'; return Context.close(); });
-  createGain() { return this.gain; }
-  constructor() { Context.instances.push(this); }
-}
-class Node {
-  static instances: Node[] = [];
-  static connectionFailure = false;
-  port = { postMessage: vi.fn(), close: vi.fn(), onmessage: null as null | ((event: { data: unknown }) => void) };
-  onprocessorerror: (() => void) | null = null;
-  disconnect = vi.fn();
-  connect = vi.fn(() => { if (Node.connectionFailure) throw new Error('connect failed'); });
-  constructor() { Node.instances.push(this); }
-}
-async function settle() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
 function fixture() {
   let now = 0;
   const hooks: AudioRuntimeHooks = { ready: vi.fn(), resumed: vi.fn(), blocked: vi.fn(), failed: vi.fn() };
@@ -41,9 +17,8 @@ function fixture() {
   return { runtime, hooks, time: (value: number) => { now = value; } };
 }
 beforeEach(() => {
-  Context.instances = []; Node.instances = []; Node.connectionFailure = false;
-  Context.load = Context.resume = Context.close = () => Promise.resolve();
-  vi.stubGlobal('AudioContext', Context); vi.stubGlobal('AudioWorkletNode', Node);
+  installNativeAudio();
+  Context.resume = () => Promise.resolve();
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -152,7 +127,7 @@ describe('focus output mute', () => {
     const { runtime, node, gain, reply } = await readyFixture();
     runtime.post({ type: 'commands', generation: 1, sequence: 1, commands: [] });
     runtime.post(pause(2, true, 'manual')); runtime.post(pause(3, false, 'manual'));
-    expect(node.port.postMessage.mock.calls.every(([message]) => !message.confirm)).toBe(true);
+    expect(node.messages.every(message => !('confirm' in message && message.confirm))).toBe(true);
     reply(applied(1, 3)); expect(gain.value).toBe(0.3);
   });
   it('mutes before posting focus pause and waits for its latest resume confirmation', async () => {

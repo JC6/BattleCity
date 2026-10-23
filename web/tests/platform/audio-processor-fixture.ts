@@ -9,7 +9,7 @@ export interface Processor {
 }
 export async function processorFixture(rate = 44100) {
   vi.resetModules(); let Type!: new () => Processor, current = 0;
-  vi.stubGlobal('sampleRate', rate); vi.stubGlobal('currentFrame', 0);
+  vi.stubGlobal('sampleRate', rate);
   vi.stubGlobal('AudioWorkletProcessor', class { port = { onmessage: () => {}, postMessage: vi.fn() }; });
   vi.stubGlobal('registerProcessor', (_: string, type: new () => Processor) => { Type = type; });
   await import('../../src/platform/apu-worklet');
@@ -20,7 +20,7 @@ export async function processorFixture(rate = 44100) {
     for (let index = 0; index < samples; index += quantum) {
       const output = new Float32Array(Math.min(quantum, samples - index));
       expect(processor.process([], [[output]])).toBe(true);
-      result.set(output, index); current += output.length; vi.stubGlobal('currentFrame', current);
+      result.set(output, index); current += output.length;
     }
     return result;
   }

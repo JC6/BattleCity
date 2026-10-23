@@ -1,6 +1,6 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { attachPcmFailure, audioEventTime, audioReady, audioTime, beginPcmCapture, expectOpeningPcm, installPcmProbe, pcmAssert, pcmBandWindow, pcmIdleWindow, pcmPauseWindow, pcmShotWindow, waitForAudioTime, type PcmOpeningObservation } from './audio-probe';
-import { pcmResponseObservation, type PcmResponseObservation } from './pcm-window';
+import { pcmResponseObservation, type PcmResponseObservation, type PcmSnapshot } from './pcm-window';
 import { probeCanvas, waitForCanvasMenu } from './visual-probes';
 import { protectedBattlefield } from './construction-fixture';
 
@@ -59,8 +59,8 @@ async function attachOpeningObservation(testInfo: TestInfo, observation: PcmOpen
 }
 
 async function expectResponse(testInfo: TestInfo, kind: PcmResponseObservation['kind'], keyAt: number,
-  onset: number, rate: number): Promise<void> {
-  const observation = pcmResponseObservation(kind, keyAt, onset, rate);
+  onset: number, rate: number, diagnostics?: PcmSnapshot['diagnostics']): Promise<void> {
+  const observation = pcmResponseObservation(kind, keyAt, onset, rate, diagnostics);
   await testInfo.attach(`audio-${kind}-response`, {
     contentType: 'application/json', body: Buffer.from(JSON.stringify(observation, null, 2)),
   });
@@ -71,13 +71,15 @@ async function stageSelection(page: Page, testInfo: TestInfo, protectPlayer = fa
   // The first case retains desktop keyboard-to-audio timing coverage. This
   // lifecycle fixture uses native size to limit its extra editor observations.
   if (protectPlayer) await page.setViewportSize({ width: 256, height: 240 });
-  await installPcmProbe(page, { deferRecording: protectPlayer }); await page.goto('./'); await page.bringToFront();
+  await installPcmProbe(page, { deferRecording: protectPlayer, observeDelivery: protectPlayer });
+  await page.goto('./'); await page.bringToFront();
   await expect(page.locator('#game-canvas canvas')).toBeVisible(); await waitForCanvasMenu(page);
   if (protectPlayer) {
     await protectedBattlefield(page, testInfo);
   }
   // Normal menu gesture unlocks audio. This suite never installs a fake clock.
-  await page.keyboard.press('Enter'); await audioReady(page);
+  await page.keyboard.press('Enter');
+  if (!protectPlayer) await audioReady(page);
   // Audio can already be ready while the canvas still awaits its next frame.
   await expect.poll(async () => (await probeCanvas(page)).stageSelect, {
     timeout: 20000,
@@ -206,7 +208,7 @@ lifecycleTest('real keyboard movement, shot, manual pause and focus pause preser
     Math.max(0.002, idleShotPeak * 3), failure => attachPcmFailure(testInfo, failure, 'player shot', { idleShotPeak }),
     // The end of the first confirmed 8ms tone window is a conservative onset
     // bound. Background engine samples cannot establish the shot's response.
-    (match, rate) => expectResponse(testInfo, 'shot', shotAt, match.phases[0].start + 0.008, rate));
+    (match, rate, diagnostics) => expectResponse(testInfo, 'shot', shotAt, match.phases[0].start + 0.008, rate, diagnostics));
   const shotPeak = Math.max(...shot.band.amplitudes);
   expect(shotPeak, 'The swept player-shot band must be present above native idle harmonics').toBeGreaterThan(0.002);
   expect(shotPeak).toBeGreaterThan(idleShotPeak * 3);
@@ -214,8 +216,8 @@ lifecycleTest('real keyboard movement, shot, manual pause and focus pause preser
   await page.keyboard.press('Enter'); const pausedAt = await audioEventTime(page, 'Enter');
   await pcmPauseWindow(page, pausedAt,
     failure => attachPcmFailure(testInfo, failure, 'manual pause lifecycle', { pausedAt }),
-    async (match, rate) => {
-      await expectResponse(testInfo, 'pause', pausedAt, match.onset, rate);
+    async (match, rate, diagnostics) => {
+      await expectResponse(testInfo, 'pause', pausedAt, match.onset, rate, diagnostics);
       expect(match.phrase.rms).toBeGreaterThan(0.003);
       expect(match.silence.peak).toBe(0);
     });

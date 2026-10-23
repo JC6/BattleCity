@@ -35,7 +35,7 @@ export function createAppTestAdapter(access: TestAccess) {
     openEditor: () => access.openEditor(),
     editor: () => ({ cursor: access.construction.cursor, selectedCode: access.construction.selectedCode }),
     setEditorTile: (index: number, tile: Tile): void => { if (access.construction.setTile(index, tile)) access.updateDraft(); },
-    getEditorTiles: () => [...access.construction.tiles],
+    getEditorTiles: () => access.construction.tiles,
     playEditor: (mode: GameMode = 'single') => access.playEditor(mode),
   };
 }

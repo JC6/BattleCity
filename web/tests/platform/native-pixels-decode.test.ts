@@ -1,7 +1,7 @@
 import { deflateSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
 import type { Page } from '@playwright/test';
-import { nativePixels } from '../browser/native-pixels';
+import { createNativePixelReader, nativePixels } from '../browser/native-pixels';
 
 vi.mock('@playwright/test', async () => ({ expect: (await import('vitest')).expect }));
 
@@ -105,5 +105,57 @@ describe('native PNG decoding', () => {
     await expect(nativePixels(screenshotPage(png(256, 240, 4, Buffer.from([5]))))).rejects.toThrow('Unsupported PNG row filter 5');
     const badSignature = png(256, 240, 4, Buffer.alloc(0)); badSignature[0] = 0;
     await expect(nativePixels(screenshotPage(badSignature))).rejects.toThrow();
+  });
+});
+
+describe('fixed Construction pixel reader', () => {
+  function readerPage() {
+    const image = fixture(4, 1, 4);
+    const geometry = { x: 0, y: 0, width: 256, height: 240,
+      viewportWidth: 256, viewportHeight: 240, scrollX: 0, scrollY: 0 };
+    const evaluate = vi.fn(async () => geometry);
+    const page = { locator: vi.fn(() => ({ evaluate })),
+      viewportSize: vi.fn(() => ({ width: 256, height: 240 })), screenshot: vi.fn(async () => image.png) };
+    return { page, evaluate, geometry, image, browser: page as unknown as Page };
+  }
+  it('confirms geometry once and decodes repeated compositor screenshots with the remaining budget', async () => {
+    const { page, evaluate, image, browser } = readerPage();
+    const read = await createNativePixelReader(browser), progress = vi.fn();
+    const deadline = performance.now() + 10000;
+    expect((await read(deadline, progress)).equals(image.rgba)).toBe(true);
+    expect((await read(deadline)).equals(image.rgba)).toBe(true);
+    expect(evaluate).toHaveBeenCalledOnce(); expect(page.locator).toHaveBeenCalledOnce();
+    expect(evaluate).toHaveBeenCalledWith(expect.any(Function), undefined, { timeout: 20000 });
+    const options = vi.mocked(page.screenshot).mock.calls as unknown as [{ timeout: number; clip: object; scale: string }][];
+    expect(options[0][0]).toMatchObject({ clip: { x: 0, y: 0, width: 256, height: 240 }, scale: 'css' });
+    expect(options[0][0].timeout).toBeGreaterThan(0);
+    expect(options[0][0].timeout).toBeLessThanOrEqual(10000);
+    expect(options[1][0].timeout).toBeLessThanOrEqual(options[0][0].timeout);
+    expect(progress.mock.calls).toEqual([['screenshot', false], ['screenshot', true], ['decode', false], ['decode', true]]);
+  });
+  it('rejects displaced geometry and a later viewport change before taking a screenshot', async () => {
+    const { browser, page, geometry } = readerPage();
+    geometry.x = 1;
+    await expect(createNativePixelReader(browser)).rejects.toThrow(/fixed viewport/);
+    geometry.x = 0;
+    const read = await createNativePixelReader(browser);
+    page.viewportSize.mockReturnValue({ width: 512, height: 480 });
+    await expect(read(performance.now() + 10000)).rejects.toThrow(/viewport changed/);
+    expect(page.screenshot).not.toHaveBeenCalled();
+  });
+  it('does not turn an exhausted budget into an unlimited screenshot timeout', async () => {
+    const { browser, page } = readerPage(), read = await createNativePixelReader(browser);
+    await expect(read(performance.now() - 1)).rejects.toThrow(/deadline exceeded/);
+    expect(page.screenshot).not.toHaveBeenCalled();
+  });
+  it('preserves screenshot errors and distinguishes them from decoding failures', async () => {
+    const { browser, page } = readerPage(), read = await createNativePixelReader(browser), progress = vi.fn();
+    const failure = new Error('native screenshot timed out');
+    page.screenshot.mockRejectedValueOnce(failure);
+    await expect(read(performance.now() + 10000, progress)).rejects.toBe(failure);
+    expect(progress.mock.calls).toEqual([['screenshot', false]]);
+    progress.mockClear(); page.screenshot.mockResolvedValueOnce(Buffer.alloc(8));
+    await expect(read(performance.now() + 10000, progress)).rejects.toThrow();
+    expect(progress.mock.calls).toEqual([['screenshot', false], ['screenshot', true], ['decode', false]]);
   });
 });

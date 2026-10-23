@@ -94,6 +94,37 @@ describe('volatile keyboard Construction model', () => {
     expect(state.tiles[270]).toBe(Tile.Water);
   });
 
+  it('consumes a same-value single-cell edit on the next paint only', () => {
+    const state = editable();
+    state.paint();
+    const before = state.tiles;
+    expect(state.setTile(54, before[54])).toBe(true);
+    expect(state.tiles).toEqual(before);
+    expect(state.paint()).toBe(true);
+    expect(state.paint()).toBe(false);
+    expect(state.tiles).toEqual(before);
+  });
+
+  it.each([636, 637, 662, 663])('hides the eagle after an empty write to base cell %i until reset', index => {
+    const state = new ConstructionState();
+    const before = state.tiles;
+    expect(before[index]).toBe(E);
+    expect(state.setTile(index, E)).toBe(true);
+    expect(state.tiles).toEqual(before);
+    expect(state.baseVisible).toBe(false);
+    state.enter();
+    expect(state.baseVisible).toBe(false);
+    state.reset();
+    expect(state.baseVisible).toBe(true);
+    for (let step = 0; step < 6; step++) state.move('right');
+    for (let step = 0; step < 12; step++) state.move('down');
+    state.selectedCode = 13;
+    expect(state.paint()).toBe(true);
+    expect(state.tiles).toEqual(before);
+    expect(state.baseVisible).toBe(false);
+    expect(state.paint()).toBe(false);
+  });
+
   it('applies single-cell patches after the initial fortress and replaces only the painted base block', () => {
     const state = new ConstructionState();
     for (let step = 0; step < 5; step++) state.move('right');

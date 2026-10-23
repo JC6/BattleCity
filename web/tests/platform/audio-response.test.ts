@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Page } from '@playwright/test';
 import { pcmPauseWindow } from '../browser/audio-probe';
-import { pcmPauseWindowFeatures, pcmResponseObservation, snapshotPcmWindow, type AudioCapture } from '../browser/pcm-window';
+import { pcmPauseWindowFeatures, pcmResponseObservation, snapshotPcmWindow, type AudioCapture, type AudioDeliveryLog } from '../browser/pcm-window';
 import { processorFixture } from './audio-processor-fixture';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -36,6 +36,31 @@ function pauseFixture(rate = 44100, delay = 0.0876, mutation = ''): AudioCapture
 }
 
 describe('hot audio response policy', () => {
+  const shot: AudioDeliveryLog['entries'][number] = { at: 1.02,
+    message: { type: 'commands', generation: 3, sequence: 7, commands: [{ id: 15, start: true }] } };
+  it('splits the same snapshot response at its unique shot submission without changing the verdict', () => {
+    const observation = pcmResponseObservation('shot', 1, 1.07, 44100,
+      { delivery: { entries: [shot], overflow: false } });
+    expect(observation.submission).toMatchObject({ status: 'matched', at: 1.02, generation: 3, sequence: 7 });
+    expect(observation.submission!.keyToSubmitMs).toBeCloseTo(20);
+    expect(observation.submission!.submitToOnsetMs).toBeCloseTo(50);
+    expect(observation).toMatchObject({ targetExceeded: true, limitExceeded: false, latencyMs: 70 });
+    expect(pcmResponseObservation('shot', 1, null, 44100, { delivery: { entries: [shot], overflow: false } }))
+      .toMatchObject({ limitExceeded: true, latencyMs: null, submission: { status: 'matched', submitToOnsetMs: null } });
+  });
+  it('does not invent a submission from missing, ambiguous, overflowing or cross-boundary evidence', () => {
+    for (const [entries, overflow, expected] of [
+      [[], false, 'missing'], [[{ ...shot, at: 0.99 }], false, 'missing'],
+      [[shot, { ...shot, at: 1.03 }], false, 'ambiguous'], [[shot], true, 'unavailable'],
+      [[shot, { at: 1.04, message: { type: 'reset', generation: 4, music: [], offset: 0, engine: null, paused: false, reason: 'manual' } }], false, 'unavailable'],
+    ] as [AudioDeliveryLog['entries'], boolean, string][]) {
+      expect(pcmResponseObservation('shot', 1, 1.07, 44100, { delivery: { entries, overflow } }))
+        .toMatchObject({ limitExceeded: false, submission: { status: expected } });
+    }
+    const broken = { get delivery(): AudioDeliveryLog { throw new Error('optional evidence failed'); } };
+    expect(pcmResponseObservation('shot', 1, 1.16, 44100, broken))
+      .toMatchObject({ limitExceeded: true, submission: { status: 'unavailable' } });
+  });
   it.each([44100, 48000].flatMap(rate => (['shot', 'pause'] as const).map(kind => [rate, kind] as const)))
     ('compares sample-accurate 50ms/150ms boundaries at %i Hz for %s', (rate, kind) => {
       expect(pcmResponseObservation(kind, 1, 1.05, rate)).toMatchObject({ targetExceeded: false, limitExceeded: false });

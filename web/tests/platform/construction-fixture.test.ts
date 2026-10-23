@@ -2,13 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Page, TestInfo } from '@playwright/test';
 import { BRICK_TILES, FOREST, ICE, PLAYER, STEEL, WATER, drawBitmap, type PixelSurface } from '../../src/game/pixel-assets';
 import { inspectConstruction, protectedBattlefield } from '../browser/construction-fixture';
-import { nativePixels, pixelsSHA256 } from '../browser/native-pixels';
+import { createNativePixelReader, pixelsSHA256 } from '../browser/native-pixels';
 
-const pollControl = vi.hoisted(() => ({ expire: false, lateRead: undefined as Promise<unknown> | undefined }));
+const pollControl = vi.hoisted(() => ({ expire: false, lateRead: undefined as Promise<unknown> | undefined,
+  readPixels: vi.fn<Awaited<ReturnType<typeof createNativePixelReader>>>() }));
 
 vi.mock('../browser/native-pixels', async importOriginal => {
   const original = await importOriginal<typeof import('../browser/native-pixels')>();
-  return { ...original, nativePixels: vi.fn() };
+  return { ...original, createNativePixelReader: vi.fn(async () => pollControl.readPixels) };
 });
 vi.mock('@playwright/test', async () => {
   const { expect } = await import('vitest');
@@ -75,7 +76,11 @@ function picture(cursor: Cursor | null, code = 13, wallColumns = 0, waterPhase =
   return rgba;
 }
 
-beforeEach(() => { vi.mocked(nativePixels).mockReset(); pollControl.expire = false; pollControl.lateRead = undefined; });
+beforeEach(() => {
+  pollControl.readPixels.mockReset();
+  vi.mocked(createNativePixelReader).mockReset().mockResolvedValue(pollControl.readPixels);
+  pollControl.expire = false; pollControl.lateRead = undefined;
+});
 
 describe('Construction compositor observations', () => {
   it.each([
@@ -171,7 +176,10 @@ function keyboardFixture(options: { failPainting?: boolean; missingWall?: boolea
     },
     evaluate: vi.fn(async () => {}),
   };
-  vi.mocked(nativePixels).mockImplementation(async () => {
+  pollControl.readPixels.mockImplementation(async (deadline, progress) => {
+    expect(deadline - performance.now()).toBeGreaterThan(0);
+    expect(deadline - performance.now()).toBeLessThanOrEqual(20000);
+    progress?.('screenshot', false);
     if (held.has('d') && options.latePaintingRead && pending.length === 1) {
       failurePixels = last; pollControl.expire = true;
       return new Promise<Buffer>(resolve => { finishLateRead = resolve; });
@@ -182,6 +190,7 @@ function keyboardFixture(options: { failPainting?: boolean; missingWall?: boolea
     }
     if (pendingCode && pending.length === 1) { selected++; pendingCode = false; }
     last = pending.shift() ?? last;
+    progress?.('screenshot', true); progress?.('decode', false); progress?.('decode', true);
     const frame = inspectFixture(last);
     events.push(`frame:${frame.cursor?.column}:${frame.cursor?.row}:${frame.signature?.join(',')}`);
     return last;
@@ -198,9 +207,20 @@ function keyboardFixture(options: { failPainting?: boolean; missingWall?: boolea
 }
 
 describe('Construction keyboard preparation', { timeout: 15000 }, () => {
+  it('retains a geometry failure before sending any Construction keys', async () => {
+    const fixture = keyboardFixture(), error = new Error('geometry unavailable');
+    vi.mocked(createNativePixelReader).mockRejectedValueOnce(error);
+    await expect(protectedBattlefield(fixture.page, fixture.testInfo)).rejects.toBe(error);
+    expect(fixture.events).toEqual([]);
+    const diagnostic = JSON.parse(fixture.attach.mock.calls.find(([, value]) => value.contentType === 'application/json')![1].body.toString());
+    expect(diagnostic).toMatchObject({ phase: 'prepare Construction pixel reader', operation: 'geometry',
+      lastCompletedOperation: null, pixelsSHA256: null, elapsedMs: expect.any(Number) });
+  });
+
   it('awaits the initial cursor before moving, each actual block and the right edge, and the reset cursor after re-entry', async () => {
     const fixture = keyboardFixture();
     await protectedBattlefield(fixture.page, fixture.testInfo);
+    expect(createNativePixelReader).toHaveBeenCalledExactlyOnceWith(fixture.page);
     const initial = fixture.events.indexOf('frame:0:0:0,0,0,0');
     expect(initial).toBeGreaterThan(fixture.events.indexOf('press:Enter'));
     expect(fixture.events.indexOf('press:s')).toBeGreaterThan(initial);

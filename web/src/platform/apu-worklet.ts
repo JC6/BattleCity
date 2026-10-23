@@ -1,11 +1,9 @@
 import { ApuDriver } from './apu-driver';
 import { ApuSynth } from './apu-synth';
-import { AUDIO_TICK_HZ, AUDIO_TRACKS, CUE, isCueFresh, isPersistentCue } from './audio-cues';
+import { AUDIO_TICK_HZ, AUDIO_TRACKS, CUE, isPersistentCue } from './audio-cues';
 import type { AudioCommand, AudioMessage, AudioReply } from './audio-protocol';
-export type { AudioMessage } from './audio-protocol';
 
 declare const sampleRate: number;
-declare const currentFrame: number;
 declare function registerProcessor(name: string, processor: typeof AudioWorkletProcessor): void;
 declare abstract class AudioWorkletProcessor {
   readonly port: MessagePort;
@@ -80,10 +78,10 @@ class BattleCityApu extends AudioWorkletProcessor {
     this.pauseDriver.reset(); this.pauseSynth.reset(); this.pauseRemaining = 0;
     if (paused && !focus) this.pauseDriver.trigger(CUE.pause);
   }
-  private step(now: number): void {
+  private step(): void {
     for (const command of this.pending.values()) {
       if (!command.start) this.driver.stop(command.id);
-      else if (isCueFresh(command.id, command.createdAt, now)) this.driver.trigger(command.id);
+      else this.driver.trigger(command.id);
     }
     this.pending.clear(); this.driver.tick(); this.resumeSilent = false;
     const active = this.driver.hasActivity();
@@ -103,7 +101,7 @@ class BattleCityApu extends AudioWorkletProcessor {
         this.remaining = 0; this.synth.advanceSilence(output.length - index); output.fill(0, index); break;
       }
       if (this.remaining <= 0) {
-        this.step((currentFrame + index) / sampleRate); this.remaining += this.frameSamples;
+        this.step(); this.remaining += this.frameSamples;
       }
       this.remaining--;
       if (this.resumeSilent) output[index] = 0;

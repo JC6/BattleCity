@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TICK_MS } from '../../src/core/constants';
-import { Tile, type GameOptions, type GameState, type LevelDefinition, type PlayerInput } from '../../src/core/types';
+import { Tile, type GameOptions, type GameState, type LevelDefinition } from '../../src/core/types';
 import { scoreTimeline } from '../../src/game/score-timeline';
+import type { AppTestAdapter } from '../../src/app/test-adapter';
 
 const runtime = vi.hoisted(() => ({
   scene: null as null | { state: GameState | null; onFrame(delta: number): void; scale: { getParentBounds(): void; refresh(): void } },
@@ -63,17 +64,8 @@ vi.mock('../../src/platform/audio', () => ({
     play(_events: unknown) {} updateScore(_state: unknown, _elapsed: number) {}
   },
 }));
-interface Harness {
-  state(): GameState | null;
-  presentation(): { kind: string; selection?: number; stage?: number; mode?: string; highScore?: number; playerScores?: number[]; paused?: boolean; elapsedMs?: number };
-  step(count?: number, inputs?: PlayerInput[]): void;
-  debug(patch: Partial<GameState>): void;
-  setEditorTile(index: number, tile: Tile): void;
-  getEditorTiles(): Tile[];
-  editor(): { cursor: { x: number; y: number }; selectedCode: number };
-}
 let events: Map<string, ((event: unknown) => void)[]>;
-let api: Harness;
+let api: AppTestAdapter;
 let dispose: () => Promise<void>;
 let wrapper: { style: Record<string, string> };
 function dispatch(type: string, event: unknown = {}): void { events.get(type)?.forEach(handler => handler(event)); }
@@ -111,7 +103,7 @@ beforeEach(async () => {
   vi.stubGlobal('window', fakeWindow);
   vi.stubGlobal('document', { hidden: false, hasFocus: () => true, addEventListener: listen, removeEventListener: unlisten, querySelector: () => app });
   dispose = (await import('../../src/main')).application.dispose;
-  api = (fakeWindow as typeof fakeWindow & { __BATTLECITY__: Harness }).__BATTLECITY__;
+  api = (fakeWindow as typeof fakeWindow & { __BATTLECITY__: AppTestAdapter }).__BATTLECITY__;
 // The first import also transforms the application; allow for cold filesystem I/O.
 }, 30000);
 afterEach(async () => { await dispose(); vi.unstubAllGlobals(); runtime.scene = null; runtime.parent = null; });
@@ -158,7 +150,7 @@ describe('keyboard application flow', () => {
     expect(runtime.engines).toHaveLength(2);
     expect(runtime.engines[1].state).toMatchObject({ stage: 2, mode: 'coop', tick: 0 });
     frame(20); down('KeyJ'); down('KeyK'); frame(); up('KeyJ'); up('KeyK'); frame();
-    expect(api.presentation().stage).toBe(2);
+    expect(api.presentation()).toMatchObject({ kind: 'stage-select', stage: 2 });
     expect(runtime.engines).toHaveLength(2);
     tap('KeyK');
     expect(runtime.engines).toHaveLength(3);
@@ -215,7 +207,7 @@ describe('keyboard application flow', () => {
   it.each(['Enter', 'blur', 'visibilitychange'] as const)('shows an intro paused by %s and resumes its retained progress', trigger => {
     tap('Enter'); tap('Enter'); frame(7);
     const before = api.presentation();
-    expect(before.kind).toBe('intro');
+    assert(before.kind === 'intro');
     if (trigger === 'Enter') tap('Enter');
     else loseFocus(trigger);
     expect(api.state()!.phase).toBe('paused');
@@ -223,12 +215,14 @@ describe('keyboard application flow', () => {
     const tick = api.state()!.tick;
     frame(90);
     expect(api.state()!.tick).toBe(tick);
-    expect(api.presentation().elapsedMs).toBe(before.elapsedMs);
+    expect(api.presentation()).toMatchObject({ kind: 'intro', elapsedMs: before.elapsedMs });
     Object.assign(document, { hidden: false });
     tap('Enter');
     expect(api.state()!.phase).toBe('intro');
-    expect(api.presentation()).toMatchObject({ kind: 'intro', paused: false });
-    expect(api.presentation().elapsedMs).toBeGreaterThan(before.elapsedMs!);
+    const resumed = api.presentation();
+    assert(resumed.kind === 'intro');
+    expect(resumed.paused).toBe(false);
+    expect(resumed.elapsedMs).toBeGreaterThan(before.elapsedMs);
     until('game');
     expect(api.state()!.phase).toBe('playing');
   });
@@ -239,7 +233,7 @@ describe('keyboard application flow', () => {
     expect(api.presentation()).toMatchObject({ kind: 'stage-select', stage: 1, mode: 'coop' });
     expect(api.state()).toBeNull();
     up('Enter'); tap('KeyJ'); tap('KeyJ'); tap('KeyK');
-    expect(api.presentation().stage).toBe(2);
+    expect(api.presentation()).toMatchObject({ kind: 'stage-select', stage: 2 });
     tap('Enter'); api.step(250);
     const state = api.state()!;
     const tanks = state.tanks.filter(tank => tank.team === 'player');
@@ -413,7 +407,7 @@ describe('keyboard application flow', () => {
     until('gameover');
     expect(runtime.audioEvents.slice(-2)).toEqual(['gameover', 'commit']);
     expect(api.getEditorTiles()).not.toEqual(edited);
-    expect(api.presentation().highScore).toBe(20000);
+    expect(api.presentation()).toMatchObject({ kind: 'gameover', highScore: 20000 });
     frame(108);
     expect(api.presentation()).toMatchObject({ kind: 'gameover', highScore: 20000 });
     frame();
@@ -422,8 +416,7 @@ describe('keyboard application flow', () => {
     frame(460);
     expect(api.presentation().kind).toBe('hiscore');
     frame();
-    expect(api.presentation().kind).toBe('menu');
-    expect(api.presentation().highScore).toBe(45000);
+    expect(api.presentation()).toMatchObject({ kind: 'menu', highScore: 45000 });
     expect(api.state()).toBeNull();
   });
 
@@ -467,7 +460,11 @@ describe('keyboard application flow', () => {
     tap('Enter'); tap('Enter');
     api.debug({ phase: 'lost' }); api.step();
     until('score');
-    const timeline = () => scoreTimeline(api.state()!, api.presentation().elapsedMs!);
+    const timeline = () => {
+      const presentation = api.presentation();
+      assert(presentation.kind === 'score');
+      return scoreTimeline(api.state()!, presentation.elapsedMs);
+    };
     frame(34);
     expect(timeline().rows[0].counts).toEqual([null]);
     frame();

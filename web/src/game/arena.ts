@@ -20,8 +20,6 @@ function menuScore(score: number): string {
   return visible === 0 ? '00' : String(visible);
 }
 
-export type { ArenaPresentation } from '../app/presentation';
-
 type Image = Phaser.GameObjects.Image;
 function show(image: Image, key: string, frame: string | undefined, x: number, y: number, depth: number): void {
   if (image.texture.key !== key || (frame !== undefined && image.frame.name !== frame)) image.setTexture(key, frame);
