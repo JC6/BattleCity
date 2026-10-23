@@ -12,7 +12,7 @@ test('production entry loads assets and responds to controller keys without erro
     if (new URL(response.url()).pathname.startsWith('/assets/') && response.status() >= 400) failedAssets.push(response.url());
   });
   const menu = await readyCanvasWithClock(page);
-  await expect(page).toHaveTitle('BattleCity · 坦克大战');
+  await expect(page).toHaveTitle('坦克大战');
   const canvas = page.locator('#game-canvas canvas');
   await expect(canvas).toBeVisible();
   await expect(page.locator('button, select, input')).toHaveCount(0);
