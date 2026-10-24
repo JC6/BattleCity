@@ -1,50 +1,54 @@
-# Web 架构与开发边界
+# 开发边界
 
-浏览器入口是 `src/main.ts`，负责挂载与开发环境热更新释放。游戏规则、应用流程、绘制、音频分别拥有自己的状态；控制器通过端口连接这些模块。
-
-```mermaid
-flowchart LR
-  Browser[main / bootstrap] --> Input[InputManager]
-  Browser --> Controller[AppController]
-  Input --> Controller
-  Controller --> Core[GameEngine / Construction / LossWorld]
-  Controller --> Renderer[AppRenderer → ArenaScene]
-  Controller --> Audio[GameAudio → AudioTransport → AudioRuntime]
-  Audio --> Worklet[Worklet → Driver → Synth]
-```
+运行和验收入口见 [README](../../README.md)。本页记录跨模块约束，具体参数由源码与测试维护。
 
 ## 模块与所有权
 
-| 模块 | 负责的状态与操作 |
+| 模块 | 职责 |
 |---|---|
-| [`app/bootstrap.ts`](../src/app/bootstrap.ts) | DOM、Phaser、键盘及焦点监听、尺寸适配、音频资源；统一 `dispose()` |
-| [`app/controller.ts`](../src/app/controller.ts) | 页面流转、固定步进、选关与启动、Construction 草稿、会话分数；通过 `AppPorts` 注入输入、音频、渲染、随机种子和记录存储 |
-| [`app/state.ts`](../src/app/state.ts) | 可判别的 `AppState`；战斗和结算状态必须携带引擎，失败演出必须携带独立世界，定时页面携带持续时间与已过 tick |
-| [`core/`](../src/core/) | 确定性游戏规则、碰撞、敌人、关卡推进；相同种子与输入得到相同结果 |
-| [`game/arena.ts`](../src/game/arena.ts) | 满足 `AppRenderer` 端口，由 bootstrap 直接注入；原生像素、纹理池和动画历史 |
-| [`platform/audio.ts`](../src/platform/audio.ts) | 游戏事件与音轨语义；传输和浏览器资源见 [音频文档](audio.md) |
-| [`app/test-adapter.ts`](../src/app/test-adapter.ts) | 测试快照、控制状态和单步接口，仅在 test 模式构造 |
+| [bootstrap](../src/app/bootstrap.ts) | 挂载 DOM、Phaser、输入和音频，转发焦点与尺寸事件，统一释放资源 |
+| [controller](../src/app/controller.ts) / [AppState](../src/app/state.ts) | 页面流转与固定步进；通过端口接收输入、渲染、音频、随机种子和会话记录，隔离浏览器 API |
+| [core](../src/core/) | 确定性游戏规则；相同种子和输入得到相同结果 |
+| [ArenaScene](../src/game/arena.ts) | 原生像素绘制、纹理池与动画；借用引擎视图，不修改游戏世界 |
+| [GameAudio](../src/platform/audio.ts) → [Transport](../src/platform/audio-transport.ts) → [Runtime](../src/platform/audio-runtime.ts) | 声音语义、命令合并、浏览器音频资源 |
+| [Worklet](../src/platform/apu-worklet.ts) → [Driver](../src/platform/apu-driver.ts) → [Synth](../src/platform/apu-synth.ts) | 独立采样时钟、音轨执行与 PCM 合成 |
 
-音符由 Worklet 的采样时钟独立推进；主线程只提交声音状态和事件。主线程短暂卡顿时音乐继续，游戏仍按原固定步进规则运行。Start 在状态同步后、首帧绘制前提交开场命令。
+## 状态与时钟
 
-Phaser 使用浏览器原生动画帧并关闭 delta 平滑，把实际帧间时间交给控制器的固定步长累加器。更新不再强制使用 `setTimeout`；`60.0988Hz` 游戏 tick、100ms 帧间隔上限和每帧最多六次步进保持不变。
+```mermaid
+stateDiagram-v2
+  [*] --> menu
+  menu --> stage_select: Start / 单人或双人
+  menu --> editor: Start / Construction
+  editor --> menu: Start
+  stage_select --> game: Start
+  game --> score: 胜利
+  game --> loss: 失败
+  loss --> score: 战场演出结束
+  score --> game: 胜利 / 携带进度到下一关
+  score --> gameover: 失败 / 计分结束
+  gameover --> hiscore: 刷新纪录
+  gameover --> menu: 未刷新纪录
+  hiscore --> menu: 乐句结束
+```
 
-控制器不读取 `window`、`document`、`crypto` 或 WebAudio。bootstrap 把可见性/焦点转换为 `frame(delta, active)` 和 `inactive()`，把种子生成函数和会话最高分存储注入控制器。
+页面由 `AppState` 描述，战斗阶段由引擎的 `GamePhase` 描述。选关只更新选项，Start 才采样种子并创建 intro 引擎；自定义地图与下一关继承走同一启动路径，第 70 关之后回到第 1 关。
 
-渲染端接收借用的只读顶层游戏视图和只读草稿数组，嵌套实体仍由引擎持有；约定渲染器不修改它们。每帧不复制整个世界。独立失败世界在进入演出时创建，测试快照在跨测试接口时 `structuredClone`。
+Construction 持有唯一草稿，开战时复制地图。失败演出使用独立世界，计分及 HUD 保留权威结果；计分画面与音效共用 [scoreTimeline](../src/game/score-timeline.ts)。
 
-Construction 直接持有一张 26×26 地图，键盘绘制覆盖四格，单格编辑只修改目标格；初始堡垒在初始化或重置时写入。每块的最后绘制编码只用于识别重复绘制，单格编辑会使它失效；基地可见性单独记录。`tiles` 返回独立快照，控制器仅在进入编辑器或编辑成功时刷新渲染草稿，启动自定义关卡时另取快照，不缓存第二份草稿。当前最高分从 records 端口读取，控制器只保留本轮开始时的记录和上一轮分数。
+动画帧提供时间差，控制器按固定步长限额推进。规则步进后更新动画并同步声音，绘制前通过 `commitFrame()` 提交命令；Start 和演出切换也遵循这个顺序。暂停、失焦和隐藏清空累积时间及按键状态，恢复需要显式 Start，不补跑暂停期间的游戏时间。
 
-`dispose()` 移除 DOM 监听和测试桥，停止控制器、释放输入状态、销毁 Phaser 并关闭音频图。重复调用返回同一释放 Promise。HMR 和普通 pagehide 使用同一入口；进入浏览器往返缓存时先暂停，恢复后仍需 Start。
+音符由 Worklet 的采样时钟独立推进，主线程只提交声音变化；主线程短暂阻塞时音乐仍应继续。
 
-## 检查与变更
+## 音频与释放
 
-测试宿主使用 Node 24 类型和 ES2023 库类型；应用保持自己的目标配置。开发命令见 [README](../../README.md#开发)，完整检查流程见 [桌面验收](validation.md)。
+- [音频协议](../src/platform/audio-protocol.ts) 用 generation 隔离场景、sequence 排除重复消息，命令按槽位合并。有效短音在正常音频 tick 触发，场景切换或暂停边界会清除旧攻击。
+- 手动暂停保存持久音轨并播放暂停乐句，失焦立即静音。解除失焦静音必须收到当前节点、当前控制的匹配确认；旧回执或缺失确认不能开放输出。
+- 音频失败时先关闭旧图，等待新手势重建，避免原生图重叠或自主重试。恢复只取最新持久声音并按有效播放时间定位，已结束音乐和旧短音不补播。缺少音频 API 时允许静音游戏。
+- 初始化尝试与场景世代分别隔离过期回调。`dispose()` 幂等且是终态，统一释放监听、测试桥、Phaser 和音频；晚到回调不能复活实例。HMR 与普通 pagehide 共用释放入口，进入往返缓存时只暂停。
 
-`validate:desktop` 串联现有 npm 检查命令，CI 使用同一入口。Playwright 管理浏览器、测试服务和报告；生产冒烟同时检查发布资源与许可文件。
+## 维护入口
 
-单元测试按规则、应用端口、浏览器适配、音频资源/传输、实际 Worklet 与合成器分层。原有键盘集成测试仍验证 bootstrap 与控制器的真实接线。Construction 的模拟像素在测试 fixture 内缓存诊断扫描，字节一致性使用 `Buffer.equals`；仅键盘准备测试组使用 15 秒预算，不启用重试。
+规则与时序参数见 [core](../src/core/)，音频生命周期及合成回归见 [platform 测试](../tests/platform/)。浏览器用例见 [browser 测试](../tests/browser/)，其中包含 PCM 内容、完整性、暂停静音、恢复和持续播放检查。
 
-应用测试复用 `AppTestAdapter` 类型；音频语义与资源测试共用原生音频替身，加载、恢复、关闭和故障由用例控制，控制回执仍显式触发。
-
-[应用状态与时序](state-machine.md) · [音频协议与恢复](audio.md) · [桌面验收](validation.md) · [参考资料与证据缺口](references.md)
+[测试适配器](../src/app/test-adapter.ts) 仅在 test 构建提供，跨接口返回独立快照。真实键盘与 PCM 验收不能由测试单步替代；音频探针只观察原生时钟，不驱动播放。重构应保留独立像素回归基线，原作依据及证据缺口见 [参考来源](references.md)。
