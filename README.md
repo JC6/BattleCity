@@ -55,8 +55,8 @@ Enter 完成编辑并返回主菜单；随后选择单人或双人模式，自�
 
 ### 浏览器验收
 
-正式门禁为 `validate:desktop` 自动验收，范围是 Linux 无头桌面 Chromium 和 WebKit；检查包含键盘流程、原生像素、纹理生命周期、实际音频 PCM、窄窗口、不同像素密度及焦点事件处理。
-Safari 的最低支持版本为 26，该边界适用于整个 Web 项目；Safari 26 以下不属于兼容范围。
+正式门禁为 `validate:desktop` 自动验收。在 Linux 无头桌面 Chromium 上完整检查键盘流程、原生像素、纹理生命周期、音频正确性、窗口尺寸、像素密度及焦点事件处理；Chromium 和 WebKit 均执行生产冒烟，覆盖资源、单双人启动、移动射击、Construction 和真实开场出声。
+Safari 的最低支持版本为 26；Safari/WebKit 仅承诺上述基础流程，由 Linux WebKit 生产冒烟验收，不承诺完整像素、音频或尺寸矩阵。Safari 26 以下不属于兼容范围。
 Firefox 不主动拦截，但不属于本轮兼容承诺或发布门禁；移动端和触控也不提供兼容承诺。
 真实 Windows 品牌浏览器、系统切窗和物理显示、扬声器输出不属于必做门禁；不要求人工检查或填写检查表。
 
@@ -68,7 +68,7 @@ npx playwright install --with-deps chromium webkit
 npm run validate:desktop
 ```
 
-从 Linux 或普通 WSL 终端运行；已有依赖时只运行最后一条命令。检查依次执行类型检查、单元测试、双浏览器 E2E、生产打包和生产冒烟，任一步失败即停止。环境、报告和 CI 说明见 [桌面验收](web/docs/validation.md)。
+从 Linux 或普通 WSL 终端运行；已有依赖时只运行最后一条命令。检查依次执行类型检查、单元测试、Chromium 完整 E2E、生产打包和双浏览器生产冒烟，任一步失败即停止。环境、报告和 CI 说明见 [桌面验收](web/docs/validation.md)。
 
 ## 原 Android 工程
 

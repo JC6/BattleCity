@@ -13,14 +13,12 @@ const runtime = vi.hoisted(() => ({
   audioSyncStates: [] as (GameState | null)[],
   engines: [] as { state: GameState }[],
   engineOptions: [] as GameOptions[],
-  engineFailure: null as Error | null,
 }));
 vi.mock('../../src/core/engine', async () => {
   const actual = await vi.importActual<typeof import('../../src/core/engine')>('../../src/core/engine');
   return { ...actual, GameEngine: class extends actual.GameEngine {
     constructor(level: LevelDefinition, options: GameOptions) {
       runtime.engineOptions.push(options);
-      if (runtime.engineFailure) throw runtime.engineFailure;
       super(level, options);
       runtime.engines.push(this);
     }
@@ -92,7 +90,7 @@ function until(kind: string): void {
 beforeEach(async () => {
   vi.resetModules();
   runtime.audioEvents = []; runtime.destroyed = 0;
-  runtime.audioSyncStates = []; runtime.engines = []; runtime.engineOptions = []; runtime.engineFailure = null;
+  runtime.audioSyncStates = []; runtime.engines = []; runtime.engineOptions = [];
   events = new Map();
   const listen = (type: string, handler: (event: unknown) => void) => events.set(type, [...(events.get(type) ?? []), handler]);
   wrapper = { style: {} };
@@ -119,89 +117,51 @@ describe('keyboard application flow', () => {
     const before = [...runtime.audioEvents]; scene.onFrame(100); down('Enter');
     expect(runtime.audioEvents).toEqual(before);
   });
-  it('prepares a stage without installing or advancing it and starts the same tick-zero engine', () => {
-    const seeds = controlledSeeds();
-    const audioBeforeSelection = [...runtime.audioEvents];
+  it('keeps selection idle and creates one tick-zero engine on Start', () => {
+    const seeds = controlledSeeds(), audioBeforeSelection = [...runtime.audioEvents];
     down('Enter');
     expect(api.presentation()).toMatchObject({ kind: 'stage-select', mode: 'single', stage: 1 });
-    expect(runtime.engines).toHaveLength(1);
-    const prepared = runtime.engines[0];
-    expect(prepared.state).toMatchObject({ tick: 0, phase: 'intro', rng: seeds[0] });
-    expect(api.state()).toBeNull(); expect(runtime.scene!.state).toBeNull();
     expect(runtime.audioEvents).toEqual(audioBeforeSelection);
-    expect(runtime.audioSyncStates).toEqual([]);
     api.step(12); frame(30);
-    expect(runtime.engines).toHaveLength(1); expect(seeds).toHaveLength(1);
-    expect(prepared.state.tick).toBe(0);
+    expect(runtime.engines).toHaveLength(0); expect(seeds).toHaveLength(0);
     expect(api.state()).toBeNull(); expect(runtime.scene!.state).toBeNull();
     expect(runtime.audioSyncStates).toEqual([]);
     up('Enter'); down('Enter');
     expect(runtime.engines).toHaveLength(1); expect(seeds).toHaveLength(1);
-    expect(runtime.scene!.state).toBe(prepared.state);
     expect(api.state()).toMatchObject({ tick: 0, phase: 'intro', mode: 'single', stage: 1, rng: seeds[0] });
-    expect(runtime.audioSyncStates).toEqual([prepared.state]);
+    expect(runtime.audioSyncStates).toEqual([runtime.engines[0].state]);
+    expect(runtime.scene!.state).toBe(runtime.engines[0].state);
   });
 
-  it('rebuilds only changed cooperative selections and consumes the final selected stage', () => {
+  it('starts the final cooperative selection without creating intermediate engines', () => {
     const seeds = controlledSeeds();
-    tap('ShiftRight'); down('Enter'); up('Enter');
-    const first = runtime.engines[0];
-    tap('KeyJ');
-    expect(runtime.engines).toHaveLength(2);
-    expect(runtime.engines[1].state).toMatchObject({ stage: 2, mode: 'coop', tick: 0 });
+    tap('ShiftRight'); tap('Enter'); tap('KeyJ');
     frame(20); down('KeyJ'); down('KeyK'); frame(); up('KeyJ'); up('KeyK'); frame();
     expect(api.presentation()).toMatchObject({ kind: 'stage-select', stage: 2 });
-    expect(runtime.engines).toHaveLength(2);
-    tap('KeyK');
-    expect(runtime.engines).toHaveLength(3);
-    const selected = runtime.engines[2];
-    expect(selected).not.toBe(first);
-    expect(selected.state).toMatchObject({ stage: 1, mode: 'coop', tick: 0, rng: seeds[2] });
-    expect(selected.state.players).toHaveLength(2);
+    tap('KeyK'); tap('KeyJ');
+    expect(runtime.engines).toHaveLength(0); expect(seeds).toHaveLength(0);
     expect(api.state()).toBeNull(); expect(runtime.scene!.state).toBeNull();
     down('Enter');
-    expect(runtime.engines).toHaveLength(3); expect(seeds).toHaveLength(3);
-    expect(runtime.scene!.state).toBe(selected.state);
-    expect(api.state()).toMatchObject({ stage: 1, mode: 'coop', tick: 0 });
+    expect(runtime.engines).toHaveLength(1); expect(seeds).toHaveLength(1);
+    expect(api.state()).toMatchObject({ stage: 2, mode: 'coop', tick: 0, rng: seeds[0] });
+    expect(runtime.engines[0].state.players).toHaveLength(2);
   });
 
-  it('creates a fresh prepared engine for the next run after returning to the menu', () => {
+  it('creates a fresh engine on Start for the next run after returning to the menu', () => {
     const seeds = controlledSeeds();
-    down('Enter'); up('Enter'); down('Enter'); up('Enter');
+    tap('Enter'); tap('Enter');
     const previous = runtime.engines[0];
     api.debug({ phase: 'lost' }); api.step(); until('menu');
     expect(api.state()).toBeNull(); expect(runtime.scene!.state).toBeNull();
-    tap('ShiftRight'); down('Enter'); up('Enter');
-    expect(runtime.engines).toHaveLength(2);
+    tap('ShiftRight'); tap('Enter');
+    expect(runtime.engines).toHaveLength(1); expect(seeds).toHaveLength(1);
+    down('Enter');
     const next = runtime.engines[1];
     expect(next).not.toBe(previous);
     expect(next.state).toMatchObject({ tick: 0, phase: 'intro', mode: 'coop', rng: seeds[1] });
     expect(next.state.players.map(player => player.score)).toEqual([0, 0]);
-    down('Enter');
     expect(runtime.engines).toHaveLength(2); expect(seeds).toHaveLength(2);
     expect(runtime.scene!.state).toBe(next.state);
-  });
-
-  it('discards failed preparation and preserves fresh Start construction errors and seeds', () => {
-    const seeds = controlledSeeds();
-    down('Enter'); up('Enter');
-    const discarded = runtime.engines[0];
-    const failure = new Error('engine construction failed');
-    runtime.engineFailure = failure;
-    tap('KeyJ'); tap('KeyK'); frame(10);
-    expect(api.presentation()).toMatchObject({ kind: 'stage-select', stage: 1 });
-    expect(runtime.engineOptions).toHaveLength(3);
-    expect(api.state()).toBeNull(); expect(runtime.scene!.state).toBeNull();
-    let caught: unknown;
-    try { down('Enter'); } catch (error) { caught = error; }
-    expect(caught).toBe(failure);
-    expect(runtime.engineOptions.map(options => options.seed)).toEqual(seeds);
-    expect(seeds).toHaveLength(4);
-    expect(runtime.audioSyncStates).toEqual([]);
-    up('Enter'); runtime.engineFailure = null; down('Enter');
-    expect(runtime.engines).toHaveLength(2); expect(seeds).toHaveLength(5);
-    expect(runtime.scene!.state).not.toBe(discarded.state);
-    expect(api.state()).toMatchObject({ tick: 0, stage: 1, phase: 'intro', rng: seeds[4] });
   });
 
   it.each(['Enter', 'blur', 'visibilitychange'] as const)('shows an intro paused by %s and resumes its retained progress', trigger => {

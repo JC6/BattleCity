@@ -18,7 +18,7 @@ flowchart LR
 | 模块 | 负责的状态与操作 |
 |---|---|
 | [`app/bootstrap.ts`](../src/app/bootstrap.ts) | DOM、Phaser、键盘及焦点监听、尺寸适配、音频资源；统一 `dispose()` |
-| [`app/controller.ts`](../src/app/controller.ts) | 页面流转、固定步进、选关预准备、Construction 草稿、会话分数；通过 `AppPorts` 注入输入、音频、渲染、随机种子和记录存储 |
+| [`app/controller.ts`](../src/app/controller.ts) | 页面流转、固定步进、选关与启动、Construction 草稿、会话分数；通过 `AppPorts` 注入输入、音频、渲染、随机种子和记录存储 |
 | [`app/state.ts`](../src/app/state.ts) | 可判别的 `AppState`；战斗和结算状态必须携带引擎，失败演出必须携带独立世界，定时页面携带持续时间与已过 tick |
 | [`core/`](../src/core/) | 确定性游戏规则、碰撞、敌人、关卡推进；相同种子与输入得到相同结果 |
 | [`game/arena.ts`](../src/game/arena.ts) | 满足 `AppRenderer` 端口，由 bootstrap 直接注入；原生像素、纹理池和动画历史 |

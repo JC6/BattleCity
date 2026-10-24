@@ -1,6 +1,6 @@
 # 桌面验收
 
-`npm run validate:desktop` 在 Linux 或普通 WSL 终端运行，覆盖无头桌面 Chromium 和 WebKit。兼容范围见 [README](../../README.md#浏览器验收)。
+`npm run validate:desktop` 在 Linux 或普通 WSL 终端运行，在无头桌面 Chromium 上执行完整正确性验收，并在 Chromium 和 WebKit 上执行生产冒烟。兼容范围见 [README](../../README.md#浏览器验收)。
 
 ## 环境与命令
 
@@ -18,17 +18,17 @@ npm run validate:desktop
 
 ## 检查流程
 
-命令依次执行类型检查、单元测试、双浏览器 E2E、生产打包和双浏览器生产冒烟。任一步失败即停止，全部成功时退出码为零。类型检查覆盖应用、测试和构建配置；E2E 使用 test 模式构建，随后重新打包生产版本，避免将测试构建发布。
+命令依次执行类型检查、单元测试、Chromium 完整 E2E、生产打包和双浏览器生产冒烟。任一步失败即停止，全部成功时退出码为零。类型检查覆盖应用、测试和构建配置；E2E 使用 test 模式构建，随后重新打包生产版本，避免将测试构建发布。
 
-Playwright 使用单 worker、零重试，CI 禁止独占用例。E2E 覆盖游戏规则接线、键盘、焦点、原生像素、纹理生命周期、窗口尺寸和实际音频 PCM。生产冒烟验证键盘流程、画面、音频、所有产出资源可加载、所有 JavaScript 均无测试接口，以及发布的许可文件与当前源码一致。
+Playwright 使用单 worker、零重试，CI 禁止独占用例。Chromium E2E 覆盖游戏规则接线、键盘、焦点、原生像素、纹理生命周期、窗口尺寸和音频正确性。两种浏览器的生产冒烟共用一套用例，覆盖单双人启动、移动射击、Construction 编辑返回和真实开场 PCM；同时检查所有产出资源可加载、JavaScript 无测试接口，以及许可文件与源码一致。完整音频及尺寸/DPR 矩阵只在测试构建执行一次。WebKit 冒烟失败仍阻止发布。
 
 可以分别运行 `npm run typecheck`、`npm test`、`npm run test:e2e`；单独验证生产版本时先运行 `npm run build`，再运行 `npm run test:deploy`。以本次命令或 CI 执行结果判定通过，环境受阻或未执行的检查不能记为通过。
 
 ## 音频检查
 
-音频检查使用真实 PCM、波形断言和失败附件。采样完整性、时延阈值、暂停乐句、恢复及主线程阻塞要求统一见 [音频验证](audio.md#验证)。
+音频检查使用真实 PCM、波形断言和失败附件。采样完整性、乐句、暂停静音、恢复及主线程阻塞要求统一见 [音频验证](audio.md#验证)。
 
-实时 PCM 检查需要宿主及时调度音频与页面线程。软件渲染环境可显式配置 `LP_NUM_THREADS`、`WEBKIT_SKIA_ENABLE_CPU_RENDERING`、`WEBKIT_SKIA_CPU_PAINTING_THREADS`；测试不自动设置它们，也不因此放宽断言。通过检查不代表已验证真实扬声器输出或设备听感。
+实时 PCM 检查需要宿主及时调度音频与页面线程。软件渲染环境可显式配置 `LP_NUM_THREADS`、`WEBKIT_SKIA_ENABLE_CPU_RENDERING`、`WEBKIT_SKIA_CPU_PAINTING_THREADS`；测试不自动设置它们，正确性断言保持一致。通过检查不代表已验证真实扬声器输出或设备听感。
 
 ## 报告与发布
 

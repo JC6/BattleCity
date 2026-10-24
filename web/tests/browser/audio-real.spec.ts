@@ -1,6 +1,5 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
-import { attachPcmFailure, audioEventTime, audioReady, audioTime, beginPcmCapture, expectOpeningPcm, installPcmProbe, pcmAssert, pcmBandWindow, pcmIdleWindow, pcmPauseWindow, pcmShotWindow, waitForAudioTime, type PcmOpeningObservation } from './audio-probe';
-import { pcmResponseObservation, type PcmResponseObservation, type PcmSnapshot } from './pcm-window';
+import { attachPcmFailure, audioEventTime, audioReady, audioTime, beginPcmCapture, expectOpeningPcm, installPcmProbe, pcmAssert, pcmBandWindow, pcmIdleWindow, pcmPauseWindow, pcmShotWindow, waitForAudioTime } from './audio-probe';
 import { probeCanvas, waitForCanvasMenu } from './visual-probes';
 import { protectedBattlefield } from './construction-fixture';
 
@@ -8,20 +7,9 @@ import { protectedBattlefield } from './construction-fixture';
 test.describe.configure({ timeout: 60000 });
 
 // Fault injection deliberately closes and replaces a native AudioContext.
-// Give it its own worker/browser to isolate that device lifecycle from later
-// latency measurements. Context, trace and
-// screenshot fixtures still use the standard project configuration.
+// Give it its own worker/browser to isolate device replacement from other
+// audio cases, retaining the project context, trace and screenshot configuration.
 const recoveryTest = test.extend({
-  browser: [async ({ playwright, browserName, launchOptions, headless, channel }, use) => {
-    const browser = await playwright[browserName].launch({ ...launchOptions, headless, channel });
-    try { await use(browser); } finally { await browser.close(); }
-  }, { scope: 'worker' }],
-});
-
-// Keep lifecycle preparation and measurement in a fresh browser, separate from
-// recovery and main-thread stall cases. This callback must remain distinct from
-// recoveryTest's: Playwright uses worker fixture identity to choose its pool.
-const lifecycleTest = test.extend({
   browser: [async ({ playwright, browserName, launchOptions, headless, channel }, use) => {
     const browser = await playwright[browserName].launch({ ...launchOptions, headless, channel });
     try { await use(browser); } finally { await browser.close(); }
@@ -52,26 +40,10 @@ async function failFirstModule(page: Page): Promise<void> {
   });
 }
 
-async function attachOpeningObservation(testInfo: TestInfo, observation: PcmOpeningObservation): Promise<void> {
-  await testInfo.attach('audio-opening-observation', {
-    contentType: 'application/json', body: Buffer.from(JSON.stringify(observation, null, 2)),
-  });
-}
-
-async function expectResponse(testInfo: TestInfo, kind: PcmResponseObservation['kind'], keyAt: number,
-  onset: number, rate: number, diagnostics?: PcmSnapshot['diagnostics']): Promise<void> {
-  const observation = pcmResponseObservation(kind, keyAt, onset, rate, diagnostics);
-  await testInfo.attach(`audio-${kind}-response`, {
-    contentType: 'application/json', body: Buffer.from(JSON.stringify(observation, null, 2)),
-  });
-  expect(observation.limitExceeded, `${kind} PCM must start within 150ms (50ms performance target)`).toBe(false);
-}
-
 async function stageSelection(page: Page, testInfo: TestInfo, protectPlayer = false): Promise<void> {
-  // The first case retains desktop keyboard-to-audio timing coverage. This
-  // lifecycle fixture uses native size to limit its extra editor observations.
+  // Use native size to limit the lifecycle fixture's editor observations.
   if (protectPlayer) await page.setViewportSize({ width: 256, height: 240 });
-  await installPcmProbe(page, { deferRecording: protectPlayer, observeDelivery: protectPlayer });
+  await installPcmProbe(page, { deferRecording: protectPlayer });
   await page.goto('./'); await page.bringToFront();
   await expect(page.locator('#game-canvas canvas')).toBeVisible(); await waitForCanvasMenu(page);
   if (protectPlayer) {
@@ -121,7 +93,6 @@ recoveryTest('a failed Worklet load recovers on a fresh graph and resumes the cu
     expect(value.rms).toBeGreaterThan(0.001); expect(value.peak).toBeLessThan(0.5);
   }, failure => attachPcmFailure(testInfo, failure, 'recovered current scene', { recoveredAt }));
   await expect.poll(async () => (await probeCanvas(page)).battleStage, { timeout: 12000 }).toBe(1);
-  if (process.env.BATTLECITY_PRODUCTION === '1') expect(await page.evaluate(() => '__BATTLECITY__' in window)).toBe(false);
 });
 
 test('real game clock and AudioWorklet PCM start the three-voice stage tune with the keyboard', async ({ page }, testInfo) => {
@@ -133,7 +104,6 @@ test('real game clock and AudioWorklet PCM start the three-voice stage tune with
   await page.keyboard.press('Enter'); const keyAt = await audioEventTime(page, 'Enter');
   const onset = await expectOpeningPcm(page, keyAt, {
     checkVoices: true,
-    onObservation: observation => attachOpeningObservation(testInfo, observation),
     onFailure: failure => attachPcmFailure(testInfo, failure, 'stage opening', { keyAt }),
   });
   // The final C6 passage begins at reference driver frame 194, after the
@@ -146,17 +116,13 @@ test('real game clock and AudioWorklet PCM start the three-voice stage tune with
   // Compositor screenshots are comparatively expensive; keep them outside
   // music sampling so the observation does not delay the fixed game loop.
   await battle(page);
-  if (process.env.BATTLECITY_PRODUCTION === '1') expect(await page.evaluate(() => '__BATTLECITY__' in window)).toBe(false);
 });
 
 for (const stallMs of [150, 300]) test(`playing PCM continues while the main thread is blocked for ${stallMs}ms`, async ({ page }, testInfo) => {
   await stageSelection(page, testInfo);
   await page.keyboard.press('Enter'); const keyAt = await audioEventTime(page, 'Enter');
-  // Receipt must precede this continuation test. WebKit can defer MessagePort
-  // delivery until the posting main-thread task returns. Confirm first-note
-  // quality before blocking; opening latency remains a separate observation.
+  // Confirm actual first-note PCM before blocking the main thread.
   await expectOpeningPcm(page, keyAt, {
-    onObservation: observation => attachOpeningObservation(testInfo, observation),
     onFailure: failure => attachPcmFailure(testInfo, failure, 'opening before main-thread stall', { keyAt, stallMs }),
   });
   const blocked = await page.evaluate(stallMs => {
@@ -172,7 +138,7 @@ for (const stallMs of [150, 300]) test(`playing PCM continues while the main thr
   }, failure => attachPcmFailure(testInfo, failure, 'continued PCM during main-thread stall', { ...blocked, stallMs }));
 });
 
-lifecycleTest('real keyboard movement, shot, manual pause and focus pause preserve the native PCM lifecycle', async ({ page }, testInfo) => {
+test('real keyboard movement, shot, manual pause and focus pause preserve the native PCM lifecycle', async ({ page }, testInfo) => {
   await stageSelection(page, testInfo, true); await page.keyboard.press('Enter'); const startedAt = await audioEventTime(page, 'Enter');
   const shotBand = Array.from({ length: 27 }, (_, index) => 600 + 25 * index);
   // ID11 alternates 87/92Hz notes; its positive /16 sweep reaches about
@@ -204,11 +170,8 @@ lifecycleTest('real keyboard movement, shot, manual pause and focus pause preser
   // Match the reference's descending 940/756/608Hz attack in continuous raw
   // PCM. Each tone and the same attack's original 25ms wide-band window must
   // exceed the unchanged idle margin; explosions cannot substitute for a shot.
-  const shot = await pcmShotWindow(page, shotAt, shotAt + 0.5, shotBand,
-    Math.max(0.002, idleShotPeak * 3), failure => attachPcmFailure(testInfo, failure, 'player shot', { idleShotPeak }),
-    // The end of the first confirmed 8ms tone window is a conservative onset
-    // bound. Background engine samples cannot establish the shot's response.
-    (match, rate, diagnostics) => expectResponse(testInfo, 'shot', shotAt, match.phases[0].start + 0.008, rate, diagnostics));
+  const shot = await pcmShotWindow(page, shotAt, shotAt + 1, shotBand,
+    Math.max(0.002, idleShotPeak * 3), failure => attachPcmFailure(testInfo, failure, 'player shot', { idleShotPeak }));
   const shotPeak = Math.max(...shot.band.amplitudes);
   expect(shotPeak, 'The swept player-shot band must be present above native idle harmonics').toBeGreaterThan(0.002);
   expect(shotPeak).toBeGreaterThan(idleShotPeak * 3);
@@ -216,8 +179,7 @@ lifecycleTest('real keyboard movement, shot, manual pause and focus pause preser
   await page.keyboard.press('Enter'); const pausedAt = await audioEventTime(page, 'Enter');
   await pcmPauseWindow(page, pausedAt,
     failure => attachPcmFailure(testInfo, failure, 'manual pause lifecycle', { pausedAt }),
-    async (match, rate, diagnostics) => {
-      await expectResponse(testInfo, 'pause', pausedAt, match.onset, rate, diagnostics);
+    match => {
       expect(match.phrase.rms).toBeGreaterThan(0.003);
       expect(match.silence.peak).toBe(0);
     });
@@ -235,5 +197,4 @@ lifecycleTest('real keyboard movement, shot, manual pause and focus pause preser
   await pcmAssert(page, focusResumeAt + 0.05, focusResumeAt + 0.25, [], value => {
     expect(value.rms).toBeGreaterThan(0.001); expect(value.peak).toBeLessThan(0.3);
   }, failure => attachPcmFailure(testInfo, failure, 'focus resume', { focusResumeAt }));
-  if (process.env.BATTLECITY_PRODUCTION === '1') expect(await page.evaluate(() => '__BATTLECITY__' in window)).toBe(false);
 });

@@ -5,7 +5,8 @@ const kind = production ? 'production' : 'e2e';
 
 export default defineConfig({
   testDir: './tests/browser',
-  testMatch: production ? ['**/smoke.spec.ts', '**/audio-real.spec.ts'] : '**/*.spec.ts',
+  testMatch: production ? '**/smoke.spec.ts' : '**/*.spec.ts',
+  testIgnore: production ? [] : ['**/smoke.spec.ts'],
   forbidOnly: !!process.env.CI,
   retries: 0,
   // Each game needs foreground animation and focus; simultaneous browser
@@ -16,7 +17,6 @@ export default defineConfig({
   reporter: [
     [process.env.CI ? 'github' : 'list'],
     ['html', { open: 'never', outputFolder: `playwright-report/${kind}` }],
-    ['json', { outputFile: `test-results/${kind}/report.json` }],
   ],
   use: {
     baseURL: 'http://127.0.0.1:4173/',
@@ -25,8 +25,8 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    // Software-rendered WebKit includes page setup and serial keyboard RPCs.
-    { name: 'webkit', timeout: 60000, use: { ...devices['Desktop Safari'] } },
+    // WebKit gates the production keyboard, canvas and basic audio smoke suite.
+    ...(production ? [{ name: 'webkit', timeout: 60000, use: { ...devices['Desktop Safari'] } }] : []),
   ],
   webServer: {
     command: production

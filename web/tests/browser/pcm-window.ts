@@ -6,17 +6,12 @@ export interface PcmPacket { frame: number; times: number[]; frames: number[]; l
 export interface AudioEvent { kind: 'keydown' | 'blur'; code: string; at: number }
 export interface AudioMark { kind: string; at: number; tick?: number }
 type AudioReset = Extract<AudioMessage, { type: 'reset' }>;
-export interface AudioDeliveryLog {
-  entries: { at: number; message: AudioMessage }[];
-  overflow: boolean;
-  unavailable?: boolean;
-}
 export interface AudioCapture {
   ready: boolean; gameReady: boolean; errors: string[]; rate: number; context?: AudioContext; gain?: GainNode; packets: PcmPacket[];
   events: AudioEvent[]; marks: AudioMark[]; recording?: boolean; recordFromFrame?: number; firstReset?: AudioReset;
-  delivery?: AudioDeliveryLog; activateTap?: () => void;
+  activateTap?: () => void;
   retiredGraphs?: Array<{ context: AudioContext; gain?: GainNode; rate: number; packets: PcmPacket[];
-    events: AudioEvent[]; marks: AudioMark[]; firstReset?: AudioReset; delivery?: AudioDeliveryLog }>;
+    events: AudioEvent[]; marks: AudioMark[]; firstReset?: AudioReset }>;
 }
 declare global { interface Window { __AUDIO_PCM__?: AudioCapture } }
 export interface PcmFeatures { rms: number; peak: number; onset: number | null; amplitudes: number[]; samples: number; rate: number; idleReady?: boolean }
@@ -28,56 +23,14 @@ export interface PcmPauseMatch {
   onset: number; notes: { frequency: number; start: number; end: number; minimumAmplitude: number }[];
   phrase: PcmFeatures; silence: PcmFeatures;
 }
-export interface PcmResponseObservation {
-  clock: 'AudioContext'; kind: 'shot' | 'pause'; keyAt: number; onset: number | null;
-  latencyMs: number | null; resolutionMs: number; targetMs: number; targetExceeded: boolean | null;
-  functionalLimitMs: number; limitExceeded: boolean; rate: number;
-  submission?: { status: 'matched' | 'missing' | 'ambiguous' | 'unavailable';
-    at?: number; generation?: number; sequence?: number; keyToSubmitMs?: number; submitToOnsetMs?: number | null };
-}
-/** Compare sample coordinates, avoiding floating-point boundary errors at 150ms. */
-export function pcmResponseObservation(kind: PcmResponseObservation['kind'], keyAt: number, onset: number | null,
-  rate: number, diagnostics?: PcmSnapshot['diagnostics']): PcmResponseObservation {
-  if (!Number.isFinite(keyAt) || keyAt < 0 || !Number.isInteger(rate) || rate <= 0 ||
-      (onset !== null && (!Number.isFinite(onset) || onset < keyAt))) throw new Error('Invalid PCM response timing');
-  const frames = onset === null ? null : Math.round((onset - keyAt) * rate);
-  return { clock: 'AudioContext', kind, keyAt, onset, rate, latencyMs: frames === null ? null : frames / rate * 1000,
-    resolutionMs: kind === 'shot' ? 8 : 1000 / rate, targetMs: 50, functionalLimitMs: 150,
-    targetExceeded: frames === null ? null : frames > Math.floor(rate * 0.05),
-    limitExceeded: frames === null || frames > Math.floor(rate * 0.15),
-    ...(diagnostics ? { submission: submissionObservation(kind, keyAt, onset, diagnostics) } : {}) };
-}
-
-/** Optional sender evidence shares this snapshot's graph and clock. Submission
- * to onset includes transport, driver phase and recognition, not only queue time. */
-function submissionObservation(kind: PcmResponseObservation['kind'], keyAt: number, onset: number | null,
-  diagnostics: NonNullable<PcmSnapshot['diagnostics']>): NonNullable<PcmResponseObservation['submission']> {
-  try {
-    const log = diagnostics.delivery;
-    if (diagnostics.unavailable || !log || log.unavailable || log.overflow) return { status: 'unavailable' };
-    const entries = log.entries.filter(entry => entry.at >= keyAt && entry.at <= (onset ?? keyAt + 0.5));
-    if (entries.some(({ message }) => message.type === 'reset' ||
-      (kind === 'shot' && message.type === 'pause'))) return { status: 'unavailable' };
-    const matches = entries.filter(({ message }) => kind === 'shot'
-      ? message.type === 'commands' && message.commands.some(command => command.id === 0x0f && command.start)
-      : message.type === 'pause' && message.paused && message.reason === 'manual');
-    if (matches.length !== 1) return { status: matches.length ? 'ambiguous' : 'missing' };
-    const { at, message } = matches[0];
-    if (message.type === 'reset') return { status: 'unavailable' };
-    return { status: 'matched', at, generation: message.generation, sequence: message.sequence,
-      keyToSubmitMs: (at - keyAt) * 1000, submitToOnsetMs: onset === null ? null : (onset - at) * 1000 };
-  } catch { return { status: 'unavailable' }; }
-}
 export interface PcmSnapshot {
   ready: boolean; gameReady: boolean; errors: string[]; rate: number;
   packets: (Omit<PcmPacket, 'samples'> & { samplesBase64: string })[];
-  diagnostics?: { events?: AudioEvent[]; marks?: AudioMark[];
-    firstReset?: AudioReset; delivery?: AudioDeliveryLog; unavailable?: boolean };
 }
 export interface PcmShotParameters { start: number; end: number; frequencies: readonly number[]; minimumAmplitude: number }
 export interface PcmShotFailure {
   parameters: PcmShotParameters; snapshot?: PcmSnapshot; match?: PcmShotMatch; error: unknown;
-  stage: 'coverage' | 'sampling' | 'measurement' | 'polling' | 'assertion';
+  stage: 'coverage' | 'sampling' | 'measurement';
 }
 
 export type PcmShotFailureObserver = (failure: PcmShotFailure) => void | Promise<void>;
@@ -120,7 +73,7 @@ export function snapshotPcmWindow({ start, end }: { start: number; end: number }
       if (!(packet.samples instanceof Float32Array)) throw new Error('Malformed PCM packet');
       const bytes = new Uint8Array(packet.samples.buffer, packet.samples.byteOffset, packet.samples.byteLength);
       // Native byte encoding avoids materializing/spreading thousands of JS
-      // characters on the game's thread while its audio deadlines are live.
+      // characters on the game's thread while audio is playing.
       const native = bytes as Uint8Array & { toBase64?: () => string };
       let samplesBase64: string;
       if (typeof native.toBase64 === 'function') samplesBase64 = native.toBase64();
@@ -132,17 +85,6 @@ export function snapshotPcmWindow({ start, end }: { start: number; end: number }
       return { frame: packet.frame, times: [...packet.times], frames: [...packet.frames], lengths: [...packet.lengths],
         samplesBase64 };
     }) };
-  // These optional observations never participate in PCM validation or require
-  // another browser read. A broken observer must not replace the PCM result.
-  try {
-    const firstReset = pcm.firstReset;
-    if (firstReset || pcm.events.length || pcm.marks.length || pcm.delivery) snapshot.diagnostics = {
-      events: pcm.events.map(event => ({ ...event })), marks: pcm.marks.map(mark => ({ ...mark })),
-      ...(firstReset ? { firstReset: { ...firstReset, music: [...firstReset.music] } } : {}),
-      ...(pcm.delivery ? { delivery: { ...pcm.delivery, entries: pcm.delivery.entries.map(({ at, message }) => ({ at,
-        message: message.type === 'reset' ? { ...message, music: [...message.music] }
-          : { ...message, commands: message.commands.map(command => ({ ...command })) } })) } } : {}) };
-  } catch { snapshot.diagnostics = { unavailable: true }; }
   return snapshot;
 }
 
@@ -265,7 +207,7 @@ export function pcmShotWindowFeatures({ start, end, frequencies, minimumAmplitud
   if (pcm.errors.length) throw new Error(pcm.errors.join('\n'));
   if (pcm.packets.length > 768) throw new Error('PCM capture exceeded its bounded packet capacity');
   if (!Number.isInteger(pcm.rate) || pcm.rate <= 0 || !Number.isFinite(start) || !Number.isFinite(end) ||
-      start < 0 || end - start < 0.025 || end - start > 0.5 + 1e-9 ||
+      start < 0 || end - start < 0.025 || end - start > 1 + 1e-9 ||
       !Number.isFinite(minimumAmplitude) || minimumAmplitude < 0.002 ||
       frequencies.length !== 27 || frequencies.some((frequency, index) => frequency !== 600 + 25 * index)) {
     throw new Error('Invalid bounded PCM shot scan');
@@ -284,7 +226,7 @@ export function pcmShotWindowFeatures({ start, end, frequencies, minimumAmplitud
   const earlier: [PcmShotPhase[], PcmShotPhase[]] = [[], []];
   const adjacent = (first: PcmShotPhase, second: PcmShotPhase) =>
     second.start - first.start >= 0.004 - 1e-9 && second.start - first.start <= 0.018 + 1e-9;
-  // At most 247 overlapping windows cover the original half-second range.
+  // At most 497 overlapping windows cover the one-second capture.
   // Validate each raw interval before classifying it, including quiet windows.
   for (let index = 0; start + index * step + duration <= limit + 1e-9; index++) {
     const at = start + index * step;
@@ -365,7 +307,7 @@ function pcmSamples(start: number, end: number, pcm: AudioCapture): { first: num
  * candidates only; all seven timed notes must match before accepting an onset.
  */
 export function pcmPauseWindowFeatures(start: number, pcm: AudioCapture): PcmPauseMatch {
-  const end = start + 1;
+  const end = start + 2;
   if (pcm.packets.length > 768) throw new Error('PCM capture exceeded its bounded packet capacity');
   pcmWindowFeatures({ start, end, frequencies: [] }, pcm); // Validate the entire interval, including its tail.
   const { first, samples } = pcmSamples(start, end, pcm);

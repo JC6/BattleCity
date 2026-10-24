@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { readFile, readdir } from 'node:fs/promises';
-import type {} from './helpers';
+import { attachPcmFailure, audioEventTime, audioReady, installPcmProbe, pcmAssert } from './audio-probe';
+import { nativePixels } from './native-pixels';
 import { controllerKey, probeCanvas, readyCanvasWithClock, renderedStageTwo, waitForCanvasMenu } from './visual-probes';
 
 test('production entry loads assets and responds to controller keys without errors', async ({ page }) => {
@@ -45,31 +46,27 @@ test('production entry loads assets and responds to controller keys without erro
   expect(moved.bullet, 'Movement alone must not look like a shot').toBe(false);
   await controllerKey(page, 'j', 100);
   expect((await probeCanvas(page)).bullet, 'J must render an upward projectile in the empty corridor').toBe(true);
-  if (process.env.BATTLECITY_PRODUCTION === '1') {
-    expect(await page.evaluate(() => typeof window.__BATTLECITY__)).toBe('undefined');
-    // Include lazy chunks and the Worklet, not just scripts linked by index.html.
-    const assets = await readdir(new URL('../../dist/assets/', import.meta.url), { withFileTypes: true });
-    expect(assets.length).toBeGreaterThan(0);
-    for (const asset of assets) {
-      expect(asset.isFile(), asset.name).toBe(true);
-      expect(asset.name).toMatch(/^[a-zA-Z0-9._-]+$/);
-      const response = await page.request.get(`/assets/${asset.name}`);
-      expect(response.ok(), asset.name).toBe(true);
-      const bytes = await response.body();
-      expect(bytes.length, asset.name).toBeGreaterThan(0);
-      if (asset.name.endsWith('.js')) expect(bytes.toString('utf8'), asset.name)
-        .not.toMatch(/__BATTLECITY__|setEditorTile|getEditorTiles|renderScene/);
-    }
-    for (const [published, source] of [
-      ['LICENSE.txt', '../../../LICENSE'],
-      ['THIRD_PARTY_NOTICES.md', '../../THIRD_PARTY_NOTICES.md'],
-    ]) {
-      const response = await page.request.get(published);
-      expect(response.ok(), published).toBe(true);
-      expect((await response.body()).equals(await readFile(new URL(source, import.meta.url))), published).toBe(true);
-    }
-  } else {
-    expect(await page.evaluate(() => window.__BATTLECITY__!.state())).toMatchObject({ stage: 2, phase: 'playing' });
+  expect(await page.evaluate(() => typeof window.__BATTLECITY__)).toBe('undefined');
+  // Include lazy chunks and the Worklet, not just scripts linked by index.html.
+  const assets = await readdir(new URL('../../dist/assets/', import.meta.url), { withFileTypes: true });
+  expect(assets.length).toBeGreaterThan(0);
+  for (const asset of assets) {
+    expect(asset.isFile(), asset.name).toBe(true);
+    expect(asset.name).toMatch(/^[a-zA-Z0-9._-]+$/);
+    const response = await page.request.get(`/assets/${asset.name}`);
+    expect(response.ok(), asset.name).toBe(true);
+    const bytes = await response.body();
+    expect(bytes.length, asset.name).toBeGreaterThan(0);
+    if (asset.name.endsWith('.js')) expect(bytes.toString('utf8'), asset.name)
+      .not.toMatch(/__BATTLECITY__|setEditorTile|getEditorTiles|renderScene/);
+  }
+  for (const [published, source] of [
+    ['LICENSE.txt', '../../../LICENSE'],
+    ['THIRD_PARTY_NOTICES.md', '../../THIRD_PARTY_NOTICES.md'],
+  ]) {
+    const response = await page.request.get(published);
+    expect(response.ok(), published).toBe(true);
+    expect((await response.body()).equals(await readFile(new URL(source, import.meta.url))), published).toBe(true);
   }
   await page.clock.resume();
   await page.reload();
@@ -108,55 +105,37 @@ test('Construction can be entered, edited and left entirely with the keyboard', 
   expect(returned.pixelsSHA256).toBe(menu.pixelsSHA256);
 });
 
-test('desktop resizing recalculates integer scale without clipping the canvas', async ({ page }) => {
-  await page.goto('./');
-  const canvas = page.locator('#game-canvas canvas');
-  await expect(canvas).toBeVisible();
-  for (const viewport of [{ width: 1280, height: 720 }, { width: 320, height: 240 }, { width: 390, height: 844 }]) {
-    await page.setViewportSize(viewport);
-    const scale = Math.floor(Math.min(viewport.width / 256, viewport.height / 240));
-    await expect.poll(async () => {
-      const box = (await canvas.boundingBox())!;
-      return { width: Math.round(box.width), height: Math.round(box.height) };
-    }).toEqual({ width: 256 * scale, height: 240 * scale });
-    const box = (await canvas.boundingBox())!;
-    expect(box.x).toBeGreaterThanOrEqual(-1);
-    expect(box.y).toBeGreaterThanOrEqual(-1);
-    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
-    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
+test('cooperative play starts two players from the keyboard', async ({ page }) => {
+  await readyCanvasWithClock(page);
+  await controllerKey(page, 'ShiftRight');
+  await controllerKey(page, 'Enter');
+  expect((await probeCanvas(page)).stageSelect).toBe(1);
+  await controllerKey(page, 'j');
+  await controllerKey(page, 'Enter');
+  const battle = await renderedStageTwo(page);
+  expect(battle.player).not.toBeNull();
+  const pixels = await nativePixels(page);
+  let green = 0, darkGreen = 0;
+  // The second player's cleared spawn block contains its green tank, while
+  // spawn stars and the shield cannot supply the two required tank colors.
+  for (let y = 208; y < 224; y++) for (let x = 144; x < 160; x++) {
+    const offset = (y * 256 + x) * 4;
+    const color = pixels[offset] << 16 | pixels[offset + 1] << 8 | pixels[offset + 2];
+    green += Number(color === 0x80d010); darkGreen += Number(color === 0x005800);
   }
+  expect(green).toBeGreaterThanOrEqual(40); expect(darkGreen).toBeGreaterThanOrEqual(15);
 });
 
-for (const size of [
-  { name: 'short desktop', width: 560, height: 320 },
-  { name: 'desktop', width: 1280, height: 720 },
-  { name: 'narrow desktop', width: 390, height: 844 },
-]) {
-  for (const deviceScaleFactor of [1, 2]) {
-    test.describe(`${size.name}, DPR ${deviceScaleFactor}`, () => {
-      test.use({ viewport: { width: size.width, height: size.height }, deviceScaleFactor });
-      test('retains the native pixel ratio and keeps the whole canvas in the viewport', async ({ page }) => {
-        await page.goto('./');
-        const canvas = page.locator('#game-canvas canvas');
-        await expect(canvas).toBeVisible();
-        const dimensions = await canvas.evaluate(element => {
-          const canvas = element as HTMLCanvasElement;
-          const rect = canvas.getBoundingClientRect();
-          return { width: rect.width, height: rect.height, x: rect.x, y: rect.y,
-            backingWidth: canvas.width, backingHeight: canvas.height,
-            scrollWidth: document.documentElement.scrollWidth,
-            scrollHeight: document.documentElement.scrollHeight };
-        });
-        expect(dimensions.width / dimensions.height).toBeCloseTo(256 / 240, 3);
-        expect(dimensions.backingWidth / dimensions.backingHeight).toBeCloseTo(256 / 240, 3);
-        expect(dimensions.width / 256).toBeCloseTo(Math.round(dimensions.width / 256), 3);
-        expect(dimensions.x).toBeGreaterThanOrEqual(-1);
-        expect(dimensions.y).toBeGreaterThanOrEqual(-1);
-        expect(dimensions.x + dimensions.width).toBeLessThanOrEqual(size.width + 1);
-        expect(dimensions.y + dimensions.height).toBeLessThanOrEqual(size.height + 1);
-        expect(dimensions.scrollWidth).toBeLessThanOrEqual(size.width + 1);
-        expect(dimensions.scrollHeight).toBeLessThanOrEqual(size.height + 1);
-      });
-    });
-  }
-}
+test('the production Worklet plays audible opening PCM after keyboard Start', async ({ page }, testInfo) => {
+  test.setTimeout(60000);
+  await installPcmProbe(page);
+  await page.goto('./'); await page.bringToFront(); await waitForCanvasMenu(page);
+  await page.keyboard.press('Enter'); await audioReady(page);
+  await expect.poll(async () => (await probeCanvas(page)).stageSelect).toBe(1);
+  await page.keyboard.press('Enter'); const keyAt = await audioEventTime(page, 'Enter');
+  await pcmAssert(page, keyAt, keyAt + 1, [], value => {
+    expect(value.onset).not.toBeNull();
+    expect(value.rms).toBeGreaterThan(0.001); expect(value.peak).toBeLessThan(0.5);
+  }, failure => attachPcmFailure(testInfo, failure, 'production opening', { keyAt }));
+  expect(await page.evaluate(() => '__BATTLECITY__' in window)).toBe(false);
+});

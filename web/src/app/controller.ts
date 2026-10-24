@@ -68,52 +68,28 @@ export class AppController {
 
   start(mode: GameMode, stage: number, carries?: PlayerCarry[], custom = this.customMapReady): void {
     if (this.disposed) return;
-    const prepared = this.state.kind === 'stage-select' ? this.state.prepared : null;
-    if (this.state.kind === 'stage-select') this.state.prepared = null;
-    let engine: GameEngine;
     if (!carries) this.runHighScore = this.highScore;
     this.clearLossPresentation();
     this.input.clear(); this.audio.stopScene();
     const normalizedStage = normalizeStage(stage);
-    if (this.screen === 'stage-select' && !custom && !this.customMapReady && carries === undefined &&
-        prepared?.mode === mode && prepared.stage === normalizedStage &&
-        prepared.engine.state.tick === 0 && prepared.engine.state.phase === 'intro') {
-      engine = prepared.engine;
-    } else {
-      const level = getLevel(normalizedStage);
-      if (custom) {
-        level.tiles = this.construction.tiles;
-        // Starting a constructed stage restores the eagle without rebuilding
-        // its surrounding walls. Player/enemy spawning clears its own terrain.
-        const cell = BASE_Y / TILE_SIZE * GRID_SIZE + BASE_X / TILE_SIZE;
-        for (const index of [cell, cell + 1, cell + GRID_SIZE, cell + GRID_SIZE + 1]) level.tiles[index] = 0;
-      }
-      engine = new GameEngine(level, {
-        mode, stage: normalizedStage, seed: this.ports.seed(),
-        ...(carries ? { players: carries } : {}),
-      });
+    const level = getLevel(normalizedStage);
+    if (custom) {
+      level.tiles = this.construction.tiles;
+      // Starting a constructed stage restores the eagle without rebuilding
+      // its surrounding walls. Player/enemy spawning clears its own terrain.
+      const cell = BASE_Y / TILE_SIZE * GRID_SIZE + BASE_X / TILE_SIZE;
+      for (const index of [cell, cell + 1, cell + GRID_SIZE, cell + GRID_SIZE + 1]) level.tiles[index] = 0;
     }
+    const engine = new GameEngine(level, {
+      mode, stage: normalizedStage, seed: this.ports.seed(),
+      ...(carries ? { players: carries } : {}),
+    });
     this.state = { kind: 'game', engine }; this.accumulator = 0;
     this.presentationSuspended = false;
     this.scene.draft = null; this.scene.state = engine.state;
     this.scene.resetAnimation(); this.scene.observeStep(engine.state);
     this.audio.syncState(engine.state); this.audio.commitFrame();
     this.present();
-  }
-
-  private prepareSelectedStart(): void {
-    if (this.state.kind !== 'stage-select') return;
-    this.state.prepared = null;
-    if (this.customMapReady) return;
-    try {
-      const mode = this.selectedMode, stage = normalizeStage(this.selectedStage);
-      // Only pure tick-zero state is prepared. Its random seed is sampled here;
-      // no scene, audio or simulation step observes it before a matching Start.
-      const engine = new GameEngine(getLevel(stage), {
-        mode, stage, seed: this.ports.seed(),
-      });
-      this.state.prepared = { mode, stage, engine };
-    } catch { /* A failed preparation leaves Start's original fresh path intact. */ }
   }
 
   private menu(): void {
@@ -148,8 +124,7 @@ export class AppController {
       if (this.menuSelection === 2) this.openEditor();
       else {
         this.selectedMode = this.menuSelection === 1 ? 'coop' : 'single';
-        this.state = { kind: 'stage-select', prepared: null }; this.input.clear(); this.accumulator = 0; this.present();
-        this.prepareSelectedStart();
+        this.state = { kind: 'stage-select' }; this.input.clear(); this.accumulator = 0; this.present();
       }
     } else if (this.screen === 'stage-select') this.start(this.selectedMode, this.selectedStage);
     else if (this.screen === 'editor') this.menu();
@@ -197,7 +172,6 @@ export class AppController {
         const pad = this.input.readPads()[0];
         if (pad.aPressed !== pad.bPressed) {
           this.selectedStage = (this.selectedStage - 1 + (pad.aPressed ? 1 : 34)) % 35 + 1;
-          this.prepareSelectedStart();
         }
       } else if (isTimedState(this.state)) {
         this.input.readPads();

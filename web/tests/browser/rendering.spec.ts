@@ -24,8 +24,8 @@ async function draw(page: Page, value: Fixture): Promise<void> {
     scene.onFrame = () => {}; scene.resetAnimation(); Object.assign(scene, value);
     if (scene.state) scene.observeStep(scene.state);
   }, value);
-  // Allow several animation-frame callbacks for Phaser depth sorting and WebKit's
-  // compositor to publish the replaced fixture. The simulation stays frozen.
+  // Allow animation callbacks for depth sorting and the compositor to publish
+  // the replaced fixture. The simulation stays frozen.
   await page.clock.runFor(67);
 }
 async function check(page: Page, name: string): Promise<void> {
@@ -34,9 +34,7 @@ async function check(page: Page, name: string): Promise<void> {
 }
 async function expectFrame(page: Page, expected: string, label: string, integerBlocks = false,
   bounds?: readonly [number, number, number, number]): Promise<void> {
-  // WebKit may capture the previous compositor buffer after the scene has
-  // rendered. Advance the frozen fixture until its actual screenshot arrives;
-  // keep the default assertion budget and exact independent pixel hash.
+  // Advance the frozen fixture until its compositor screenshot arrives.
   await expect.poll(async () => {
     await page.clock.runFor(34);
     const pixels = await nativePixels(page, integerBlocks);
@@ -149,3 +147,56 @@ test('unavailable WebGL preserves every golden native pixel on its integer block
   }
   await checkMenuHeaders(page, true);
 });
+
+test('desktop resizing recalculates integer scale without clipping the canvas', async ({ page }) => {
+  await page.goto('./');
+  const canvas = page.locator('#game-canvas canvas');
+  await expect(canvas).toBeVisible();
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 320, height: 240 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    const scale = Math.floor(Math.min(viewport.width / 256, viewport.height / 240));
+    await expect.poll(async () => {
+      const box = (await canvas.boundingBox())!;
+      return { width: Math.round(box.width), height: Math.round(box.height) };
+    }).toEqual({ width: 256 * scale, height: 240 * scale });
+    const box = (await canvas.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(-1);
+    expect(box.y).toBeGreaterThanOrEqual(-1);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
+    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
+  }
+});
+
+for (const size of [
+  { name: 'short desktop', width: 560, height: 320 },
+  { name: 'desktop', width: 1280, height: 720 },
+  { name: 'narrow desktop', width: 390, height: 844 },
+]) {
+  for (const deviceScaleFactor of [1, 2]) {
+    test.describe(`${size.name}, DPR ${deviceScaleFactor}`, () => {
+      test.use({ viewport: { width: size.width, height: size.height }, deviceScaleFactor });
+      test('retains the native pixel ratio and keeps the whole canvas in the viewport', async ({ page }) => {
+        await page.goto('./');
+        const canvas = page.locator('#game-canvas canvas');
+        await expect(canvas).toBeVisible();
+        const dimensions = await canvas.evaluate(element => {
+          const canvas = element as HTMLCanvasElement;
+          const rect = canvas.getBoundingClientRect();
+          return { width: rect.width, height: rect.height, x: rect.x, y: rect.y,
+            backingWidth: canvas.width, backingHeight: canvas.height,
+            scrollWidth: document.documentElement.scrollWidth,
+            scrollHeight: document.documentElement.scrollHeight };
+        });
+        expect(dimensions.width / dimensions.height).toBeCloseTo(256 / 240, 3);
+        expect(dimensions.backingWidth / dimensions.backingHeight).toBeCloseTo(256 / 240, 3);
+        expect(dimensions.width / 256).toBeCloseTo(Math.round(dimensions.width / 256), 3);
+        expect(dimensions.x).toBeGreaterThanOrEqual(-1);
+        expect(dimensions.y).toBeGreaterThanOrEqual(-1);
+        expect(dimensions.x + dimensions.width).toBeLessThanOrEqual(size.width + 1);
+        expect(dimensions.y + dimensions.height).toBeLessThanOrEqual(size.height + 1);
+        expect(dimensions.scrollWidth).toBeLessThanOrEqual(size.width + 1);
+        expect(dimensions.scrollHeight).toBeLessThanOrEqual(size.height + 1);
+      });
+    });
+  }
+}

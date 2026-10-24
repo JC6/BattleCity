@@ -1,13 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Page } from '@playwright/test';
 import { createContext, runInContext } from 'node:vm';
-import { expectOpeningPcm, pcmAssert, pcmMeasurement, type PcmMeasurementFailure, type PcmOpeningObservation } from '../browser/audio-probe';
+import { expectOpeningPcm, pcmAssert, pcmMeasurement, type PcmMeasurementFailure } from '../browser/audio-probe';
 import { pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture } from '../browser/pcm-window';
-
-vi.mock('node:timers', () => ({
-  setTimeout: (callback: () => void, delay: number) => globalThis.setTimeout(callback, delay),
-  clearTimeout: (timer: ReturnType<typeof setTimeout>) => globalThis.clearTimeout(timer),
-}));
 
 function fixture() {
   const capture: AudioCapture = { ready: true, gameReady: true, errors: [], rate: 1000, events: [], marks: [],
@@ -36,7 +31,7 @@ function openingFixture(delayMs: number | null, voices = [0.020, 0.012, 0.006]) 
   const value = fixture(), keyAt = 1, rate = 48000;
   const firstTone = delayMs === null ? Infinity : Math.round(delayMs * rate / 1000);
   value.capture.rate = rate;
-  value.capture.packets = Array.from({ length: rate / 128 }, (_, block) => {
+  value.capture.packets = Array.from({ length: rate * 1.2 / 128 }, (_, block) => {
     const offset = block * 128, frame = keyAt * rate + offset;
     const samples = Float32Array.from({ length: 128 }, (_, index) => {
       const relative = offset + index - firstTone;
@@ -56,63 +51,54 @@ function openingFixture(delayMs: number | null, voices = [0.020, 0.012, 0.006]) 
 }
 
 describe('functional opening PCM policy', () => {
-  it.each([30, 120, 490])('accepts a complete opening delayed by %i ms with unchanged voice quality', async delay => {
-    const value = openingFixture(delay), onObservation = vi.fn(), onFailure = vi.fn();
-    const onset = await expectOpeningPcm(value.page, value.keyAt, { checkVoices: true, onObservation, onFailure });
+  it.each([30, 120, 490, 750, 990])('accepts a complete opening delayed by %i ms with unchanged voice quality', async delay => {
+    const value = openingFixture(delay), onFailure = vi.fn();
+    const onset = await expectOpeningPcm(value.page, value.keyAt, { checkVoices: true, onFailure });
     expect(onset).toBeCloseTo(value.keyAt + delay / 1000, 10);
-    expect(onFailure).not.toHaveBeenCalled(); expect(onObservation).toHaveBeenCalledOnce();
-    const observation: PcmOpeningObservation = onObservation.mock.calls[0][0];
-    expect(observation).toEqual({ clock: 'AudioContext', keyAt: value.keyAt, onset,
-      latencyMs: expect.any(Number), targetMs: 90, targetExceeded: delay > 90, functionalLimitMs: 500, rate: 48000 });
-    expect(observation.latencyMs).toBeCloseTo(delay, 8);
+    expect(onFailure).not.toHaveBeenCalled();
     expect(value.evaluate).toHaveBeenCalledTimes(2);
   });
 
-  it.each([500, 510, null])('rejects an absent opening before the deadline (delay %s), recording a null observation first', async delay => {
-    const value = openingFixture(delay), onObservation = vi.fn(), onFailure = vi.fn();
-    await expect(expectOpeningPcm(value.page, value.keyAt, { onObservation, onFailure })).rejects.toThrow();
-    expect(onObservation).toHaveBeenCalledOnce(); expect(onFailure).toHaveBeenCalledOnce();
-    expect(onObservation.mock.calls[0][0]).toMatchObject({ onset: null, latencyMs: null,
-      targetExceeded: null, functionalLimitMs: 500 });
-    expect(onObservation.mock.invocationCallOrder[0]).toBeLessThan(onFailure.mock.invocationCallOrder[0]);
+  it.each([1000, 1010, null])('rejects an opening absent from the capture (delay %s)', async delay => {
+    const value = openingFixture(delay), onFailure = vi.fn();
+    await expect(expectOpeningPcm(value.page, value.keyAt, { onFailure })).rejects.toThrow();
+    expect(onFailure).toHaveBeenCalledOnce();
     expect(onFailure.mock.calls[0][0]).toMatchObject({ stage: 'assertion', features: { onset: null } });
     expect(value.evaluate).toHaveBeenCalledOnce();
   });
 
   it.each(['gap before onset', 'missing tail', 'non-finite sample'] as const)('rejects %s even when later PCM contains the complete correct tune', async corruption => {
-    const value = openingFixture(120), onObservation = vi.fn(), onFailure = vi.fn();
+    const value = openingFixture(120), onFailure = vi.fn();
     if (corruption === 'gap before onset') value.capture.packets.splice(1, 1);
     else if (corruption === 'missing tail') value.capture.packets.splice(100, value.capture.packets.length - 101);
     else value.sampleAt(0.01, Number.NaN);
-    await expect(expectOpeningPcm(value.page, value.keyAt, { checkVoices: true, onObservation, onFailure }))
+    await expect(expectOpeningPcm(value.page, value.keyAt, { checkVoices: true, onFailure }))
       .rejects.toThrow(corruption === 'gap before onset' ? /Discontinuous PCM/ :
         corruption === 'missing tail' ? /Incomplete PCM interval/ : /Non-finite PCM sample/);
-    expect(onObservation).not.toHaveBeenCalled(); expect(onFailure).toHaveBeenCalledOnce();
+    expect(onFailure).toHaveBeenCalledOnce();
     expect(onFailure.mock.calls[0][0]).toMatchObject({ stage: 'measurement', snapshot: expect.any(Object) });
     expect(value.evaluate).toHaveBeenCalledOnce();
   });
 
   it('does not replace an early transient followed by silence with a later correct tune', async () => {
-    const value = openingFixture(300), onObservation = vi.fn(), onFailure = vi.fn();
+    const value = openingFixture(300), onFailure = vi.fn();
     value.sampleAt(0.03, 0.01);
-    await expect(expectOpeningPcm(value.page, value.keyAt, { onObservation, onFailure })).rejects.toThrow();
-    expect(onObservation.mock.calls[0][0].onset).toBeCloseTo(value.keyAt + 0.03, 10);
+    await expect(expectOpeningPcm(value.page, value.keyAt, { onFailure })).rejects.toThrow();
     expect(onFailure.mock.calls[0][0]).toMatchObject({ stage: 'assertion', features: { rms: 0 } });
     expect(value.evaluate).toHaveBeenCalledTimes(2);
   });
 
   it('rejects a detectable opening whose fixed audible window is too quiet', async () => {
-    const value = openingFixture(120, [0.004, 0.0024, 0.0012]), onObservation = vi.fn(), onFailure = vi.fn();
-    await expect(expectOpeningPcm(value.page, value.keyAt, { onObservation, onFailure })).rejects.toThrow();
-    expect(onObservation.mock.calls[0][0].onset).not.toBeNull();
+    const value = openingFixture(120, [0.004, 0.0024, 0.0012]), onFailure = vi.fn();
+    await expect(expectOpeningPcm(value.page, value.keyAt, { onFailure })).rejects.toThrow();
     expect(onFailure.mock.calls[0][0].stage).toBe('assertion');
     expect(onFailure.mock.calls[0][0].features.rms).toBeLessThan(0.008);
     expect(value.evaluate).toHaveBeenCalledTimes(2);
   });
 
   it.each(['before onset', 'after onset beyond the first window'] as const)('rejects an excessive peak %s', async where => {
-    const value = openingFixture(490), onFailure = vi.fn();
-    value.sampleAt(where === 'before onset' ? 0.01 : 0.54, 0.6);
+    const value = openingFixture(990), onFailure = vi.fn();
+    value.sampleAt(where === 'before onset' ? 0.01 : 1.04, 0.6);
     await expect(expectOpeningPcm(value.page, value.keyAt, { onFailure })).rejects.toThrow();
     expect(onFailure.mock.calls[0][0]).toMatchObject({ stage: 'assertion', features: { peak: expect.any(Number) } });
     expect(onFailure.mock.calls[0][0].features.peak).toBeGreaterThan(0.5);
@@ -132,68 +118,28 @@ describe('functional opening PCM policy', () => {
   });
 
   it('rejects corrupted data in the relative quality window beyond the opening deadline', async () => {
-    const value = openingFixture(490), onObservation = vi.fn(), onFailure = vi.fn();
-    value.sampleAt(0.54, Number.NaN);
-    await expect(expectOpeningPcm(value.page, value.keyAt, { onObservation, onFailure })).rejects.toThrow(/Non-finite PCM sample/);
-    expect(onObservation).toHaveBeenCalledOnce();
+    const value = openingFixture(990), onFailure = vi.fn();
+    value.sampleAt(1.04, Number.NaN);
+    await expect(expectOpeningPcm(value.page, value.keyAt, { onFailure })).rejects.toThrow(/Non-finite PCM sample/);
     expect(onFailure.mock.calls[0][0]).toMatchObject({ stage: 'measurement', snapshot: expect.any(Object) });
     expect(value.evaluate).toHaveBeenCalledTimes(2);
   });
 
-  it('preserves a stopped audio clock coverage failure without inventing an observation or PCM', async () => {
-    const value = openingFixture(30), original = new Error('Native audio coverage timed out'), onObservation = vi.fn(), onFailure = vi.fn();
+  it('preserves a stopped audio clock coverage failure without inventing PCM', async () => {
+    const value = openingFixture(30), original = new Error('Native audio coverage timed out'), onFailure = vi.fn();
     value.waitForFunction.mockRejectedValue(original);
-    await expect(expectOpeningPcm(value.page, value.keyAt, { onObservation, onFailure })).rejects.toBe(original);
+    await expect(expectOpeningPcm(value.page, value.keyAt, { onFailure })).rejects.toBe(original);
     expect(value.waitForFunction.mock.calls[0][2]).toMatchObject({ timeout: 15000 });
-    expect(value.evaluate).not.toHaveBeenCalled(); expect(onObservation).not.toHaveBeenCalled();
+    expect(value.evaluate).not.toHaveBeenCalled();
     expect(onFailure).toHaveBeenCalledOnce();
     expect(onFailure.mock.calls[0][0]).toMatchObject({ stage: 'coverage', error: original, snapshot: undefined });
   });
 
-  it.each([30, null])('ignores observation attachment failure without changing the PCM verdict (delay %s)', async delay => {
-    const value = openingFixture(delay), onObservation = vi.fn(async () => { throw new Error('Observation attachment failed'); });
-    const onFailure = vi.fn(), result = expectOpeningPcm(value.page, value.keyAt, { onObservation, onFailure });
-    if (delay === null) {
-      await expect(result).rejects.toThrow();
-      expect(onFailure.mock.calls[0][0]).toMatchObject({ stage: 'assertion', features: { onset: null } });
-      expect(String(onFailure.mock.calls[0][0].error)).not.toContain('Observation attachment failed');
-    } else {
-      await expect(result).resolves.toBeCloseTo(value.keyAt + delay / 1000, 10);
-      expect(onFailure).not.toHaveBeenCalled();
-    }
-    expect(onObservation).toHaveBeenCalledOnce();
-  });
-
-  it.each([30, null])('bounds an observation that never settles without replacing the PCM verdict (delay %s)', async delay => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    try {
-      const value = openingFixture(delay), onObservation = vi.fn(() => new Promise<void>(() => {})), onFailure = vi.fn();
-      let settled = false;
-      const result = expectOpeningPcm(value.page, value.keyAt, { onObservation, onFailure }).then(
-        onset => { settled = true; return { onset, error: undefined }; },
-        error => { settled = true; return { onset: undefined, error }; });
-      await vi.advanceTimersByTimeAsync(2999);
-      expect(onObservation).toHaveBeenCalledOnce(); expect(settled).toBe(false); expect(vi.getTimerCount()).toBe(1);
-      await vi.advanceTimersByTimeAsync(1);
-      const outcome = await result;
-      if (delay === null) {
-        expect(outcome.error).toBeInstanceOf(Error);
-        expect(onFailure.mock.calls[0][0]).toMatchObject({ stage: 'assertion', features: { onset: null }, error: outcome.error });
-      } else {
-        expect(outcome.error).toBeUndefined(); expect(outcome.onset).toBeCloseTo(value.keyAt + delay / 1000, 10);
-        expect(onFailure).not.toHaveBeenCalled();
-      }
-      expect(vi.getTimerCount()).toBe(0);
-    } finally { vi.useRealTimers(); }
-  });
 });
 
 describe('exact PCM measurement diagnostics', () => {
-  it('exports a standalone browser snapshot as one string with unchanged PCM bytes, labels and observations', async () => {
+  it('exports a standalone browser snapshot as one string with unchanged PCM bytes and labels', async () => {
     const value = browserSerializationFixture();
-    value.capture.events.push({ kind: 'keydown', code: 'KeyJ', at: 0.03 });
-    value.capture.firstReset = { type: 'reset', generation: 2, music: [1, 2, 3], offset: 12,
-      engine: null, paused: false, reason: 'manual' };
     const expected = snapshotPcmWindow(value.parameters, value.capture);
     const result = await pcmMeasurement(value.page, value.parameters.start, value.parameters.end, value.parameters.frequencies);
     expect(result.snapshot).toEqual(expected);

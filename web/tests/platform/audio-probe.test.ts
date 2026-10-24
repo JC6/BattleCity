@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Page } from '@playwright/test';
 import { createContext, runInContext } from 'node:vm';
 import { attachPcmFailure, beginPcmCapture, installPcmProbe, pcmShotWindow } from '../browser/audio-probe';
-import { observePcmShotFailure, pcmResponseObservation, pcmShotWindowFeatures, pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture, type PcmPacket } from '../browser/pcm-window';
+import { observePcmShotFailure, pcmShotWindowFeatures, pcmWindowFeatures, restorePcmSnapshot, snapshotPcmWindow, type AudioCapture, type PcmPacket } from '../browser/pcm-window';
 import { ApuDriver } from '../../src/platform/apu-driver';
 import { ApuSynth } from '../../src/platform/apu-synth';
 
@@ -31,7 +31,7 @@ function pageInRealm(realm: ReturnType<typeof createContext>): Page {
 }
 
 describe('deferred native audio event observation', () => {
-  async function eventFixture(currentTime: () => number, observeDelivery = false) {
+  async function eventFixture(currentTime: () => number) {
     const listeners = new Map<string, ((event: { code?: string; repeat?: boolean }) => void)[]>();
     const browserWindow: { __AUDIO_PCM__?: AudioCapture; addEventListener: (kind: string,
       listener: (event: { code?: string; repeat?: boolean }) => void) => void } = {
@@ -47,7 +47,7 @@ describe('deferred native audio event observation', () => {
     const realm = createContext({ window: browserWindow, AudioNode, AudioDestinationNode, GainNode, AudioWorkletNode, AudioContext,
       Blob, URL: { createObjectURL: () => 'blob:pcm-fixture', revokeObjectURL() {} } });
     const page = pageInRealm(realm);
-    await installPcmProbe(page, { deferRecording: true, observeDelivery });
+    await installPcmProbe(page, { deferRecording: true });
     const capture = browserWindow.__AUDIO_PCM__!;
     capture.context = { state: 'running', get currentTime() { return currentTime(); } } as unknown as NonNullable<AudioCapture['context']>;
     capture.rate = 44100; capture.ready = true; capture.gameReady = true;
@@ -56,9 +56,9 @@ describe('deferred native audio event observation', () => {
     };
     return { page, capture, emit, AudioNode, AudioDestinationNode, GainNode, AudioWorkletNode, AudioContext };
   }
-  async function transportFixture(observeDelivery = false) {
+  async function transportFixture() {
     const clock = vi.fn((): number => { throw new Error('Transport must not read native audio time'); });
-    const fixture = await eventFixture(clock, observeDelivery);
+    const fixture = await eventFixture(clock);
     const result = { delegated: true };
     const post = vi.fn(function (this: unknown, ..._args: unknown[]) { return result; });
     const port = {
@@ -94,7 +94,7 @@ describe('deferred native audio event observation', () => {
     expect(capture.firstReset).toBeUndefined();
     expect(clock).not.toHaveBeenCalled(); expect(capture.errors).toEqual([]);
   });
-  it('retains only the first reset and snapshots independent music, events and marks', async () => {
+  it('retains an independent copy of the first reset without reading the audio clock', async () => {
     const { capture, port, connect, clock } = await transportFixture(); connect();
     const reset = { type: 'reset', generation: 4, offset: 12, music: [1, 2, 3], engine: null, paused: false, reason: 'manual' };
     port.postMessage(reset);
@@ -102,17 +102,6 @@ describe('deferred native audio event observation', () => {
     reset.music[0] = 99;
     port.postMessage({ ...reset, generation: 5, offset: 0 });
     expect(capture.firstReset).toMatchObject({ generation: 4, offset: 12, music: [1, 2, 3] });
-    capture.events.push({ kind: 'keydown', code: 'KeyJ', at: 8.5 }); capture.marks.push({ kind: 'game', at: 1 });
-    capture.rate = 1000; capture.packets = [packet([0])];
-    const snapshot = snapshotPcmWindow({ start: 0, end: 0.128 }, capture);
-    capture.events[0].at = 99; capture.marks[0].at = 99;
-    Object.assign(capture.firstReset!.music, { 0: 99 });
-    expect(snapshot.diagnostics).toEqual({
-      events: [{ kind: 'keydown', code: 'KeyJ', at: 8.5 }], marks: [{ kind: 'game', at: 1 }],
-      firstReset: { ...reset, music: [1, 2, 3] },
-    });
-    const direct = pcmWindowFeatures({ start: 0, end: 0.128, frequencies: [] }, capture);
-    expect(pcmWindowFeatures({ start: 0, end: 0.128, frequencies: [] }, restorePcmSnapshot(snapshot))).toEqual(direct);
     expect(clock).not.toHaveBeenCalled(); expect(capture.errors).toEqual([]);
   });
   it('preserves native post errors and receiver delivery when optional observation fails', async () => {
@@ -127,65 +116,6 @@ describe('deferred native audio event observation', () => {
     expect(() => port.postMessage(reset)).toThrow(failure);
     expect(post).toHaveBeenCalledTimes(2); expect(capture.firstReset).toBeUndefined();
     port.postMessage(reset); expect(capture.firstReset).toEqual(reset);
-  });
-  it('records only shot and control sends after capture starts, with independent snapshot data', async () => {
-    const { page, capture, port, connect, clock } = await transportFixture(true); connect();
-    const shot = { type: 'commands', generation: 3, sequence: 1,
-      commands: [{ id: 15, start: true }, { id: 18, start: true }] };
-    port.postMessage(shot);
-    expect(capture.delivery!.entries).toEqual([]); expect(clock).not.toHaveBeenCalled();
-    clock.mockReturnValue(3); await beginPcmCapture(page);
-    port.postMessage({ ...shot, commands: [{ id: 18, start: true }] });
-    expect(clock).toHaveBeenCalledOnce();
-    const reset = { type: 'reset', generation: 4, offset: 12, music: [1, 2, 3], engine: null, paused: false, reason: 'manual' };
-    port.postMessage(reset); port.postMessage(shot);
-    port.postMessage({ type: 'pause', generation: 4, sequence: 2, paused: true, reason: 'focus', commands: [] });
-    reset.music[0] = 99; shot.commands[0].start = false;
-    capture.rate = 1000; capture.packets = [packet([0])];
-    const snapshot = snapshotPcmWindow({ start: 0, end: 0.128 }, capture);
-    expect(snapshot.diagnostics!.delivery).toEqual({ overflow: false, entries: [
-      { at: 3, message: { ...reset, music: [1, 2, 3] } },
-      { at: 3, message: { ...shot, commands: [{ id: 15, start: true }] } },
-      { at: 3, message: { type: 'pause', generation: 4, sequence: 2, paused: true, reason: 'focus', commands: [] } },
-    ] });
-    const recorded = capture.delivery!.entries[1].message;
-    if (recorded.type === 'commands') recorded.commands[0].start = false;
-    capture.delivery!.entries[0].at = 99;
-    expect(snapshot.diagnostics!.delivery!.entries[0].at).toBe(3);
-    expect(snapshot.diagnostics!.delivery!.entries[1].message).toMatchObject({ commands: [{ id: 15, start: true }] });
-    expect(capture.errors).toEqual([]);
-  });
-  it('bounds delivery evidence at 64 entries and marks overflow without discarding native sends or PCM', async () => {
-    const { page, capture, port, post, connect, clock } = await transportFixture(true); connect();
-    clock.mockReturnValue(3); await beginPcmCapture(page);
-    for (let sequence = 1; sequence <= 70; sequence++)
-      port.postMessage({ type: 'commands', generation: 1, sequence, commands: [{ id: 15, start: true }] });
-    expect(post).toHaveBeenCalledTimes(70); expect(capture.delivery!.entries).toHaveLength(64);
-    expect(capture.delivery!.entries.at(-1)!.message).toMatchObject({ sequence: 64 });
-    capture.rate = 1000; capture.packets = [packet([0])];
-    const snapshot = snapshotPcmWindow({ start: 0, end: 0.128 }, capture);
-    expect(snapshot.diagnostics!.delivery!.overflow).toBe(true);
-    expect(pcmWindowFeatures({ start: 0, end: 0.128, frequencies: [] }, restorePcmSnapshot(snapshot)).rms).toBeGreaterThan(0);
-    expect(capture.errors).toEqual([]);
-  });
-  it('marks unavailable delivery evidence while preserving native results and exceptions', async () => {
-    const { page, capture, port, post, result, connect, clock } = await transportFixture(true); connect();
-    clock.mockReturnValue(3); await beginPcmCapture(page);
-    clock.mockImplementation(() => { throw new Error('Optional clock unavailable'); });
-    const shot = { type: 'commands', generation: 1, sequence: 1, commands: [{ id: 15, start: true }] };
-    expect(port.postMessage(shot)).toBe(result);
-    expect(capture.delivery).toEqual({ entries: [], overflow: false, unavailable: true });
-    const failure = new Error('Native post failed'); post.mockImplementationOnce(() => { throw failure; });
-    expect(() => port.postMessage(shot)).toThrow(failure);
-    expect(capture.errors).toEqual([]);
-  });
-  it('keeps a failing optional diagnostic snapshot separate from validated raw PCM', async () => {
-    const { capture } = await transportFixture(); capture.rate = 1000; capture.packets = [packet([0])];
-    Object.defineProperty(capture, 'firstReset', { get() { throw new Error('Broken optional reset'); } });
-    const snapshot = snapshotPcmWindow({ start: 0, end: 0.128 }, capture);
-    expect(snapshot.diagnostics).toEqual({ unavailable: true });
-    expect(pcmWindowFeatures({ start: 0, end: 0.128, frequencies: [] }, restorePcmSnapshot(snapshot)).rms).toBeGreaterThan(0);
-    expect(capture.errors).toEqual([]);
   });
   it('does not read native event time for preparation keydown or blur while recording is deferred', async () => {
     const clock = vi.fn((): number => { throw new Error('Preparation must not read the native clock'); });
@@ -238,11 +168,11 @@ describe('deferred native audio event observation', () => {
     expect(context).not.toHaveBeenCalled();
   });
   it('archives a replaced graph and observes its new clock without clearing previous errors', async () => {
-    const { page, capture, port, connect, clock, AudioContext, AudioDestinationNode, GainNode, AudioWorkletNode } = await transportFixture(true);
+    const { page, capture, port, connect, clock, AudioContext, AudioDestinationNode, GainNode, AudioWorkletNode } = await transportFixture();
     connect(); clock.mockReturnValue(5); await beginPcmCapture(page);
     const reset = { type: 'reset', generation: 4, offset: 12, music: [1, 2, 3], engine: null, paused: false, reason: 'manual' };
     port.postMessage(reset);
-    const old = capture.context!, packets = capture.packets, events = capture.events, delivery = capture.delivery!;
+    const old = capture.context!, packets = capture.packets, events = capture.events;
     events.push({ kind: 'keydown', code: 'Enter', at: 5 });
     capture.errors.push('retained diagnostic');
     const replacement = Object.assign(new AudioContext(), { destination: new AudioDestinationNode(), sampleRate: 48000, currentTime: 0,
@@ -252,9 +182,6 @@ describe('deferred native audio event observation', () => {
     expect(capture.retiredGraphs).toHaveLength(1);
     expect(capture.retiredGraphs![0].context).toBe(old);
     expect(capture.retiredGraphs![0]).toMatchObject({ packets, events, firstReset: reset });
-    expect(capture.retiredGraphs![0].delivery).toBe(delivery);
-    expect(delivery.entries).toEqual([{ at: 5, message: reset }]);
-    expect(capture.delivery).toEqual({ entries: [], overflow: false });
     expect(capture.context).toBe(replacement); expect(capture.rate).toBe(48000);
     expect(capture.ready).toBe(false); expect(capture.gameReady).toBe(false);
     expect(capture.packets).toEqual([]); expect(capture.events).toEqual([]);
@@ -271,8 +198,6 @@ describe('deferred native audio event observation', () => {
     port.postMessage({ ...reset, generation: 7 });
     expect(capture.firstReset).toEqual(newReset);
     expect(capture.retiredGraphs![0].firstReset).toEqual(reset);
-    expect(capture.delivery!.entries).toEqual([{ at: 0, message: newReset }]);
-    expect(delivery.entries).toHaveLength(1);
   });
 });
 
@@ -781,45 +706,39 @@ describe('player-shot PCM signature', () => {
     start: 0, end: 0.5, frequencies, idle: true, comparison: { duration: 0.025, step: 0.008 },
   }, capture).amplitudes) * 3);
 
-  it.each([44100, 48000])('rejects a complete but late %i Hz shot and retains its original matching PCM', async rate => {
-    const snapshot = snapshotPcmWindow(parameters, independent(rate, 0.16)), onFailure = vi.fn();
-    const evaluate = vi.fn(async () => JSON.stringify(snapshot));
-    const page = { evaluate, waitForFunction: vi.fn(async () => ({ dispose: vi.fn() })) } as unknown as Page;
-    await expect(pcmShotWindow(page, 0, 0.5, frequencies, 0.002, onFailure, (match, capturedRate) => {
-      expect(pcmResponseObservation('shot', 0, match.phases[0].start + 0.008, capturedRate).limitExceeded).toBe(false);
-    })).rejects.toThrow();
-    expect(evaluate).toHaveBeenCalledOnce(); expect(onFailure).toHaveBeenCalledOnce();
-    expect(onFailure.mock.calls[0][0]).toMatchObject({ snapshot, match: { phases: expect.any(Array) }, stage: 'assertion' });
-  });
+  it.each([44100, 48000].flatMap(rate => [0.16, 0.6, 0.9].map(onset => [rate, onset] as const)))
+    ('accepts a complete %i Hz shot starting at %s seconds within the capture', async (rate, onset) => {
+      const capture = nativeShot(nativeTones(Array.from({ length: 4 }, () => ({ engine: 0.003 })), rate), 0.03, { onset });
+      const snapshot = snapshotPcmWindow({ start: 0, end: 1 }, capture), onFailure = vi.fn();
+      const evaluate = vi.fn(async () => JSON.stringify(snapshot));
+      const page = { evaluate, waitForFunction: vi.fn(async () => ({ dispose: vi.fn() })) } as unknown as Page;
+      const match = await pcmShotWindow(page, 0, 1, frequencies, 0.002, onFailure);
+      expect(match.phases).toHaveLength(3);
+      expect(match.phases[0].start).toBeGreaterThanOrEqual(onset);
+      expect(evaluate).toHaveBeenCalledOnce(); expect(onFailure).not.toHaveBeenCalled();
+    });
 
   it('waits for the original complete window before exporting once, with unchanged sweep analysis', async () => {
     const capture = independent();
-    capture.delivery = { overflow: false, entries: [{ at: 0.02, message: {
-      type: 'commands', generation: 1, sequence: 2, commands: [{ id: 0x0f, start: true }],
-    } }] };
-    const snapshot = snapshotPcmWindow(parameters, capture), assertion = vi.fn();
+    const snapshot = snapshotPcmWindow(parameters, capture);
     let complete!: (handle: { dispose: () => void }) => void;
     const coverage = new Promise<{ dispose: () => void }>(resolve => { complete = resolve; });
     const dispose = vi.fn(), evaluate = vi.fn(async () => JSON.stringify(snapshot));
     const waitForFunction = vi.fn((_expression: unknown, _parameters: unknown, _options: unknown) => coverage);
     const page = { evaluate, waitForFunction } as unknown as Page;
-    const result = pcmShotWindow(page, parameters.start, parameters.end, frequencies, parameters.minimumAmplitude, undefined, assertion);
+    const result = pcmShotWindow(page, parameters.start, parameters.end, frequencies, parameters.minimumAmplitude);
     await Promise.resolve();
     expect(evaluate).not.toHaveBeenCalled();
     expect(waitForFunction.mock.calls[0]?.[1]).toBe(parameters.end);
     expect(waitForFunction.mock.calls[0]?.[2]).toEqual({ polling: 25, timeout: 15000 });
     complete({ dispose });
     expect(await result).toEqual(pcmShotWindowFeatures(parameters, capture));
-    expect(assertion).toHaveBeenCalledExactlyOnceWith(pcmShotWindowFeatures(parameters, capture), capture.rate, snapshot.diagnostics);
     expect(evaluate).toHaveBeenCalledOnce(); expect(dispose).toHaveBeenCalledOnce();
   });
 
-  it('attaches a missing shot and its submitted command without losing the original failure', async () => {
+  it('attaches a missing shot with its original PCM and failure', async () => {
     const capture = independent();
     capture.packets[0].samples.fill(0);
-    capture.delivery = { overflow: false, entries: [{ at: 0.02, message: {
-      type: 'commands', generation: 1, sequence: 2, commands: [{ id: 0x0f, start: true }],
-    } }] };
     const snapshot = snapshotPcmWindow(parameters, capture), attach = vi.fn();
     const error = new Error('Player-shot PCM signature was absent');
     await attachPcmFailure({ attach } as unknown as Parameters<typeof attachPcmFailure>[0],
@@ -827,10 +746,7 @@ describe('player-shot PCM signature', () => {
     expect(attach).toHaveBeenCalledOnce();
     expect(attach.mock.calls[0][0]).toBe('audio-measurement-failure');
     expect(JSON.parse(attach.mock.calls[0][1].body.toString())).toMatchObject({
-      error: { message: error.message }, snapshot, response: {
-        onset: null, latencyMs: null, limitExceeded: true,
-        submission: { status: 'matched', keyToSubmitMs: 20, submitToOnsetMs: null },
-      },
+      error: { message: error.message }, snapshot, measurement: 'player shot', anchors: { shotAt: 0 },
     });
   });
 
@@ -971,7 +887,7 @@ describe('player-shot PCM signature', () => {
     expect(() => pcmShotWindowFeatures(parameters, capture)).toThrow(/native tap failed/);
     capture.errors = []; capture.packets = Array.from({ length: 769 }, () => capture.packets[0]);
     expect(() => pcmShotWindowFeatures(parameters, capture)).toThrow(/bounded packet capacity/);
-    expect(() => measured(independent(), { ...parameters, end: 1 })).toThrow(/Invalid bounded PCM shot scan/);
+    expect(() => measured(independent(), { ...parameters, end: 1.01 })).toThrow(/Invalid bounded PCM shot scan/);
     expect(() => measured(independent(), { ...parameters, minimumAmplitude: 0.001 })).toThrow(/Invalid bounded PCM shot scan/);
   });
 });

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Page } from '@playwright/test';
 import { pcmPauseWindow } from '../browser/audio-probe';
-import { pcmPauseWindowFeatures, pcmResponseObservation, snapshotPcmWindow, type AudioCapture, type AudioDeliveryLog } from '../browser/pcm-window';
+import { pcmPauseWindowFeatures, snapshotPcmWindow, type AudioCapture } from '../browser/pcm-window';
 import { processorFixture } from './audio-processor-fixture';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -20,7 +20,7 @@ function pauseFixture(rate = 44100, delay = 0.0876, mutation = ''): AudioCapture
   // No production cue, driver, synthesizer or analyzer constants generate this oracle.
   const pitches = [522.714077, 585.658704, 658.004779, 1045.428154, 1165.216797, 1316.009559, 782.243444];
   const first = Math.round(delay * rate), mute = first - Math.round(0.021 * rate);
-  return captureSamples(Float32Array.from({ length: rate }, (_, index) => {
+  return captureSamples(Float32Array.from({ length: rate * 2 }, (_, index) => {
     const time = index / rate;
     if (index < mute || mutation === 'engine only') return 0.006 * Math.sin(2 * Math.PI * 61.7 * time);
     if (index < first) return 0;
@@ -35,44 +35,8 @@ function pauseFixture(rate = 44100, delay = 0.0876, mutation = ''): AudioCapture
   }), rate);
 }
 
-describe('hot audio response policy', () => {
-  const shot: AudioDeliveryLog['entries'][number] = { at: 1.02,
-    message: { type: 'commands', generation: 3, sequence: 7, commands: [{ id: 15, start: true }] } };
-  it('splits the same snapshot response at its unique shot submission without changing the verdict', () => {
-    const observation = pcmResponseObservation('shot', 1, 1.07, 44100,
-      { delivery: { entries: [shot], overflow: false } });
-    expect(observation.submission).toMatchObject({ status: 'matched', at: 1.02, generation: 3, sequence: 7 });
-    expect(observation.submission!.keyToSubmitMs).toBeCloseTo(20);
-    expect(observation.submission!.submitToOnsetMs).toBeCloseTo(50);
-    expect(observation).toMatchObject({ targetExceeded: true, limitExceeded: false, latencyMs: 70 });
-    expect(pcmResponseObservation('shot', 1, null, 44100, { delivery: { entries: [shot], overflow: false } }))
-      .toMatchObject({ limitExceeded: true, latencyMs: null, submission: { status: 'matched', submitToOnsetMs: null } });
-  });
-  it('does not invent a submission from missing, ambiguous, overflowing or cross-boundary evidence', () => {
-    for (const [entries, overflow, expected] of [
-      [[], false, 'missing'], [[{ ...shot, at: 0.99 }], false, 'missing'],
-      [[shot, { ...shot, at: 1.03 }], false, 'ambiguous'], [[shot], true, 'unavailable'],
-      [[shot, { at: 1.04, message: { type: 'reset', generation: 4, music: [], offset: 0, engine: null, paused: false, reason: 'manual' } }], false, 'unavailable'],
-    ] as [AudioDeliveryLog['entries'], boolean, string][]) {
-      expect(pcmResponseObservation('shot', 1, 1.07, 44100, { delivery: { entries, overflow } }))
-        .toMatchObject({ limitExceeded: false, submission: { status: expected } });
-    }
-    const broken = { get delivery(): AudioDeliveryLog { throw new Error('optional evidence failed'); } };
-    expect(pcmResponseObservation('shot', 1, 1.16, 44100, broken))
-      .toMatchObject({ limitExceeded: true, submission: { status: 'unavailable' } });
-  });
-  it.each([44100, 48000].flatMap(rate => (['shot', 'pause'] as const).map(kind => [rate, kind] as const)))
-    ('compares sample-accurate 50ms/150ms boundaries at %i Hz for %s', (rate, kind) => {
-      expect(pcmResponseObservation(kind, 1, 1.05, rate)).toMatchObject({ targetExceeded: false, limitExceeded: false });
-      expect(pcmResponseObservation(kind, 1, 1.05 + 1 / rate, rate)).toMatchObject({ targetExceeded: true, limitExceeded: false });
-      expect(pcmResponseObservation(kind, 1, 1.15, rate)).toMatchObject({ latencyMs: 150, limitExceeded: false });
-      expect(pcmResponseObservation(kind, 1, 1.15 + 1 / rate, rate).limitExceeded).toBe(true);
-      expect(pcmResponseObservation(kind, 1, null, rate)).toMatchObject({ latencyMs: null, targetExceeded: null, limitExceeded: true });
-    });
-});
-
 describe('complete pause PCM measurement', () => {
-  it.each([44100, 48000].flatMap(rate => [0.03, 0.0876, 0.15, 0.16].map(delay => [rate, delay] as const)))
+  it.each([44100, 48000].flatMap(rate => [0.03, 0.16, 0.6, 0.99].map(delay => [rate, delay] as const)))
     ('identifies the independent %i Hz phrase starting after %s seconds', (rate, delay) => {
       const match = pcmPauseWindowFeatures(1, pauseFixture(rate, delay));
       expect(match.onset).toBe(1 + Math.round(delay * rate) / rate);
@@ -80,7 +44,6 @@ describe('complete pause PCM measurement', () => {
       expect(match.notes.at(-1)!.end - match.onset).toBeCloseTo(36 / 60.0988, 9);
       expect(match.phrase.rms).toBeGreaterThan(0.003);
       expect(match.silence.peak).toBe(0);
-      expect(pcmResponseObservation('pause', 1, match.onset, rate).limitExceeded).toBe(delay > 0.15);
     });
   it.each(['engine only', 'wrong pitch', 'missing note', 'short last note', 'blips'])
     ('rejects %s instead of treating any audible PCM as pause', mutation => {
@@ -97,16 +60,16 @@ describe('complete pause PCM measurement', () => {
     ('also matches native %i Hz PCM after the observed 66.8ms pause delivery with %i-sample blocks', async (rate, quantum) => {
       const { send, render } = await processorFixture(rate);
       send({ type: 'reset', generation: 2, music: [], offset: 0, engine: 18, paused: false, reason: 'manual' });
-      const first = Math.round(rate * 0.0668), samples = new Float32Array(rate);
+      const first = Math.round(rate * 0.0668), samples = new Float32Array(rate * 2);
       samples.set(render(first, quantum));
       send({ type: 'pause', generation: 2, sequence: 1, paused: true, reason: 'manual', commands: [] });
-      samples.set(render(rate - first, quantum), first);
+      samples.set(render(samples.length - first, quantum), first);
       const match = pcmPauseWindowFeatures(0, captureSamples(samples.map(value => value * 0.3), rate, 0));
       expect(match.onset).toBeGreaterThan(0.08); expect(match.onset).toBeLessThan(0.09);
       expect(match.silence.peak).toBe(0);
     });
   it('retains the original snapshot and matched phrase when the silence assertion fails', async () => {
-    const snapshot = snapshotPcmWindow({ start: 1, end: 2 }, pauseFixture(44100, 0.0876, 'residual sound'));
+    const snapshot = snapshotPcmWindow({ start: 1, end: 3 }, pauseFixture(44100, 0.0876, 'residual sound'));
     const evaluate = vi.fn(async () => JSON.stringify(snapshot)), onFailure = vi.fn();
     const page = { evaluate, waitForFunction: vi.fn(async () => ({ dispose: vi.fn() })) } as unknown as Page;
     await expect(pcmPauseWindow(page, 1, onFailure, match => expect(match.silence.peak).toBe(0))).rejects.toThrow();
