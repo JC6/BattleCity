@@ -205,7 +205,7 @@ public final class Level1Activity extends TvGameActivity {
                 .setPositiveButton("返回主菜单",(d,w)->finish()).setNegativeButton(R.string.cancel,null).create();
         dialog=next;
         next.setOnDismissListener(d->{dialog=null;clearInput();updateHint();});
-        next.show();installDialogInput(next);next.getButton(AlertDialog.BUTTON_NEGATIVE).requestFocus();
+        next.show();installDialogInput(next);
     }
     @Override protected void onDestroy(){
         if(dialog!=null)dialog.dismiss();if(audio!=null)audio.close();super.onDestroy();

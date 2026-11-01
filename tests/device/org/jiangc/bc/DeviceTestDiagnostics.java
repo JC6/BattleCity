@@ -8,7 +8,16 @@ import java.util.Map;
 
 /** Capture live threads before a failed wait unwinds and closes its ActivityScenario. */
 final class DeviceTestDiagnostics {
+    private static volatile TvEngine observedEngine;
+
     private DeviceTestDiagnostics() { }
+
+    static void reset() { observedEngine = null; }
+
+    /** Called on the UI thread while a test is already inspecting its target activity. */
+    static void observe(TvGameActivity activity) {
+        if (activity.getEngine() instanceof TvEngine engine) observedEngine = engine;
+    }
 
     static AssertionError timeout(String message, long timeoutMillis, Throwable cause) {
         StringBuilder details = new StringBuilder(message)
@@ -16,6 +25,8 @@ final class DeviceTestDiagnostics {
                 .append("\nPID ").append(android.os.Process.myPid())
                 .append(", uptime ").append(SystemClock.uptimeMillis()).append(" ms\n");
         // Do not call the UI thread or acquire the engine lock: either may be the stalled thread.
+        TvEngine engine = observedEngine;
+        if (engine != null) details.append(engine.diagnosticSnapshot());
         var threads = new ArrayList<>(Thread.getAllStackTraces().entrySet());
         threads.sort(Comparator.comparing(entry -> entry.getKey().getName()));
         for (Map.Entry<Thread, StackTraceElement[]> entry : threads) {

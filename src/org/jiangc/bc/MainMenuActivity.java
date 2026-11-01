@@ -110,7 +110,7 @@ public final class MainMenuActivity extends TvGameActivity {
     private void show(AlertDialog next){
         clear();dialog=next;
         next.setOnDismissListener(d->{if(dialog==next)dialog=null;clear();});
-        next.show();installDialogInput(next);next.getButton(AlertDialog.BUTTON_NEGATIVE).requestFocus();
+        next.show();installDialogInput(next);
     }
     @Override protected void onDestroy(){if(dialog!=null)dialog.dismiss();super.onDestroy();}
     boolean acceptingInput(){return loaded && !navigating && title.screen==TitleSession.MENU;}

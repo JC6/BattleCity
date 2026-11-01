@@ -22,10 +22,17 @@ class DeviceRunnerTest(unittest.TestCase):
         binary.mkdir()
         adb = binary / "adb"
         adb.write_text("""#!/usr/bin/env bash
+if [[ "${3:-}" == "$FAKE_FAIL_PROPERTY" ]]; then
+  echo 'fixture property read failed' >&2
+  exit "$FAKE_ADB_EXIT"
+fi
 case "$*" in
-  'shell getprop ro.build.version.sdk') echo "$FAKE_API" ;;
-  'shell getprop ro.build.version.sdk_minor') echo "$FAKE_MINOR" ;;
+  'shell getprop ro.build.version.sdk') printf '%s%s\\n' "$FAKE_API" "$FAKE_CR" ;;
+  'shell getprop ro.build.version.sdk_full') printf '%s%s\\n' "$FAKE_FULL" "$FAKE_CR" ;;
+  'shell getprop ro.build.version.sdk_minor') printf '%s%s\\n' "$FAKE_MINOR" "$FAKE_CR" ;;
   'logcat -d -v threadtime') echo 'simulated emulator log' ;;
+  'logcat -c') ;;
+  *) exit 99 ;;
 esac
 """)
         adb.chmod(0o755)
@@ -38,7 +45,8 @@ echo '<testsuite tests="1"><testcase name="fresh"/></testsuite>' > build/outputs
 exit "$FAKE_EXIT"
 """)
         self.env = dict(os.environ, PATH=str(binary) + os.pathsep + os.environ["PATH"],
-                        EMULATOR_PORT="5554", FAKE_API="34", FAKE_MINOR="0", FAKE_EXIT="0")
+                        EMULATOR_PORT="5554", FAKE_API="34", FAKE_MINOR="0", FAKE_FULL="",
+                        FAKE_FAIL_PROPERTY="none", FAKE_ADB_EXIT="17", FAKE_CR="", FAKE_EXIT="0")
 
     def stale(self, relative):
         path = self.root / relative / "TEST-stale.xml"
@@ -65,20 +73,68 @@ exit "$FAKE_EXIT"
         self.assertEqual("log captured before the test script started", startup.read_text())
 
     def test_failed_test_command_preserves_failure_and_diagnostics(self):
-        self.env.update(FAKE_API="37", FAKE_MINOR="2", FAKE_EXIT="7")
+        self.env.update(FAKE_API="37", FAKE_FULL="37.2", FAKE_MINOR="", FAKE_EXIT="7")
         run = self.run_script("37.2")
         self.assertEqual(7, run.returncode, run.stderr)
         self.assertTrue((self.root / "build/outputs/androidTest-results/api-37.2/TEST-new.xml").exists())
         log = self.root / "build/diagnostics/api-37.2/device-logcat.txt"
         self.assertIn("simulated emulator log", log.read_text())
+        self.assertIn("Runner exit status: 7", log.with_name("preflight.txt").read_text())
+
+    def test_full_version_takes_precedence_and_legacy_minor_is_only_a_fallback(self):
+        for full, minor in (("37.2", ""), ("37.2", "0"), ("", "2")):
+            with self.subTest(full=full, minor=minor):
+                self.env.update(FAKE_API="37", FAKE_FULL=full, FAKE_MINOR=minor)
+                run = self.run_script("37.2")
+                self.assertEqual(0, run.returncode, run.stderr)
+                log = (self.root / "build/diagnostics/api-37.2/preflight.txt").read_text()
+                self.assertIn("Verified API 37.2", log)
+                source = "ro.build.version.sdk_full" if full else "legacy ro.build.version.sdk_minor"
+                self.assertIn("Version source: " + source, log)
+                self.assertTrue((self.root / "build/outputs/androidTest-results/api-37.2/TEST-new.xml").exists())
+
+    def test_crlf_device_properties_are_accepted_and_logged(self):
+        self.env.update(FAKE_API="37", FAKE_FULL="37.2", FAKE_CR="\r")
+        run = self.run_script("37.2")
+        self.assertEqual(0, run.returncode, run.stderr)
+        log = (self.root / "build/diagnostics/api-37.2/preflight.txt").read_bytes()
+        self.assertIn(b"37.2\r\n", log)
+
+    def test_wrong_or_malformed_full_version_cannot_fall_back_to_minor(self):
+        for full in ("37.0", "37.3", "garbage", "3700002", "37.2.0", "+37.2", " 37.2"):
+            with self.subTest(full=full):
+                stale = self.stale("build/outputs/androidTest-results/api-37.2")
+                self.env.update(FAKE_API="37", FAKE_FULL=full, FAKE_MINOR="2")
+                self.assertEqual(1, self.run_script("37.2").returncode)
+                self.assertEqual([], list(stale.parent.glob("TEST-*.xml")))
+                log = (self.root / "build/diagnostics/api-37.2/preflight.txt").read_text()
+                self.assertIn(f"Expected SDK full 37.2, found sdk_full=<{full}>", log)
+                self.assertIn("Runner exit status: 1", log)
+
+    def test_property_read_failure_preserves_command_output_and_exit_status(self):
+        for property in ("sdk", "sdk_full", "sdk_minor"):
+            with self.subTest(property=property):
+                stale = self.stale("build/outputs/androidTest-results/api-37.2")
+                self.env.update(FAKE_API="37", FAKE_FULL="37.2", FAKE_MINOR="2",
+                                FAKE_FAIL_PROPERTY="ro.build.version." + property)
+                self.assertEqual(17, self.run_script("37.2").returncode)
+                self.assertEqual([], list(stale.parent.glob("TEST-*.xml")))
+                log = (self.root / "build/diagnostics/api-37.2/preflight.txt").read_text()
+                self.assertIn(f"adb shell getprop ro.build.version.{property} (exit 17):", log)
+                self.assertIn("fixture property read failed", log)
+                self.assertIn("Version preflight failed", log)
+                self.assertIn("Runner exit status: 17", log)
+                self.assertIn("simulated emulator log",
+                              (self.root / "build/diagnostics/api-37.2/device-logcat.txt").read_text())
 
     def test_wrong_major_or_minor_version_cannot_reuse_old_reports(self):
-        for api, minor in (("34", "0"), ("37", "0")):
-            with self.subTest(api=api, minor=minor):
+        for api, full, minor in (("34", "37.2", "2"), ("37", "", "0"), ("37", "", "")):
+            with self.subTest(api=api, full=full, minor=minor):
                 stale = self.stale("build/outputs/androidTest-results/api-37.2")
-                self.env.update(FAKE_API=api, FAKE_MINOR=minor)
+                self.env.update(FAKE_API=api, FAKE_FULL=full, FAKE_MINOR=minor)
                 self.assertNotEqual(0, self.run_script("37.2").returncode)
                 self.assertEqual([], list(stale.parent.glob("TEST-*.xml")))
+                self.assertIn("Expected", (self.root / "build/diagnostics/api-37.2/preflight.txt").read_text())
 
 
 class KvmPreparationTest(unittest.TestCase):

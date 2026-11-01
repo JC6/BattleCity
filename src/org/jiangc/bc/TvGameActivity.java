@@ -2,6 +2,7 @@ package org.jiangc.bc;
 
 import android.graphics.Color;
 import android.app.AlertDialog;
+import android.content.pm.ApplicationInfo;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -31,18 +32,23 @@ public abstract class TvGameActivity extends BaseGameActivity implements Control
     protected TextView hint;
     protected volatile boolean foreground;
     private boolean dialogConfirmDown,dialogBackDown;
+    private boolean lifecycleDiagnostics;
     private final OnBackInvokedCallback backCallback = this::onBackRequested;
 
     @Override protected void onCreate(Bundle state) {
+        lifecycleDiagnostics = (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
         super.onCreate(state);
         getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                 OnBackInvokedDispatcher.PRIORITY_DEFAULT, backCallback);
+        traceLifecycle("onCreate complete");
     }
 
     @Override protected void onDestroy() {
+        traceLifecycle("onDestroy before");
         getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);
         hideNotice();
         super.onDestroy();
+        traceLifecycle("onDestroy after");
     }
 
     protected void onBackRequested() { finish(); }
@@ -56,6 +62,15 @@ public abstract class TvGameActivity extends BaseGameActivity implements Control
     }
     protected void installDialogInput(AlertDialog dialog){
         resetDialogInput();
+        // A dialog can open in touch mode before the first hardware D-pad event.
+        // Keep its buttons reachable and Cancel focused through window attachment.
+        for (int which : new int[]{AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE,
+                AlertDialog.BUTTON_NEUTRAL}) {
+            View button = dialog.getButton(which);
+            if (button != null) button.setFocusableInTouchMode(true);
+        }
+        View cancel = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+        if (cancel != null) cancel.requestFocus();
         dialog.setOnKeyListener((d,code,event)->{
             Button button=controllers().button(event);controllers().key(event);
             boolean down=event.getAction()==KeyEvent.ACTION_DOWN;
@@ -98,14 +113,27 @@ public abstract class TvGameActivity extends BaseGameActivity implements Control
                     surface.setMeasuredDimensionProxy(CAMERA_WIDTH*scale,CAMERA_HEIGHT*scale);
                 }, camera);
         options.setWakeLockOptions(WakeLockOptions.SCREEN_ON);
-        return new TvEngine(options);
+        return new TvEngine(options,
+                getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(this)),
+                lifecycleDiagnostics);
     }
     @Override protected void onSetContentView() {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
         FrameLayout viewport = new FrameLayout(this);
         root.addView(viewport, new FrameLayout.LayoutParams(-1, -1));
-        mRenderSurfaceView = new RenderSurfaceView(this);
+        mRenderSurfaceView = new RenderSurfaceView(this) {
+            @Override public void onResume() {
+                traceLifecycle("surface.onResume before");
+                super.onResume();
+                traceLifecycle("surface.onResume after");
+            }
+            @Override public void onPause() {
+                traceLifecycle("surface.onPause before");
+                super.onPause();
+                traceLifecycle("surface.onPause after");
+            }
+        };
         mRenderSurfaceView.setEGLConfigChooser(false);
         mRenderSurfaceView.setRenderer(mEngine);
         viewport.addView(mRenderSurfaceView, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
@@ -127,22 +155,39 @@ public abstract class TvGameActivity extends BaseGameActivity implements Control
     }
     protected void hideNotice(){if(hint!=null){hint.removeCallbacks(clearNotice);clearNotice.run();}}
     @Override protected void onResume() {
+        traceLifecycle("onResume before");
         foreground = true;
         controllers().attach(this);
         super.onResume();
+        traceLifecycle("onResume after");
     }
     @Override protected void onPause() {
+        traceLifecycle("onPause before");
         foreground = false;
         controllers().detach(this);
         super.onPause();
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        traceLifecycle("onPause after");
     }
     @Override public void onWindowFocusChanged(boolean hasFocus) {
+        traceLifecycle("onWindowFocusChanged(" + hasFocus + ") before");
         controllers().clear();
         resetDialogInput();
         super.onWindowFocusChanged(hasFocus);
         if (!hasFocus) getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         else GameWindow.hideSystemBars(getWindow());
+        traceLifecycle("onWindowFocusChanged(" + hasFocus + ") after");
+    }
+    private void traceLifecycle(String event) {
+        if (!lifecycleDiagnostics || !(mEngine instanceof TvEngine engine)) return;
+        engine.recordActivityState(event + " foreground=" + foreground
+                + " windowFocus=" + hasWindowFocus() + " engineFocus=" + mHasWindowFocused
+                + " sceneLoaded=" + (mEngine.getScene() != null)
+                + " finishing=" + isFinishing() + " destroyed=" + isDestroyed()
+                + " surface=" + (mRenderSurfaceView == null ? "absent"
+                    : mRenderSurfaceView.getWidth() + "x" + mRenderSurfaceView.getHeight()
+                        + " valid=" + mRenderSurfaceView.getHolder().getSurface().isValid()
+                        + " windowVisibility=" + mRenderSurfaceView.getWindowVisibility()));
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         return controllers().key(event) || super.dispatchKeyEvent(event);

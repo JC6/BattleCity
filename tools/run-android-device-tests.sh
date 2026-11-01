@@ -24,15 +24,49 @@ collect_results() {
   if [[ -d build/reports/androidTests/connected ]]; then
     cp -a build/reports/androidTests/connected/. "$reports/" || status=1
   fi
+  printf 'Runner exit status: %s\n' "$status" >> "$diagnostics/preflight.txt"
   exit "$status"
 }
 trap collect_results EXIT
 
-actual=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
-[[ "$actual" == "${version%%.*}" ]] || { echo "Expected API $version, found $actual" >&2; exit 1; }
-if [[ "$version" == 37.2 ]]; then
-  minor=$(adb shell getprop ro.build.version.sdk_minor | tr -d '\r')
-  [[ "$minor" == 2 ]] || { echo "Expected SDK minor 2, found $minor" >&2; exit 1; }
-fi
+preflight() {
+  local property value status failed=0
+  local -A values
+  printf 'Requested API: %s\n' "$version"
+  for property in sdk sdk_full sdk_minor; do
+    if value=$(adb shell getprop "ro.build.version.$property" 2>&1); then
+      status=0
+    else
+      status=$?
+      if [[ "$failed" == 0 ]]; then failed=$status; fi
+    fi
+    printf 'adb shell getprop ro.build.version.%s (exit %s):\n%s\n' "$property" "$status" "$value"
+    values[$property]=${value//$'\r'/}
+  done
+  if [[ "$failed" != 0 ]]; then
+    echo 'Version preflight failed: could not read device properties' >&2
+    return "$failed"
+  fi
+  if [[ "${values[sdk]}" != "${version%%.*}" ]]; then
+    printf 'Expected API %s, found sdk=<%s>\n' "$version" "${values[sdk]}" >&2
+    return 1
+  fi
+  if [[ "$version" == 37.2 ]]; then
+    if [[ -n "${values[sdk_full]}" ]]; then
+      if [[ "${values[sdk_full]}" != 37.2 ]]; then
+        printf 'Expected SDK full 37.2, found sdk_full=<%s>\n' "${values[sdk_full]}" >&2
+        return 1
+      fi
+      echo 'Version source: ro.build.version.sdk_full'
+    elif [[ "${values[sdk_minor]}" == 2 ]]; then
+      echo 'Version source: legacy ro.build.version.sdk_minor (sdk_full is empty)'
+    else
+      printf 'Expected SDK minor 2 when sdk_full is empty, found sdk_minor=<%s>\n' "${values[sdk_minor]}" >&2
+      return 1
+    fi
+  fi
+  printf 'Verified API %s\n' "$version"
+}
+preflight 2>&1 | tee "$diagnostics/preflight.txt"
 adb logcat -c
 bash ./gradlew connectedDebugAndroidTest --stacktrace

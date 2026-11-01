@@ -57,6 +57,7 @@ public class TvMenuFlowTest {
     };
 
     @Before public void beforeTest() {
+        DeviceTestDiagnostics.reset();
         app = ApplicationProvider.getApplicationContext();
         app.memory().clearConstruction();
         clearSyntheticControllers();
@@ -82,6 +83,7 @@ public class TvMenuFlowTest {
             clearSyntheticControllers();
             ui(()->devices.close());
             await("Audio workers must exit even after a failed assertion", () -> audioWorkers() == 0);
+            DeviceTestDiagnostics.reset();
         }
     }
 
@@ -392,12 +394,20 @@ public class TvMenuFlowTest {
     }
     @Test public void pairedExitConfirmationDefaultsToCancelAndNoAuxiliaryPageOpens()throws Exception{
         MainMenuActivity menu=launchMenu();connectPair();ui(()->TestControllers.scan(menu,202,0x134));
-        ui(()->{assertNull(menu.currentDialog());assertEquals(1,activities.size());menu.onBackRequested();});
-        awaitUi("Exit confirmation must open",()->menu.currentDialog()!=null&&menu.currentDialog().isShowing());
-        ui(()->assertTrue(menu.currentDialog().getButton(android.app.AlertDialog.BUTTON_NEGATIVE).hasFocus()));
-        ui(()->TestControllers.scan(menu.currentDialog(),202,0x131));
-        awaitUi("Confirming the default must cancel",()->menu.currentDialog()==null&&menu.hasWindowFocus());
-        ui(()->assertFalse(menu.isFinishing()));
+        boolean[] touchMode={false};ui(()->touchMode[0]=menu.getWindow().getDecorView().isInTouchMode());
+        InstrumentationRegistry.getInstrumentation().setInTouchMode(true);
+        try {
+            ui(()->{assertNull(menu.currentDialog());assertEquals(1,activities.size());menu.onBackRequested();});
+            awaitUi("Exit confirmation must focus Cancel in touch mode",()->menu.currentDialog()!=null
+                    && menu.currentDialog().isShowing()
+                    && menu.currentDialog().getWindow().getDecorView().hasWindowFocus()
+                    && menu.currentDialog().getButton(android.app.AlertDialog.BUTTON_NEGATIVE).hasFocus());
+            ui(()->TestControllers.scan(menu.currentDialog(),202,0x131));
+            awaitUi("Confirming the default must cancel",()->menu.currentDialog()==null&&menu.hasWindowFocus());
+            ui(()->assertFalse(menu.isFinishing()));
+        } finally {
+            InstrumentationRegistry.getInstrumentation().setInTouchMode(touchMode[0]);
+        }
     }
     @Test public void actualGlAdapterMatchesSoftwareAcrossSpriteSizesAndPausedScreens()throws Exception{
         MainMenuActivity menu=launchMenu();AtomicReference<BattleRenderer> display=new AtomicReference<>();
@@ -748,11 +758,14 @@ public class TvMenuFlowTest {
     }
 
     private void awaitReady(TvGameActivity activity) {
-        awaitUi("Window, scene and input must be ready", () -> resumed == activity
+        awaitUi("Window, scene and input must be ready", () -> {
+            DeviceTestDiagnostics.observe(activity);
+            return resumed == activity
                 && activity.foreground && activity.hasWindowFocus() && activity.getEngine() != null
                 && activity.getEngine().getScene() != null
                 && (!(activity instanceof Level1Activity b) || b.selecting() || b.started())
-                && (!(activity instanceof ConstructionActivity c) || c.editing()));
+                && (!(activity instanceof ConstructionActivity c) || c.editing());
+        });
     }
 
     private static void ui(Runnable action) { InstrumentationRegistry.getInstrumentation().runOnMainSync(action); }
@@ -776,7 +789,7 @@ public class TvMenuFlowTest {
 
     private static void onEngine(TvGameActivity activity, Runnable action) throws Exception {
         FutureTask<Void> task = new FutureTask<>(action, null);
-        ui(() -> activity.runOnUpdateThread(task));
+        ui(() -> { DeviceTestDiagnostics.observe(activity); activity.runOnUpdateThread(task); });
         awaitTask(task);
     }
 

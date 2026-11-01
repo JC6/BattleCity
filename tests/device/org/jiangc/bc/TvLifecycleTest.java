@@ -46,6 +46,7 @@ public class TvLifecycleTest {
 
     private TestControllers devices;
     @Before public void beforeTest() {
+        DeviceTestDiagnostics.reset();
         clearSyntheticControllers();
         InstrumentationRegistry.getInstrumentation().runOnMainSync(()->{
             BattleCityApplication app=ApplicationProvider.getApplicationContext();devices=new TestControllers(app);
@@ -59,6 +60,7 @@ public class TvLifecycleTest {
         clearSyntheticControllers();
         InstrumentationRegistry.getInstrumentation().runOnMainSync(()->devices.close());
         await("Audio worker must exit after activity destruction", () -> audioWorkers() == 0);
+        DeviceTestDiagnostics.reset();
     }
 
     private static void clearSyntheticControllers() {
@@ -114,17 +116,20 @@ public class TvLifecycleTest {
     }
 
     private static <A extends TvGameActivity> void awaitReady(ActivityScenario<A> scenario) {
-        awaitActivity(scenario, "Battle window and resources must be ready", activity ->
-                activity.foreground && activity.hasWindowFocus() && activity.getEngine() != null
+        awaitActivity(scenario, "Battle window and resources must be ready", activity -> {
+            DeviceTestDiagnostics.observe(activity);
+            return activity.foreground && activity.hasWindowFocus() && activity.getEngine() != null
                 && activity.getEngine().getScene() != null
                 && (!(activity instanceof Level1Activity b) || b.selecting() || b.started())
-                && (!(activity instanceof ConstructionActivity c) || c.editing()));
+                && (!(activity instanceof ConstructionActivity c) || c.editing());
+        });
     }
 
     private static <A extends TvGameActivity> void onEngine(ActivityScenario<A> scenario,
             Consumer<A> action) throws Exception {
         AtomicReference<FutureTask<Void>> pending = new AtomicReference<>();
         scenario.onActivity(activity -> {
+            DeviceTestDiagnostics.observe(activity);
             FutureTask<Void> task = new FutureTask<>(() -> { action.accept(activity); return null; });
             pending.set(task);
             activity.runOnUpdateThread(task);
