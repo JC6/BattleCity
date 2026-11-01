@@ -91,6 +91,45 @@ class AcceptanceResultsTest(unittest.TestCase):
         self.assertTrue(self.signature_result([self.signed(), self.signed("cd" * 32)])[1])
         self.assertFalse(self.signature_result([self.signed("AB" * 32), self.signed()])[1])
 
+    def test_build_tools_37_output_from_ci_is_accepted(self):
+        stdout = """V2 Signer: certificate DN: C=US, O=Android, CN=Android Debug
+V2 Signer: certificate SHA-256 digest: e77966598fe6df86fd91cf526e83b9a5b25be0e9629783d5ddfd812719532598
+V2 Signer: certificate SHA-1 digest: 38fa90a85b871fdc14144d356257c3b6ed8ec0cd
+V2 Signer: certificate MD5 digest: 4efa2d677cea1f1aff0d97c3353d7047
+"""
+        signed = CompletedProcess([], 0, stdout, "")
+        summary, errors = self.signature_result([signed, signed])
+        self.assertFalse(errors)
+        self.assertIn("e77966598fe6df86fd91cf526e83b9a5b25be0e9629783d5ddfd812719532598", summary)
+
+    def test_mixed_and_repeated_signer_records_require_one_unique_certificate(self):
+        legacy = self.signed().stdout
+        v2 = self.signed("AB" * 32).stdout.replace("Signer #1", "V2 Signer:")
+        duplicate = CompletedProcess([], 0, (legacy + v2 + v2).replace("\n", "\r\n"), "")
+        self.assertFalse(self.signature_result([duplicate, self.signed()])[1])
+        for extra in (self.signed("cd" * 32).stdout.replace("Signer #1", "Signer #2"),
+                      self.signed("cd" * 32).stdout.replace("Signer #1", "V2 Signer:"),
+                      self.signed("malformed").stdout.replace("Signer #1", "V2 Signer:")):
+            with self.subTest(extra=extra):
+                self.assertTrue(self.signature_result([CompletedProcess([], 0, legacy + extra, ""), self.signed()])[1])
+
+    def test_other_certificate_and_key_digests_cannot_replace_a_signer(self):
+        valid = self.signed().stdout
+        for output in (valid.replace("Signer #1", "Source Stamp Signer"),
+                       valid.replace("certificate", "public key"),
+                       valid.replace("SHA-256", "SHA-1"),
+                       "WARNING: " + valid):
+            with self.subTest(output=output):
+                self.assertTrue(self.signature_result([CompletedProcess([], 0, output, ""), self.signed()])[1])
+
+    def test_failed_verification_cannot_accept_a_valid_printed_certificate(self):
+        output = self.signed().stdout.replace("Signer #1", "V2 Signer:")
+        failed = CompletedProcess([], 9, output, "fixture verification failure")
+        summary, errors = self.signature_result([failed, self.signed()])
+        self.assertIn("**FAILED**", summary)
+        self.assertEqual(1, len(errors))
+        self.assertIn("exit code 9", errors[0])
+
     def test_invalid_or_missing_signer_cannot_report_signatures_passed(self):
         self.assertTrue(self.signature_result([CompletedProcess([], 1, "", "invalid"), self.signed()])[1])
         with mock.patch.dict(results.os.environ, {"ANDROID_HOME": "", "ANDROID_SDK_ROOT": ""}), \
@@ -119,9 +158,12 @@ class AcceptanceResultsTest(unittest.TestCase):
             self.assertIn("diagnostics/apk-signatures/", error)
 
     def test_missing_or_malformed_certificate_fails_even_with_successful_exit(self):
-        for certificate in ("", "aabb", "a" * 65, "z" * 64):
-            with self.subTest(certificate=certificate):
-                self.assertTrue(self.signature_result([self.signed(certificate), self.signed()])[1])
+        for label in ("Signer #1", "V2 Signer:"):
+            for certificate in ("", "aabb", "a" * 65, "z" * 64, "ab" * 32 + " "):
+                with self.subTest(label=label, certificate=certificate):
+                    malformed = self.signed(certificate)
+                    malformed.stdout = malformed.stdout.replace("Signer #1", label)
+                    self.assertTrue(self.signature_result([malformed, self.signed()])[1])
 
     def test_unstartable_signer_still_records_both_apk_attempts(self):
         summary, errors = self.signature_result([OSError("fixture launch error"), OSError("second launch error")])

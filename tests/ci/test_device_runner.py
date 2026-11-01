@@ -3,11 +3,14 @@
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
+import textwrap
 import unittest
 
 
 SCRIPT = Path(__file__).resolve().parents[2] / "tools/run-android-device-tests.sh"
+WORKFLOW = SCRIPT.parents[1] / ".github/workflows/android.yml"
 
 
 class DeviceRunnerTest(unittest.TestCase):
@@ -76,6 +79,86 @@ exit "$FAKE_EXIT"
                 self.env.update(FAKE_API=api, FAKE_MINOR=minor)
                 self.assertNotEqual(0, self.run_script("37.2").returncode)
                 self.assertEqual([], list(stale.parent.glob("TEST-*.xml")))
+
+
+class KvmPreparationTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        # Exercise the actual workflow script without accessing the host KVM device.
+        self.node = self.root / "kvm"
+        self.node.symlink_to("/dev/null")
+        step = WORKFLOW.read_text().split("      - name: Enable emulator acceleration\n", 1)[1]
+        step = step.split("      - name: API 34 framework smoke tests\n", 1)[0]
+        self.script = textwrap.dedent(step.split("        run: |\n", 1)[1]).replace("/dev/kvm", str(self.node))
+        binary = self.root / "bin"
+        binary.mkdir()
+        sudo = binary / "sudo"
+        sudo.write_text("""#!/usr/bin/env bash
+echo "sudo $*" >> "$COMMAND_LOG"
+[[ "$*" == "chmod a+rw $FAKE_KVM_PATH" ]] || exit 99
+if [[ "$FAKE_CHMOD_EXIT" != 0 ]]; then echo 'fixture chmod denied' >&2; fi
+exit "$FAKE_CHMOD_EXIT"
+""")
+        sudo.chmod(0o755)
+        python = binary / "python3"
+        python.write_text("""#!/usr/bin/env bash
+echo open >> "$COMMAND_LOG"
+if [[ "$FAKE_OPEN_EXIT" != 0 ]]; then
+  echo 'fixture KVM open denied' >&2
+  exit "$FAKE_OPEN_EXIT"
+fi
+exec "$REAL_PYTHON" "$@"
+""")
+        python.chmod(0o755)
+        self.commands = self.root / "commands.txt"
+        self.diagnostics = self.root / "build/diagnostics/kvm/setup.txt"
+        self.env = dict(os.environ, PATH=str(binary) + os.pathsep + os.environ["PATH"],
+                        COMMAND_LOG=str(self.commands), FAKE_KVM_PATH=str(self.node),
+                        FAKE_CHMOD_EXIT="0", FAKE_OPEN_EXIT="0", REAL_PYTHON=sys.executable)
+
+    def run_script(self):
+        return subprocess.run(["bash", "-e", "-c", self.script], cwd=self.root, env=self.env,
+                              text=True, capture_output=True, timeout=10)
+
+    def test_success_corrects_permissions_before_opening_and_records_diagnostics(self):
+        run = self.run_script()
+        self.assertEqual(0, run.returncode, run.stderr)
+        self.assertEqual([f"sudo chmod a+rw {self.node}", "open"], self.commands.read_text().splitlines())
+        log = self.diagnostics.read_text()
+        self.assertIn("uid=", log)
+        self.assertIn(str(self.node), log)
+        self.assertIn("KVM device opened for read/write", log)
+
+    def test_missing_device_fails_before_privileged_commands_and_keeps_diagnostics(self):
+        self.node.unlink()
+        run = self.run_script()
+        self.assertNotEqual(0, run.returncode)
+        self.assertFalse(self.commands.exists())
+        self.assertIn(str(self.node), self.diagnostics.read_text())
+
+    def test_regular_file_cannot_replace_the_kvm_character_device(self):
+        self.node.unlink()
+        self.node.write_text("not a device")
+        run = self.run_script()
+        self.assertNotEqual(0, run.returncode)
+        self.assertFalse(self.commands.exists())
+        self.assertIn("not a character device", self.diagnostics.read_text())
+
+    def test_chmod_failure_is_not_hidden_by_tee_and_does_not_attempt_open(self):
+        self.env["FAKE_CHMOD_EXIT"] = "7"
+        run = self.run_script()
+        self.assertEqual(7, run.returncode)
+        self.assertEqual([f"sudo chmod a+rw {self.node}"], self.commands.read_text().splitlines())
+        self.assertIn("fixture chmod denied", self.diagnostics.read_text())
+
+    def test_open_failure_is_not_hidden_by_tee(self):
+        self.env["FAKE_OPEN_EXIT"] = "13"
+        run = self.run_script()
+        self.assertEqual(13, run.returncode)
+        self.assertEqual("open", self.commands.read_text().splitlines()[-1])
+        self.assertIn("fixture KVM open denied", self.diagnostics.read_text())
 
 
 if __name__ == "__main__":

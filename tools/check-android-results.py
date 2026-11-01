@@ -139,12 +139,15 @@ def verify_apks(build_dir):
             could_not_start = True
             continue
         log.write_text(details + f"Exit code: {run.returncode}\nstdout:\n{run.stdout}\nstderr:\n{run.stderr}\n", encoding="utf-8")
-        match = re.search(r"^Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]{64})\r?$", run.stdout, re.MULTILINE)
-        if run.returncode or not match:
-            reason = f"exit code {run.returncode}" if run.returncode else "certificate SHA-256 digest is missing or invalid"
+        # Build Tools 37 prints "V2 Signer:" where older tools print "Signer #1".
+        digests = re.findall(r"^(?:Signer #[1-9]\d*|V2 Signer:) certificate SHA-256 digest: ([^\r\n]*)\r?$",
+                             run.stdout, re.MULTILINE)
+        unique = {digest.lower() for digest in digests}
+        if run.returncode or len(unique) != 1 or any(not re.fullmatch(r"[0-9a-fA-F]{64}", digest) for digest in digests):
+            reason = f"exit code {run.returncode}" if run.returncode else "expected one unique valid signer certificate SHA-256 digest"
             problems.append(f"Signature verification failed: {relative} ({reason}); see {log.relative_to(build_dir)}")
             continue
-        certificates.append(match[1].lower())
+        certificates.append(next(iter(unique)))
     if problems:
         status = "NOT VERIFIED" if could_not_start else "FAILED"
         return f"APK signatures: **{status}**; tool: `{signer}`", problems
