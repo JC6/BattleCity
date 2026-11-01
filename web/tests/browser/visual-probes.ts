@@ -22,7 +22,7 @@ export async function probeCanvas(page: Page): Promise<CanvasProbe> {
     return (rgba[offset] << 16) | (rgba[offset + 1] << 8) | rgba[offset + 2];
   };
   const black = 0x000000, gray = 0x666666, white = 0xfcfcfc;
-  const light = 0xadadad, yellow = 0xf8b800, olive = 0x687000;
+  const light = 0xadadad, yellow = 0xf8b800, highlight = 0xf8d878, olive = 0x687000;
   // Independent, small visual contracts for the stage counter and menu.
   const digits = {
     1: ['00001100','00011100','00001100','00001100','00001100','00001100','00111111','00000000'],
@@ -39,22 +39,22 @@ export async function probeCanvas(page: Page): Promise<CanvasProbe> {
   const tank = (x: number, y: number, width: number, height: number): Bounds | null => {
     // Spawn stars and shields contain no olive pixels. Terrain and enemy
     // activity cannot enter these small player/cursor regions in this recipe.
-    if (count(x, y, width, height, yellow) < 40 || count(x, y, width, height, olive) < 15) return null;
+    if (count(x, y, width, height, yellow) + count(x, y, width, height, highlight) < 40 || count(x, y, width, height, olive) < 15) return null;
     let left = 256, top = 240, right = -1, bottom = -1;
     for (let py = y; py < y + height; py++) for (let px = x; px < x + width; px++) {
-      if (pixel(px, py) !== yellow) continue;
+      if (pixel(px, py) !== yellow && pixel(px, py) !== highlight) continue;
       left = Math.min(left, px); top = Math.min(top, py);
       right = Math.max(right, px); bottom = Math.max(bottom, py);
     }
     return { x: left, y: top, width: right - left + 1, height: bottom - top + 1 };
   };
   const grayBackground = pixel(0, 0) === gray && pixel(255, 0) === gray;
-  const base = pixel(112, 209) === gray && pixel(113, 209) === gray && pixel(116, 209) === black && pixel(126, 209) === gray;
+  const base = pixel(112, 209) === white && pixel(113, 209) === white && pixel(116, 209) === black && pixel(126, 209) === white;
   const player = tank(76, 176, 24, 48);
   const battleStage = grayBackground && pixel(16, 16) === black && base && player ? digit(240, 200) : null;
-  const stageSelect = grayBackground && pixel(16, 16) === gray && pixel(128, 64) === gray ? digit(148, 120) : null;
+  const stageSelect = grayBackground && pixel(16, 16) === gray && pixel(128, 64) === gray ? digit(152, 112) : null;
   const menu = pixel(0, 0) === black && glyph(digits[1], 88, 136, white, black) &&
-    count(24, 48, 192, 32, 0xbc3410) > 100 && count(88, 184, 72, 8, 0xbc3410) > 100;
+    count(24, 48, 192, 32, 0xa05000) > 100 && count(88, 184, 72, 8, 0xbc3410) > 100;
   let halfSteel = true;
   for (let y = 48; y < 64; y++) for (let x = 48; x < 64; x++) {
     const color = pixel(x, y);
@@ -63,11 +63,11 @@ export async function probeCanvas(page: Page): Promise<CanvasProbe> {
   halfSteel &&= [white, light, gray].every(color => count(56, 48, 8, 16, color) > 0);
   // The upward bullet lies above the moved tank's shield, below enemy
   // activity, and inside Stage 2's empty column-four corridor.
-  const bulletRows = ['.W..', 'WWW.', '.W..', '.D..'];
+  const bulletRows = ['.S.', 'SSS', 'SSS', 'SSS'];
   let bullet = false;
   for (let y = 164; y <= 188; y++) for (let x = 84; x <= 88; x++) {
     if (bulletRows.every((row, py) => [...row].every((value, px) =>
-      pixel(x + px, y + py) === (value === 'W' ? white : value === 'D' ? light : black)))) bullet = true;
+      pixel(x + px, y + py) === (value === 'S' ? light : black)))) bullet = true;
   }
   return {
     menu, stageSelect, battleStage, player, bullet, halfSteel,

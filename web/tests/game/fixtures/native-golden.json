@@ -1,1283 +1,43 @@
 {
   "provenance": {
-    "kind": "Frozen pre-texture native RGBA baseline",
-    "sources": {
-      "game/arena.ts": "ecc86b5bf8ac7a5029b478a7fea235c6b3a55ca1ac21f7674500a64b448c0597",
-      "game/pixel-assets.ts": "f5f5fda5736b2ee3fa88de75aff1cfb970f8219f47864c50cc70a062c7a4590e",
-      "game/animation.ts": "08e761d7859e80624d3c553a16e2df2d93a450c562819b36242d74552a2daba0",
-      "game/score-timeline.ts": "b0e24e4bf003032bd7484c29c3128271afdb6907cc287ae1014986195c021d78"
-    },
-    "scoreTiming": "Frozen renderer with independently corrected countMs=9*TICK_MS from CD10+CDD8 instruction waits; no texture-renderer output used",
-    "hiscore": "bank_FF.asm tbl_D565 palettes 05..08: brick $0F/$12/$00/$30; edge $06; mortar $00",
-    "menuHeaders": {
-      "kind": "Explicit expected strings placed at original nametable columns using independently frozen glyph masks; no renderer output used",
-      "chrSource": "https://github.com/cyneprepou4uk/NES-Games-Disassembly/blob/df2c8e55e7f13e5792482527db9e7c9e4a84c6e1/Battle%20City/CHR_ROM.chr",
-      "chrSha256": "a5d5a10b0fbe9b1a8b8806a06af2634d25ed993b3659131d01acdf86de9c00e9",
-      "romanTwo": "Background tile $5F, CHR file $15F0: 3E14141414143E00 in each bitplane",
-      "bounds": [
-        16,
-        24,
-        216,
-        8
-      ],
-      "numberRightEdges": [
-        80,
-        160,
-        232
-      ]
-    }
-  },
-  "frames": {
-    "brick:0": {
-      "width": 8,
-      "height": 8,
-      "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1"
-    },
-    "brick:1": {
-      "width": 8,
-      "height": 8,
-      "sha256": "0c5b516886d00f8cdc511b43929a27d6b345e666594ea553ce03b3d9d483cf5a"
-    },
-    "brick:2": {
-      "width": 8,
-      "height": 8,
-      "sha256": "b0afeaccb76acbcbb950ade4c4947544ced90be617af668b2d1a2915e815442d"
-    },
-    "brick:3": {
-      "width": 8,
-      "height": 8,
-      "sha256": "fba6a83996bafb038c10536e5022181dd2ba5ad5a9cbc218b5257da167f1adde"
-    },
-    "brick:4": {
-      "width": 8,
-      "height": 8,
-      "sha256": "c2f3823bb2d59a9edfa7780088cb378c6e36adc55606152f9b25da069d4aee0d"
-    },
-    "brick:5": {
-      "width": 8,
-      "height": 8,
-      "sha256": "9f95dbc56b468e703573384c2545707a56b495b863049f856bee4f171797164f"
-    },
-    "brick:6": {
-      "width": 8,
-      "height": 8,
-      "sha256": "a7e748e3583a5211bfffc21bb1a83bc88dd9b758725912d3989e53a4791cf02f"
-    },
-    "brick:7": {
-      "width": 8,
-      "height": 8,
-      "sha256": "52e012846808de804a7ab937b8a90e5f5dd6d7f8ec2cf21eda7201d2cf65bcd9"
-    },
-    "brick:8": {
-      "width": 8,
-      "height": 8,
-      "sha256": "d6b9fdce6392bc4beac264819354bcf143306721fda5f4d26b50fa5877f32364"
-    },
-    "brick:9": {
-      "width": 8,
-      "height": 8,
-      "sha256": "d154882f30ce426fbab323aa354e4ac7b81032f04a93dd9b4aa52499013f6b82"
-    },
-    "brick:10": {
-      "width": 8,
-      "height": 8,
-      "sha256": "6cef64183de5b87e4c3d75b23247229afbaa3601e23fda6bc30d4cc7dd03da72"
-    },
-    "brick:11": {
-      "width": 8,
-      "height": 8,
-      "sha256": "bf4cb15f4bceae6bdf88bd24bedaeda593ff32bc83c17d769cc5a60e839ccde3"
-    },
-    "brick:12": {
-      "width": 8,
-      "height": 8,
-      "sha256": "5b43353d8502d9f6d7b727cba270a98f670daeeff024deea24c1cbdf7d5e131b"
-    },
-    "brick:13": {
-      "width": 8,
-      "height": 8,
-      "sha256": "9d4b5c9678f0b977c33ad546ee0819accc67edf07a37e0bc46609d8e64fd61c6"
-    },
-    "brick:14": {
-      "width": 8,
-      "height": 8,
-      "sha256": "679817b51975118cb3243f684474e019c468cd4e9301658ebb23f64d98b1cafb"
-    },
-    "brick:15": {
-      "width": 8,
-      "height": 8,
-      "sha256": "c62879dfa0df6d7d92a60cd24c42913ceacfeed84b16eb8da33e73afcdf7e399"
-    },
-    "steel": {
-      "width": 8,
-      "height": 8,
-      "sha256": "07b114d60864f295793090225c862b6df0e97cfcb37cb79f9f99d021dc2d203c"
-    },
-    "water:0": {
-      "width": 8,
-      "height": 8,
-      "sha256": "3924419f0981bd99c2009d95cd53b467285cfff604634ead8113da747b01aed5"
-    },
-    "water:1": {
-      "width": 8,
-      "height": 8,
-      "sha256": "46997c905e646eba5c1770de23940919f9823872349a0420e2e6986d63057467"
-    },
-    "forest": {
-      "width": 8,
-      "height": 8,
-      "sha256": "45fa1a8cd78e777ec3ddc23cde8db3cb39277d0fc9940f1042123b7152b71509"
-    },
-    "ice": {
-      "width": 8,
-      "height": 8,
-      "sha256": "26433f1bebec19802b015a4de1b90c65445ba53463020d3bfbed58300989ebf5"
-    },
-    "base:alive": {
-      "width": 16,
-      "height": 16,
-      "sha256": "6391a40c84bf4df1b0e4b85458a343357c4cf92eb7a0ecacb18451faf29898de"
-    },
-    "base:dead": {
-      "width": 16,
-      "height": 16,
-      "sha256": "105b92ba08271051885c4be8349306368635fecc642d31eb5200e7caf0526920"
-    },
-    "player:0:0:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "53513a444324f45da10d65f1fe50d707121cb0b6cccef8675e0967c2577a18f8"
-    },
-    "player:0:0:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "316c7a1ac738953a0e64f46e7030d38cf467cc1f4b13432ac78f7a64210dec7c"
-    },
-    "player:0:0:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "00a99b1265e3678b458fc908f6e004f1c964e95d1a4a3d72599d7cf74d159148"
-    },
-    "player:0:0:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "a16b87921e1600203386b26de3f8763226a70726770905d4d8870370dd2c0cff"
-    },
-    "player:0:0:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "98986492e23ea88470435d5b315afce4563b3c9b017271f650c71e8c3cb12290"
-    },
-    "player:0:0:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "96d70c068a1f05adfdb2807353cd201a03d32c0eea72b89eb4bf3b9ad0cafdde"
-    },
-    "player:0:0:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "a63b77136f0967bb7e52d445782af0e1cca1cdccb8ba88f4e3aed20b76d0ece8"
-    },
-    "player:0:0:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "de7ee85e0131d162ab51274d0b525ed93039fd5eade9fb108090c70cf92cb8f3"
-    },
-    "player:0:1:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "3f6cb2d5dd8210ef1f2d6709db8ebda5b009a3af2a265a0480c3e86b9ce160e8"
-    },
-    "player:0:1:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "717da776168d604b4807e5099f5ac68918c3581e0f4fb3c77edc0243e7b23db2"
-    },
-    "player:0:1:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "7386868e3581f77a7962536be006601126b5b0ff813e203fc2fcd94f28f8f85b"
-    },
-    "player:0:1:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "3cb3a51ae05f5ab5936881530bb8c7c00680effcd302d2d4156e8aa4c2e517fb"
-    },
-    "player:0:1:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "53e87ff72d5b8bc9617526991d5ff0aef9d413f8bd006196948f991424df244d"
-    },
-    "player:0:1:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "c3d13bd050670439290cc9f14e754e4e26c319be8305aa3c57864de715b92876"
-    },
-    "player:0:1:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "54cce65623bbf2d0396418f67d8a13d636a61d4edb1cf267bcb9f77fde98d175"
-    },
-    "player:0:1:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "52f5f83d11eab3d5a0a2c76ff91ee8d1e83bedd2e607a7f7d56494c8a7c34548"
-    },
-    "player:0:2:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "e87901a19e1a1251579961290ca83984be31dcb9d0fa52c134ec90c8d58f7650"
-    },
-    "player:0:2:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "9daf5236ec226f937cbc73496d9abc184f3c98bc30a6f825e08c63fb03db1eca"
-    },
-    "player:0:2:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "145d9b5fe94892c8378e4f74cbdba6634cf0d81d18806020e02870914461ede4"
-    },
-    "player:0:2:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "42f6ffcf08610c3a59c97f9ccfb559cc2e42e73cabdcae5828c6454dcdfd0e85"
-    },
-    "player:0:2:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "661f3e91c11aecaab479de3d69ab01d32d7160918acaf10add4215d821ee8775"
-    },
-    "player:0:2:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "83446cba65c5e82ccc9eaafc6864396482ad5ab4f7771da2b8358e1d8fd0f9a0"
-    },
-    "player:0:2:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "8e806806248801de13ed9879e91cd03df8dccd01b48a694bad4ed3d00824361a"
-    },
-    "player:0:2:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "b3e785a72e1fd5c465dea18592790680e9f6f6bec6811f0f82d91b2920f8a22f"
-    },
-    "player:0:3:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "83e52fdbcd1098c27ed09379323e3405b6d7f4d15d3a4c0ad91666acda29ea17"
-    },
-    "player:0:3:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "e0dac115bcb58ab8cf75cb1f17c189e27b7795677b3f9ead3ecf1c4227522213"
-    },
-    "player:0:3:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "3e281af34f4882c4e55359db5892506925af85eac9ac5108e7513d84effbe3e0"
-    },
-    "player:0:3:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "6544f1156d432be01f5194d08277726d44c8c78dcc1ca5c87cdea6dc4f838321"
-    },
-    "player:0:3:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "51e391cf087b3521557f25d56423aa67e3ad6719c8b3b9d5fe8a52d0471226b8"
-    },
-    "player:0:3:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "50be4ad923d631e46372a887d04dba22f710e0bb6b81afa0b3921fbe90d4c6d5"
-    },
-    "player:0:3:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "1778294438f9e4c505250fb0336390dafa392441541edbe573d0aa005bb2ac0e"
-    },
-    "player:0:3:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "ffe9aaf12fec18f8145961bddd44d614e8ecbd5deb520f66eb89c641a6c04632"
-    },
-    "player:1:0:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "40830f29fb8912042f8f2081df02fe0bfeb48c2e0884a503d129330e9e43d15d"
-    },
-    "player:1:0:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "c220f1216a77830d37e16709ea3d06c4ce32bebca81fd2fe3b55148751f98e2e"
-    },
-    "player:1:0:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "c1fc0e303f14d3cc77303f5352758e292d372fbc0dae9da9fdd511c9cf186768"
-    },
-    "player:1:0:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "80766f1da1e43bbf71d7ea83eefa6dbd74237233ba010d0f049afc2d80ab14ab"
-    },
-    "player:1:0:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "4214b14d70c43abcd4e3083d83d3d835a7b2695399624d7590fc29321d683bda"
-    },
-    "player:1:0:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "6e4f2a790287cdbb6b80435a37550fa31b643e3b945154c583ae699e28f2b9ef"
-    },
-    "player:1:0:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "8456386c894181da2b5d061c2ab3649a4d8af911a9055f624b15fb4c5c4bffd4"
-    },
-    "player:1:0:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "640af9ddf170acc7fd0fd7a29eb698e901c73d27f3a673d7fbbf1923ab1d9499"
-    },
-    "player:1:1:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "ea3ff2478ed4329a0aff9c12289ced0e4db04e7f79a6758e112b09a69f732b0e"
-    },
-    "player:1:1:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "ee74f0c4d6b48af59984e1ada86f3d1f5b3d96abe3b7628c0d07f93acd826ee0"
-    },
-    "player:1:1:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "d65f7834b729763d91acafe52263c3d4dc23421df53c9c2ed62f822c403b121b"
-    },
-    "player:1:1:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "d16d7c36bab384f264555b117e7d595c33b6ccdcc135d0e2bf4137dd99c2210a"
-    },
-    "player:1:1:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "7112a1ca5f994926e6ea61754475ec7de858f79d01a6b1b16ce543209c378725"
-    },
-    "player:1:1:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "57653e96da2adb8c4a36c959508163d4939194137e1e2aac08617112a2dfd386"
-    },
-    "player:1:1:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "2ba26632008c97b6c5c6178c06226a8a460446649fc10fce7d6ba25957d2d5f1"
-    },
-    "player:1:1:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "67902e21e9447f08f5cc34a07cd336e8926c6989b1c56b47520020a9712d2f49"
-    },
-    "player:1:2:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "9058eb9e2026bfd7b9ebc90dec75d6cac5a8c71c4a3417d2c3ed0d8a95d60e86"
-    },
-    "player:1:2:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "a6ee7f6605a193da21417782ae4ef453ac75b6dff5586a75940dfb8e25934c45"
-    },
-    "player:1:2:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "3dbfc7878eb836b543d0b1b9bd0233e27bcb702c6bba1edbf7822ed96103cf83"
-    },
-    "player:1:2:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "e860160e09bfde14686be93c6a3c12fd9495d044d81241689cdc769d22474081"
-    },
-    "player:1:2:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "69b59a9282c3b2ea13a3cf55cfaeb4e36fc67b7ea384f8c29dad5443218145ee"
-    },
-    "player:1:2:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "7623876d58a4df19130ffd0d79a3c11145e3ce7f0e3b95044570691d13b70e17"
-    },
-    "player:1:2:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "7e4c40eaf45b4dca2edf0b8cc1af025b77ea274a5b6f33db924db16519d933fc"
-    },
-    "player:1:2:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "d9693ecb731828ca117ab35f15328c55eff1a7502495a1a5ed71e6058a45753c"
-    },
-    "player:1:3:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "4e7e41b2f924ab3002d9b7370017744f39d3481ba6b54c90f8ea7830d75d9216"
-    },
-    "player:1:3:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "96dad7984187549a85058268430649a1e8cae7802819895eab9a27e9dd525104"
-    },
-    "player:1:3:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "5c9e522a5f69381c1e85fd63bdc01215f829032d53038cfa2fc69bcd74ffd52b"
-    },
-    "player:1:3:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "27ac93363aa816f0980b016147ab6c379cdd3be26cf96883a8c559704979a226"
-    },
-    "player:1:3:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "e92c8d6b1287a0c82c9bf142f30c773575fc0f17f0d51a27b83b0c0489e76a74"
-    },
-    "player:1:3:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "32b4a2aa6aa51df1b240d17f15aeb593b871fdf3392bd15df2fdec18726b3aba"
-    },
-    "player:1:3:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "bfff03512cdceb48dd2e9748de2e1d2c2e27c48300e8316123ebddaf9ae4c17c"
-    },
-    "player:1:3:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "d7c3ab2950ce093f55aebbc69f800f9e14984764d547c37124959ae76b76ce13"
-    },
-    "enemy:basic:flash:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "9db5904bbf7315caa8ef721c34823a6448b7bd91492fedc2e7aca8762bafd958"
-    },
-    "enemy:basic:flash:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "631b6b5dbb8658aceeb35bca7e4eb7cd69563a4692d11f5e45bcb10baf4cc443"
-    },
-    "enemy:basic:flash:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "51f80541eec4ec657f64fb88b8563034a4bb2a3ad80db9f9d41050ec263dcc3a"
-    },
-    "enemy:basic:flash:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "e72d07ac8efe82dbe62b5921d7c7458e34945ed83e5296b3cc00a8339067db13"
-    },
-    "enemy:basic:flash:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "a281bd69602031e8bec915b984c9aaaff3d06c1f8e504080a38e0b97c57684fb"
-    },
-    "enemy:basic:flash:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "667b2ddc6fad27f5b30af4717dfdd12fe43cec5102fa7036695e50006623d9c2"
-    },
-    "enemy:basic:flash:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "2a42c6a62dfd380982cf24b118d30acf5f1b2c726f0753f92ba4c671d4b194e4"
-    },
-    "enemy:basic:flash:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "6e54810dd9c3c0c5730e1f67e0754af71a120dd5e7646ca4af5ef3f8c6988594"
-    },
-    "enemy:basic:normal:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "b7a40d5ca78228c2ec5ebe06202dc46db9493d7381cc583269fb5a4f56b7c106"
-    },
-    "enemy:basic:normal:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "ef5a5e74b9ddfceaa05c632f39901215e8440fceafb642eecd035e4739fd77ee"
-    },
-    "enemy:basic:normal:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "93401ca6ccbab5dbe5f857a7e5fe6483625642e1fe7489b56b7672655df9bee4"
-    },
-    "enemy:basic:normal:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "2052001e7a217915ed79978bc52a056095b3884e39da35fee12372910d4cbe02"
-    },
-    "enemy:basic:normal:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "325a9ce40e9a06001f27c6059f390459ec1f1f1256d38e0b0e19bd04390eb560"
-    },
-    "enemy:basic:normal:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "df90098503377b6eb5324b82e41cbec10ab1f20619a66528dce38e6a97f8f3b5"
-    },
-    "enemy:basic:normal:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "e37b5b81694a68b4c59818d3259e6761106be30b54f8ccbe588680bdd74ab188"
-    },
-    "enemy:basic:normal:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "ab8b5f653aad1fa0f4494bd4abbd99b5d3d5f09797b1c5648929bda27f78e3ef"
-    },
-    "enemy:fast:flash:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "649242e2d85e79746b3d52eed2b3c81c5c1fa6851855eabb0295f5699110d961"
-    },
-    "enemy:fast:flash:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "3fb402dfc676fbad9d576c27ea91f9ea97d69d6df7cfdd0b0c20e63805da0657"
-    },
-    "enemy:fast:flash:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "a9e78ae03ac1746e6223c0798f86a9e81d5491209b79967e6bc674ac5dfce6a1"
-    },
-    "enemy:fast:flash:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "367f126280a213d73b2c6883038d7f4d91cee64d0931eff63d2b13f8b7de9cc0"
-    },
-    "enemy:fast:flash:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "b00300d1ce3f030793604bc827aed6126f6cfd5cb6b5bd8b03d3f0fe6bce1645"
-    },
-    "enemy:fast:flash:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "8b3cc226ab85843e0aa63c57d024b6389cf34a2ec9b08d68d6aa4848370b0162"
-    },
-    "enemy:fast:flash:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "e79ea94b49ecbd773f895560fad28df1696eb52996dfdbc0a510ea31b8297cd0"
-    },
-    "enemy:fast:flash:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "c505217e7207e3f68599374eb3bc7362a007083e2847b7fb1ac09f977933a777"
-    },
-    "enemy:fast:normal:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "0094ef5735a7d7f5cd308a631ca0cd35eb0950b77031f16b1d49c41977d5dab7"
-    },
-    "enemy:fast:normal:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "7813433c83441534dffa5aca717f3b13506201436a7d01db43167f90e42f1cb6"
-    },
-    "enemy:fast:normal:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "7e56b634d4003bd2f0a8f26d245f2fd9345b57cc2a0ba298531690a525f6ccca"
-    },
-    "enemy:fast:normal:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "d33751285db52334802b4231a26813bc6371d31a0647a14be9fd75a593288b92"
-    },
-    "enemy:fast:normal:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "42d8da650f21a613db1a64626499ad05174779d34e4ffd652f357be9cc8e82d8"
-    },
-    "enemy:fast:normal:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "6b080b655947b87b86af7d17f14c5e27a4fd8cf639a6f527561e5547d7f53230"
-    },
-    "enemy:fast:normal:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "872c00bff75815910ce30edd9e84336d42d6fe7d79cc20f0443faa2933ac517a"
-    },
-    "enemy:fast:normal:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "fd15e9ef282082b8a960e663878ea42ce7164b3041ea23466bb7d73dd4474a1a"
-    },
-    "enemy:power:flash:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "76b883cb6193615511c929f511d4dcb7a32f1461cd8d8b808123d844482df4c3"
-    },
-    "enemy:power:flash:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "1ba92e92317dc9ee9cc9fdbe71a7186bd89a61cf0a24a1a1168765f3f478a960"
-    },
-    "enemy:power:flash:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "2b1ac687b6dedabb91c1815737d3cbfa205ed51a9ce13b671924d20ee845b903"
-    },
-    "enemy:power:flash:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "b76d73037c8745a388ae34d805018ff0eea68af319158dbca71a76bc1b78e0f8"
-    },
-    "enemy:power:flash:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "b45478f54f61b51f72aa8fd02d9fe68467a0e8c366599bd81729a00dfb6c5ac8"
-    },
-    "enemy:power:flash:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "47e1d4ffeff6885a5a4a137a853491ffab29628f4b751a73692b28fdfd63a432"
-    },
-    "enemy:power:flash:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "2036cc0deec21d7610b5c8b19a8aa0e7139062518d00c670fdd393df23b04c3b"
-    },
-    "enemy:power:flash:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "338e605bc4bfe2f5fefe3bd87a865aaeb4799e9cda14d28820c0590c845ddf76"
-    },
-    "enemy:power:normal:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "296b69b16c06d1a2ecb879e7ba679038693a86c5fc2e1f0fb91957de596f2719"
-    },
-    "enemy:power:normal:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "5bf4814954f098ee383bee698b987e3b8331e7cd5be20f5516311212705b45c8"
-    },
-    "enemy:power:normal:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "bf8ad5feabc5bdcd9eac4d6dd2bc7693438d11004948747e8caa783fc08fa410"
-    },
-    "enemy:power:normal:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "c5c0f5bf53f5f8cb579a0dbb40ae50540f9c883a4420209d55777cd4edac0675"
-    },
-    "enemy:power:normal:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "e2d9e932a07e493460ff423c246554224bc3601deeb474ba9814018a3c480969"
-    },
-    "enemy:power:normal:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "25697516f4446020d35e7e0dd1e048ab48b69cc8d883ed7ae81f28b3c373346f"
-    },
-    "enemy:power:normal:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "b54f45e2edbc33e272f2635bda2f66a20755e4c89ff136ee51dabb5b65827003"
-    },
-    "enemy:power:normal:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "9697f45cef5c91b3f04a09c6bf8b2d557527f8f95fc5bbedba517d77bd68ec6f"
-    },
-    "enemy:armor:flash:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "25f5c146de0313ac05589b9c1ed564f67393c20dedf90558fbdd2b802edc2550"
-    },
-    "enemy:armor:flash:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "2f391f1bc35a69775500c616b79f48f2f63023b3766551e34716877e4b45c900"
-    },
-    "enemy:armor:flash:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "f1a44fc74459ea49cdd42a33ae5d8403aa6b02d2039d17ad682d6d0a6a68b403"
-    },
-    "enemy:armor:flash:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "c3908af53b105b5fd51280e3ed0cb24dbc20c5607101636e2bc792d8ec30c74e"
-    },
-    "enemy:armor:flash:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "2c8094276f2ba1226aa7fd1e62e0bfeae0b7b5ed4bdb6a5187c4088848fd8f74"
-    },
-    "enemy:armor:flash:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "8f5a360703868ec7101bb8f07fa9318cb08bbb8415b1c8dbb2a1808dbfab298a"
-    },
-    "enemy:armor:flash:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "5b8101fcf4c9993d2b3c801f635c2d633fa5fb6f780eb03a417f4767b7bdabba"
-    },
-    "enemy:armor:flash:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "9de908b8b9f1d55daa81b6538ff155169d9fa4bda7f27858ef14b9b7b55de1a5"
-    },
-    "enemy:armor:hp1:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "2c873ec2108935d01362b0cecef4ff4b7e0eaf15515e6cbb8c34f8bfc25fe3c1"
-    },
-    "enemy:armor:hp1:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "c177532b2f4f1a8ff7f4f79d28391d33ebb87a213485b1d1c6308b886810b2e5"
-    },
-    "enemy:armor:hp1:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "f4041e0900fb9415acda7abe72a2fd8cb957f8875fc574729203f6c446b1227d"
-    },
-    "enemy:armor:hp1:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "7c88258646a34e4d6c230ee0e6f737be1a6302a22ff89fa2731499ab33a7a76e"
-    },
-    "enemy:armor:hp1:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "6ac84a21ed2e99850be52f03a58574a6fc06d14bd320765ac851472d4477c948"
-    },
-    "enemy:armor:hp1:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "b4ce88d2bf7f7b6cd1d88686cf19ba94396f9ff3ae4d2098b4da271c71a5ca4a"
-    },
-    "enemy:armor:hp1:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "6f5516bcbe5a29993b814bf619c13e887015d2df888eb6080be7ea2d5377819b"
-    },
-    "enemy:armor:hp1:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "9ad94123b204bc740818729945f97f6cd24c9012b14de82eeac706f7b3eb018e"
-    },
-    "enemy:armor:hp2:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "12c73611599b5af70fed680c4b3d48687dbae7942129611dea009d76bf69fa59"
-    },
-    "enemy:armor:hp2:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "eef381825afaf500e1b753c2668bda49b7ddfaf2c9bb17013abf03cc82c9e5e2"
-    },
-    "enemy:armor:hp2:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "ac28ac3de12714cd8261c1d69f49a483b1a46f17326446e94740a166ed78e765"
-    },
-    "enemy:armor:hp2:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "90bbca1aa8109ffd5c5c0d6079bff4dbb8a1e96a8274aaf3814d0662a5e63f6d"
-    },
-    "enemy:armor:hp2:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "539eb32f7a92598a4b463d01830a2e6d2748d559ed54b5055d0f74ad97ff8145"
-    },
-    "enemy:armor:hp2:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "17a380260f31528f5c95787222f4f27cf4bb4704f91ab06df2951f76155c591a"
-    },
-    "enemy:armor:hp2:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "46f40de8b32562f7c6d213b3af0c1d1e91c8ce3d6972b302fc0e24ffb4c38c58"
-    },
-    "enemy:armor:hp2:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "772fc1d79f5cb914043c3e6852cba3dbb37c7d5f570d9d6105cabfc54315d4e7"
-    },
-    "enemy:armor:hp3:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "c21f8d1cf8803ccfa2ac745b33aa294dbf194984efcaa7d562821e41e74dc62e"
-    },
-    "enemy:armor:hp3:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "49f0cf676c5d6b4a30d1c68cea440a769b59b701d768980f0ef6fb8937e64aa4"
-    },
-    "enemy:armor:hp3:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "86e284b7ffd734ae4c0395fc897f1e0e9c3f924a687219bbb536fd9eeb76ed36"
-    },
-    "enemy:armor:hp3:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "52516ce7ff62477a353fb6ec0a7ff4a35b3c523f254d41e679c6691a4292af6f"
-    },
-    "enemy:armor:hp3:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "5c821dcf968343bf4851bcd0a633738037c0ef322c0c38a842e49b411143e744"
-    },
-    "enemy:armor:hp3:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "aa7267150e4e6f56f52f13ec64ed2fef493f9f84036011600ef0c641979f16d8"
-    },
-    "enemy:armor:hp3:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "b14f80519ab18f384fcdccc26c01ed2b13fceb2b162563949ccc9b3c4609bef4"
-    },
-    "enemy:armor:hp3:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "ad1a2a7ee137f0c2b8bc10f19c7072b45d9a28a1818377e8494fcffa3eccd7c6"
-    },
-    "enemy:armor:hp4:up:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "4210e4adfa725ddbcfab25c3d91956b1e212d4bbec3751c3017d2d9e487378f2"
-    },
-    "enemy:armor:hp4:up:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "b99ce25617582a02a421e3f160eb088667d04c0a29600e104dd2511705c6c829"
-    },
-    "enemy:armor:hp4:right:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "f4a2e0fd65f0ccea37f4e33696fcd4ce08d626831dbeb5ef03fff0e2a6b2bb86"
-    },
-    "enemy:armor:hp4:right:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "170f6afdffa1256daa5f76a8207aa76af59be4ed8a6ddb0e7359bce67b94de09"
-    },
-    "enemy:armor:hp4:down:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "525bf71b27af34226499f1a6ed0412ec18128bb695f989f873ac24c06b4426ad"
-    },
-    "enemy:armor:hp4:down:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "9a7f8b446ea3c16b703cc90b905e86f250cfad94f400c3b680d0ba6fe9411b00"
-    },
-    "enemy:armor:hp4:left:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "8a8abbf48e84b5ce97b0b465bd2b0bc1784f977c5842e3c715944649a2f1a53d"
-    },
-    "enemy:armor:hp4:left:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "8b28a2687319b259e3098a23eaa5cd3fd7d1965cd64fae9cdfec057ea9edc3ba"
-    },
-    "spawn:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "4b3ec890c25d326099321b5f2db7cf45c8a88ab00130ae23a9f3a861e38beba9"
-    },
-    "spawn:1": {
-      "width": 16,
-      "height": 16,
-      "sha256": "8b773edb14867d67b4f29222a5f34909a15e19db9820265af0778411e7b13072"
-    },
-    "spawn:2": {
-      "width": 16,
-      "height": 16,
-      "sha256": "679a9108582eb270ab92896988b529396612b562be17119ee117ab3f74b1dc86"
-    },
-    "shield": {
-      "width": 16,
-      "height": 16,
-      "sha256": "c09ce222313b90f2ebbd3319b8944413f7a900f4bba525e8314dffbf4aa31095"
-    },
-    "bullet:up": {
-      "width": 4,
-      "height": 4,
-      "sha256": "66d1ae8e26eeb7402dd74281df8843c549d0d9393e1dbae8af7fa2f79c004edd"
-    },
-    "bullet:right": {
-      "width": 4,
-      "height": 4,
-      "sha256": "1c2ddc2ca7c6fd11c9b1f52cceb96a25563b0777a499be2054308a41070a0b68"
-    },
-    "bullet:down": {
-      "width": 4,
-      "height": 4,
-      "sha256": "bf0f13bf472506c82ef84df62e9f23a9e18f8707f62d12dbebde3e16d0140a57"
-    },
-    "bullet:left": {
-      "width": 4,
-      "height": 4,
-      "sha256": "c8d21e917138a84c8fadc5d06c1111e5c1d0f9cb2e8495379cba704951b7e54b"
-    },
-    "impact:0": {
-      "width": 8,
-      "height": 8,
-      "sha256": "a97dd5da4097cb556cf393bf2afb9a6455308410b534f3f8fdfcd393fe3b2d75"
-    },
-    "impact:1": {
-      "width": 8,
-      "height": 8,
-      "sha256": "95cd3bb7e69b01f059509e70c5207c871b9702c1cca58e4a208a6576ce07ba7b"
-    },
-    "impact:2": {
-      "width": 8,
-      "height": 8,
-      "sha256": "d24fa1250db540346f5a8bd9db1f6bdcf6f332a13b127ca3479cb3a4b0d7fd37"
-    },
-    "explosion:0": {
-      "width": 16,
-      "height": 16,
-      "sha256": "9485979a8c2826cb9eb28ff47dba0fb31e0f115137800498977ae2f8f35d0ff3"
-    },
-    "explosion:1": {
-      "width": 24,
-      "height": 24,
-      "sha256": "fc27ffe87169b1fd905ebce6a6e96c0a949b5ed68bc75c7f83b720136b38fbc8"
-    },
-    "explosion:2": {
-      "width": 32,
-      "height": 32,
-      "sha256": "cf07426b75cf4aaf2ab624d1b91f6d54e44a2f463a539ad26f685bf201455367"
-    },
-    "item:star": {
-      "width": 16,
-      "height": 16,
-      "sha256": "e9962559b87eb28cd9a35279fdb9414159f7024a0368bf1eee6bfb2e1bb28180"
-    },
-    "item:helmet": {
-      "width": 16,
-      "height": 16,
-      "sha256": "051767259ea892164d8028cbc521fd5afe99ce378b51d7a4b1ce42343f6040ac"
-    },
-    "item:timer": {
-      "width": 16,
-      "height": 16,
-      "sha256": "75e3dd3c8a4b6fe9c96a7c5552ef7faebe6bc48bf87f6371f6dac62b6c698f77"
-    },
-    "item:shovel": {
-      "width": 16,
-      "height": 16,
-      "sha256": "3d8b1468817365347688273a7d1220834e70e0ac2a9862ac795db82942952679"
-    },
-    "item:grenade": {
-      "width": 16,
-      "height": 16,
-      "sha256": "456540105471a13c602917da0303bd79974939eb9b4365730c63ba699eda5801"
-    },
-    "item:tank": {
-      "width": 16,
-      "height": 16,
-      "sha256": "b1fe18527b8eee7fe5e2b6ad561b83214d393c6890d3653cc272af9c1dc0c9be"
-    },
-    "glyph:0": {
-      "width": 8,
-      "height": 8,
-      "sha256": "eb2d2dda2e30aa65c72af18e7e92862a93637130c8c7661f66542ec545860d63"
-    },
-    "glyph:1": {
-      "width": 8,
-      "height": 8,
-      "sha256": "e26e1074cb4e1805d3a2731a4a609e01427a66c2ec37a29bf8886cfbb6090668"
-    },
-    "glyph:2": {
-      "width": 8,
-      "height": 8,
-      "sha256": "e6df86f4b2d9aad620ca5971c4b0bfe2db8f22d9e15c149b2cbf29ac547e11af"
-    },
-    "glyph:3": {
-      "width": 8,
-      "height": 8,
-      "sha256": "a89c1fe442434d0bbcbf35a5dc9394e009efef289eb36eead7fbe763222805fa"
-    },
-    "glyph:4": {
-      "width": 8,
-      "height": 8,
-      "sha256": "5a438d4de071e758acdece3b9fa42352f5753cddc49d5687427e6a745ccff05a"
-    },
-    "glyph:5": {
-      "width": 8,
-      "height": 8,
-      "sha256": "4b276f185d2616800aef74135b7d68ce66a60f20f26fb2718cd82058f8e2b6b4"
-    },
-    "glyph:6": {
-      "width": 8,
-      "height": 8,
-      "sha256": "3360e8d28df4c930e3f5f5864e5c96dd860e518a3eb78dd0a129c7fd21dbd6e0"
-    },
-    "glyph:7": {
-      "width": 8,
-      "height": 8,
-      "sha256": "33e96fe6975bbeef76eb3b060ea219a74f38766f897350a2fe8291609cd2b7be"
-    },
-    "glyph:8": {
-      "width": 8,
-      "height": 8,
-      "sha256": "6faf68478e10e701c9623bb5ad3cb1658e02c25a116b360e99693d9c72e0322f"
-    },
-    "glyph:9": {
-      "width": 8,
-      "height": 8,
-      "sha256": "58261a3e9d94ee6d918079ebb590dc3ae6f57b66281610d0d0851b62415901c2"
-    },
-    "glyph: ": {
-      "width": 8,
-      "height": 8,
-      "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1"
-    },
-    "glyph:A": {
-      "width": 8,
-      "height": 8,
-      "sha256": "ebc96be50476612fcd529b97256d76b25fe098a251e6b8a00cb5518869750c88"
-    },
-    "glyph:B": {
-      "width": 8,
-      "height": 8,
-      "sha256": "f5b988a44c8475afab73368c024ba48b3e4acb98091f4ffa7b94d12449b99474"
-    },
-    "glyph:C": {
-      "width": 8,
-      "height": 8,
-      "sha256": "5b033a4e7793c28217bd98532e2cc036bc3a7798314815aa163207e9da745a87"
-    },
-    "glyph:D": {
-      "width": 8,
-      "height": 8,
-      "sha256": "52ae02b872001577d5f3dec617a86e8b77d7e2cefcd1553017925255d4943b27"
-    },
-    "glyph:E": {
-      "width": 8,
-      "height": 8,
-      "sha256": "3aacc3e017b7f6abcb57e5754c44427ee958d54e9bf362b9e4d81564d87eafe2"
-    },
-    "glyph:F": {
-      "width": 8,
-      "height": 8,
-      "sha256": "59c8681fdf6c64a585bafe6d2980d9f8c526ef977a1a1ace39229cfad94af4f8"
-    },
-    "glyph:G": {
-      "width": 8,
-      "height": 8,
-      "sha256": "e4fd7730316cb68a6634d6c6e9622962265999730cd02f9d6e5eda953ec73b4b"
-    },
-    "glyph:H": {
-      "width": 8,
-      "height": 8,
-      "sha256": "434493206edfe4bfab0d6465ef4959afdb8e2396c06883dab21996cd68efa950"
-    },
-    "glyph:I": {
-      "width": 8,
-      "height": 8,
-      "sha256": "87f65724877fc43623d87780d6e852462429e5cc28de163dcf1d85f77caf0fdb"
-    },
-    "glyph:J": {
-      "width": 8,
-      "height": 8,
-      "sha256": "68dd304f93a5819afc9ca1ce48ea5881b87fe5688b7e5be050964b0dfd29ea4e"
-    },
-    "glyph:K": {
-      "width": 8,
-      "height": 8,
-      "sha256": "997695469191c9c7fcb9d4a075dbfb8e80d8a7464aaf6c3947916a2a354e2fdb"
-    },
-    "glyph:L": {
-      "width": 8,
-      "height": 8,
-      "sha256": "1e3edafe484f0bcc42b740a95d35de4d8eccd930b2d28be60f0cd1e4c6417156"
-    },
-    "glyph:M": {
-      "width": 8,
-      "height": 8,
-      "sha256": "652cae30d1265dcf3ebf41960f56a33dc7ce1ad2c07e4e62689c99805ebc239f"
-    },
-    "glyph:N": {
-      "width": 8,
-      "height": 8,
-      "sha256": "383466e89bdd4357ee7427a21e2a4d652851f410ef861160754a47a8381700e3"
-    },
-    "glyph:O": {
-      "width": 8,
-      "height": 8,
-      "sha256": "908ac081f8c7ec1ca2b4754447171865325ddbbc7f5f6203c0ea6c27b67ca5ec"
-    },
-    "glyph:P": {
-      "width": 8,
-      "height": 8,
-      "sha256": "ed5591430e87166756575442b5f46a364db4c32086009c452561c817d648280c"
-    },
-    "glyph:Q": {
-      "width": 8,
-      "height": 8,
-      "sha256": "99936a63fb464c1e8c0b7a715c6ff58358858cfc58a7c1afc4dda5a90434d04a"
-    },
-    "glyph:R": {
-      "width": 8,
-      "height": 8,
-      "sha256": "6f9f8c199fc889e13cf6297b689258be5e59b42aae708d996c3a976b467622fa"
-    },
-    "glyph:S": {
-      "width": 8,
-      "height": 8,
-      "sha256": "feba97e9ef6f5b4971d831b160f6ebbac27ca1f005f76f305c13874c5192902c"
-    },
-    "glyph:T": {
-      "width": 8,
-      "height": 8,
-      "sha256": "08cf86dbad1b4323a549c0ed8b246eb97f6d61bac63a3889ceb1d2242eba720a"
-    },
-    "glyph:U": {
-      "width": 8,
-      "height": 8,
-      "sha256": "be936ce86dab53462e9e45c104ddd8239f3df7120a7449275974afe3f116e98a"
-    },
-    "glyph:V": {
-      "width": 8,
-      "height": 8,
-      "sha256": "125f5d29fd3176b9a22f6b1520893fc68d267ce328433bfc69f570a86ab85d33"
-    },
-    "glyph:W": {
-      "width": 8,
-      "height": 8,
-      "sha256": "2d2462fae3aee133f4dc86ea76d9a9203c4607c52be420c6f5247495904309b3"
-    },
-    "glyph:X": {
-      "width": 8,
-      "height": 8,
-      "sha256": "a806b52a7d8569b2e790e6e8295d37db9fb43722ebf0bc68f398fb402ac9dc9a"
-    },
-    "glyph:Y": {
-      "width": 8,
-      "height": 8,
-      "sha256": "fa59c98804e6823eac22cef8b36e86a5a001174fa32494cafd328f7e6eac62b1"
-    },
-    "glyph:Z": {
-      "width": 8,
-      "height": 8,
-      "sha256": "7bab7ff16e49c76ce168c788471f4c8da2b8df9be4d0c6179544bc9018b6318a"
-    },
-    "glyph:-": {
-      "width": 8,
-      "height": 8,
-      "sha256": "03441c623a73d7380c7fc0ec1ce576d4220b0c461bbc6f92c9f33903d2f290a6"
-    },
-    "glyph:.": {
-      "width": 8,
-      "height": 8,
-      "sha256": "c87ef7a7e7950843c737064414b7643d2db0d7cfdac960aca90be98ea4337b15"
-    },
-    "glyph:©": {
-      "width": 8,
-      "height": 8,
-      "sha256": "bdcbd2f7a329721efa03403cb4d881cf5e6fe61f7832a042817951454d3e8b95"
-    },
-    "enemy-icon": {
-      "width": 8,
-      "height": 8,
-      "sha256": "3c80ec5a62e9d855f6a35c861cc0742064e5411bf89bfe27d3585666d1449228"
-    },
-    "life:0": {
-      "width": 8,
-      "height": 8,
-      "sha256": "e3ccb68cb6d4d7115584e015533a596392b0acc79fb4d8d8e8f2a38eb0ba6d10"
-    },
-    "life:1": {
-      "width": 8,
-      "height": 8,
-      "sha256": "a1fc15db87a6606ddd3a783fde31afce4d3812e043ee045d159fbe9160c048ef"
-    },
-    "flag": {
-      "width": 16,
-      "height": 16,
-      "sha256": "4ae0947102b263a2615d23890f3f6be43271c7e53eca8ed23a60108dd60bb557"
-    },
-    "gray": {
-      "width": 1,
-      "height": 1,
-      "sha256": "80752de9e9ed586a87302881822fc971b3722902cfa191dadcc6b5810324a499"
-    },
-    "pause": {
-      "width": 56,
-      "height": 16,
-      "sha256": "4f9a28083f540bd7525ab45b9ec20c8040ff454c9a27dcd983d546cf5bf1e4b1"
-    },
-    "loss": {
-      "width": 32,
-      "height": 16,
-      "sha256": "132959ae35f2783d8aa510ca402be8eb2e2ae47506f1e0323278813eb4deac84"
-    },
-    "glyph:Ⅱ": {
-      "width": 8,
-      "height": 8,
-      "sha256": "04ce36128b2c1a97ee2e74c6ad516070d9108ec595d55c6de459c3183321417a"
-    }
+    "kind": "Frame hashes checked against the reference; scene hashes are reviewed renderer regression snapshots."
   },
   "scenes": {
-    "menu-0": "3ca8b1c6a53efdb3c7d9a31f4ee0a4478b60a6c321ca24e097e093f50f27b474",
-    "menu-1": "167e628de48996a91f341fe56f1a904c92f65465d184ed817c69218d7be3d46c",
-    "menu-2": "e5334ec61b7b19be2582a177073912ccdce8a21248193f6be0b36f1dae7c1788",
-    "stage-35": "dfeeeae5fe9c500f0a6cdc432e50dfa6a84135878eec1dfb2d743462abafabcd",
-    "intro-0-false": "a1dbcf00854220c3b284f59f01d34ff5687615d75aa6cd044fac575b37eb3e0a",
-    "intro-0-true": "ded2ee6a2b0803c24891e38f81c17f001a6ad5ebdda1f8c889d8ca6cb3b88eae",
-    "intro-500-false": "a1dbcf00854220c3b284f59f01d34ff5687615d75aa6cd044fac575b37eb3e0a",
-    "intro-500-true": "ded2ee6a2b0803c24891e38f81c17f001a6ad5ebdda1f8c889d8ca6cb3b88eae",
-    "intro-1000-false": "3ede8320a64868feb851b2ecae664440c3bf0f12e906cd9d14807331b4514428",
-    "intro-1000-true": "563874f32166e23c8c16f08d0b4d526d7a6933e71e1b59b227b645357d2f4bae",
-    "intro-1500-false": "7bb03d688ba3b8b18012e3ea96a83fb6c4743239aaab865a253b956f5456feb9",
-    "intro-1500-true": "fb193f8dc12414288430d85afd289ef48795f2f6145d71a003e344296c45fada",
-    "intro-2000-false": "d5aabdca1297bd7d33e1e4470760ee9538a40b65df4a0f455b3ac86668c1ccd4",
-    "intro-2000-true": "8b84f1a1c798a4c1b2a9f2f2408043e517bb488d07163e7a983ccea5e8592a83",
-    "score-single-0": "e941be0a6dd33d6ff3bd75936dd94fb547442c44096066e88359a0b3ae53f207",
-    "score-single-600": "4d279a709e82bbc9def1d3723fd6933da95a221861915bc5b6c380087242522e",
-    "score-single-1600": "5ea5a9f7af094f7d605d30286e509f5807c5bbe79a188527645455d934368796",
-    "score-single-6000": "84ccafbca49233fc035298df6c0cc698bbb39dc85c35365795e95213cc42887d",
-    "score-coop-0": "3810f989df868e01ca5b567ecbb910fb8e26261b8f1adc019dd1e357f1b02ff3",
-    "score-coop-600": "a4c3eacf4d16ab4a8ced655ca914a5d585a5811ab187e30c70150f468af69438",
-    "score-coop-1600": "928a2b03591831710ed0de7346df333bdfcbf83179fc1ef8d903576c4e79e41d",
-    "score-coop-6000": "025b60ecd59b1fe266fe826592c919963a5b75b27b573e5aeaf5968020561100",
-    "gameover": "325251a8c2632a167dc3d7261d75522b72da535168a1ac9aa17283e994d1c8ab",
-    "entities-0": "b029407f99762913930958c06b268ca51e06fb20ae5a9773d591adce42080608",
-    "entities-16": "c4f3dfc729ef030fb5c4246ca5ca7628d1aa9396053ab58f69089d38aec89275",
-    "locked-hud": "9566e911b4427b1f7643a29c0ce8814cf85829950f6d029325da623c83260708",
-    "editor": "b40fe1ccb5f50cffb6664ba7754f379f9a4df041579012287fae6e2c40a3fe99"
+    "menu-0": "c15013775479ec8a42cf847a61f0fbc30ec2a6c823cc6ab87fc89b76a25c3990",
+    "menu-1": "1a29bbc87aa91e0cada44df645a9d75fce170b098d1568a2e66ad7da32be0ef5",
+    "menu-2": "dd05fe93ebcd2da555f5650b3caae60d34c5f81a28ddf020fcc3db3411b75190",
+    "stage-35": "ac8f0f9ca6daf0d7bcd3e91663980132d38fc5fcae1fb4db73eecad531598127",
+    "intro-0-false": "c423af0b8eb04c76498072ea40be1210e0134c64db9656ffb522bb0ace3bea52",
+    "intro-0-true": "18cdef4c6fce86e9ef37818e5dc072c635f22e9a45fdb8664331d40582fe9451",
+    "intro-500-false": "c423af0b8eb04c76498072ea40be1210e0134c64db9656ffb522bb0ace3bea52",
+    "intro-500-true": "18cdef4c6fce86e9ef37818e5dc072c635f22e9a45fdb8664331d40582fe9451",
+    "intro-1000-false": "c423af0b8eb04c76498072ea40be1210e0134c64db9656ffb522bb0ace3bea52",
+    "intro-1000-true": "18cdef4c6fce86e9ef37818e5dc072c635f22e9a45fdb8664331d40582fe9451",
+    "intro-1500-false": "19344a00df500d694307c9b4ee04ead616263564435864704609001e22090342",
+    "intro-1500-true": "f2c1d678a088b2c047a4c066efd6cf74cfe830f4eab7bf0956a0d577d8e04ada",
+    "intro-2000-false": "1c47690ae1d2ea6b773e3aa12c8e282863b53a3e1fe8809da18660f550e8087c",
+    "intro-2000-true": "4cbbc853910ca663a8ad4e3948227adc24684c75b39a4f95a6a22195a686b8bd",
+    "score-single-0": "a4f8091d06c14059c72e5a60d9b8401d976151c9f7655c1902e3095e8c6f126a",
+    "score-single-600": "a6c56bbc85d73a0f0d86208b7f7aceb5c34013a549952c4ae3b1c634e804f6b2",
+    "score-single-1600": "5ba7fd3da0101199e2686383f4fb661d8e2c35355fa97022f40cb08c3890278b",
+    "score-single-6000": "55b09764574592ecf4d9403483c5e934fcf15ebc277e9b14c051e8d483119c70",
+    "score-coop-0": "0fb791265d2bc532ded4c52e0d61413a2b8ca75c5334ccffa2315180012711bb",
+    "score-coop-600": "23f492d0eb5dd04551473588d81e082c43302b737f26e59d4f231224afe7d4c6",
+    "score-coop-1600": "85874020fdf8cd3d3f7a8b931d1e4529edfb81a460ab1b1aaca4805e5fab45b5",
+    "score-coop-6000": "3ed69919b3a0529e9a3762a9624075ba023ba611ad7ee07b52e5543549f3c220",
+    "gameover": "8a37c41fb97a79b989dbb2cc989ef41636402cf84ec71dec51cfda45c00d1fa3",
+    "entities-0": "8b46096e52500245535ff02247be1f86ca1fedfd1f3b408b0063ee24abea98f1",
+    "entities-16": "2def9b64b7a2ab0ef0d8ea1a1ce6fc3099e964a85a0aaed18ce6e0cf32f5727b",
+    "loss-battlefield": "871aba75853e604e0cb9f0216293e486ffb10199e86d90f3550660dbcc60f10d",
+    "editor": "f164e22335e12a7932a6e8ad9606c85605648076b074b3bab735cde3ba822d1f",
+    "bonus-0": "6e7b915dd7c1ff8c42918ad136ab80724d3e19a65f8e2b228cf641d617cc319c",
+    "bonus-1": "f4127c466dfc1122a921d5eadc8ecc39fe16587a13c1aec153420bd8d2547f7d"
   },
   "hiscore": [
-    "e567a2577345d4ae0f88e0edb382023099a1cce0c50f38825bb291172e8f7c23",
-    "f0bcfe92f4474b9a968e2dd46c3cd2c1e5dd759b2a7c07980d6d51223cd5baea",
-    "8f6e6d3a6ec03aa68e6d9dc0664678e668a99d0f1f2c1f9fb4af226c410b6aa9",
-    "08ec68db9904befe16364bdf139161e0dd9f393c3a2dad94c2adb9839036ebc5"
+    "683a0a5a6cefee7d4b23680abcb26def1f3b2286b771d59ada48d8731f6511f5",
+    "efb8abdcd5fac63d3e19bf73a899b6c353689b37ea19ab357a2d076792f594ae",
+    "89fd79af594d9b6a7101eed351fb4fa027c98fec7320334292492a4a4c93dbf0",
+    "8fd1320645779dcb2f118e09559418ff30b3e3b8a000239f2ee961cc49ffd662"
   ],
   "menuHeaders": {
     "single-zero": {
@@ -1289,7 +49,7 @@
         "00",
         "20000"
       ],
-      "sha256": "72ce471cb7e58b95d2131fb8dbdb40c62248ba24e779970e77704768ede4330e"
+      "sha256": "9741d82171c227ed0678637f87da3856dc26bd3ca10e2575e524a9142741b8cd"
     },
     "single-small": {
       "playerScores": [
@@ -1300,7 +60,7 @@
         "1",
         "9"
       ],
-      "sha256": "6fa158f8d306da6f652d1ee2e68795e5b54a52a39c89e08348aa10abfb8c99d7"
+      "sha256": "13a409cb51cc4501f74cf26eb4054b9f0c430b6e882fa220fe6c13aeacde7cf6"
     },
     "single-four": {
       "playerScores": [
@@ -1311,7 +71,7 @@
         "1000",
         "1000"
       ],
-      "sha256": "eec2b7973e6bae386987600bc521ccd94cee20be5f4d12dcbfa40c347aac2856"
+      "sha256": "d6f8ef56577a59d65bcd92eb9952db1be7b0e87507f7ecf5420474d128631cbb"
     },
     "single-five": {
       "playerScores": [
@@ -1322,7 +82,7 @@
         "12345",
         "12345"
       ],
-      "sha256": "2e546ce0671f2fbe07cfa20bcdf9f7ededc84e10a5f7841813b1631e40aafc5e"
+      "sha256": "2c8810f4e3dd4122c238854f117e0a97d120165222511e057cab325cb2fa86e2"
     },
     "single-six": {
       "playerScores": [
@@ -1333,7 +93,7 @@
         "206300",
         "206300"
       ],
-      "sha256": "78223cb181514a10743fa745b47e0dd6de905937985325ed7fbe8288aff72892"
+      "sha256": "17160e4c27ec04b587ce70e0cbba0da13245c9184e0828c1db1c3bf8ecf7e9b6"
     },
     "single-max": {
       "playerScores": [
@@ -1344,7 +104,7 @@
         "999999",
         "999999"
       ],
-      "sha256": "c552d430872af39e16128b4a36f2319f43ad7f7cd3512eb7c5a5446d2e0ccfee"
+      "sha256": "566f9f185bfca8ee0e5d9ec704e76b99995bc933d3299863bfef0b030ce12257"
     },
     "single-million": {
       "playerScores": [
@@ -1355,7 +115,7 @@
         "00",
         "00"
       ],
-      "sha256": "45917a73356c131c1c81936698bca477e963c3757c2753a9ed5a806c1984fa20"
+      "sha256": "5838b694c24698620481986edfd2d377c7195895274b83581790f93138834dbf"
     },
     "single-million-tail": {
       "playerScores": [
@@ -1366,7 +126,7 @@
         "200",
         "200"
       ],
-      "sha256": "e2d81d50d78e9bf6b4f8b9a5f7561cdaceaf2ab7e8bd11eb4c651e8889596252"
+      "sha256": "12ae812d152001fc8478e9c040805a7b84cee44b3b01a1b143db1b4311f96135"
     },
     "coop-zero": {
       "playerScores": [
@@ -1379,7 +139,7 @@
         "20000",
         "00"
       ],
-      "sha256": "6c3fd35fb14432f14a45b2d19b61275944f7c1c12aa0d9981fa60f109625ef92"
+      "sha256": "b7d390c25a6ac1628b2ef9e55cfd34c3b90cede3cbcde9eefd7074be4c5916f2"
     },
     "coop-four": {
       "playerScores": [
@@ -1392,7 +152,7 @@
         "1000",
         "1000"
       ],
-      "sha256": "cad371ec127f5029a10c82ad703ac56e24599e60a4a0ddc75ca5a52bb3b5ec51"
+      "sha256": "60512b058e66b4ee67c8e2d22bafe54d7081a55470681b2d99c22ecc48162635"
     },
     "coop-five": {
       "playerScores": [
@@ -1405,7 +165,7 @@
         "54321",
         "54321"
       ],
-      "sha256": "66111b657d4b1b91cc387c35a8b2981f96621a5a5a9e9692bb0f36afd34f713d"
+      "sha256": "af6fea868c5696c67e2b0d6cef0b0df422a0c082d3d6f8202cc900ac8d28fe1f"
     },
     "coop-six": {
       "playerScores": [
@@ -1418,7 +178,7 @@
         "999999",
         "999999"
       ],
-      "sha256": "f6bcf3e2573cfda23bd45c6ddbac28046dace55171a0da74c6d6cead17ceb9a2"
+      "sha256": "e11c46531731366c81e052f7f5550045d7e5ca5f3c16872af95967d1a5873706"
     },
     "coop-million": {
       "playerScores": [
@@ -1431,7 +191,7 @@
         "00",
         "00"
       ],
-      "sha256": "14e54c3f96194b864d6da25ce22b2cc1ad90d6f15c5e50b420a3ccccb83e6c40"
+      "sha256": "0d27fc23e24433b492269bd5fe2fb732fa18c85cee0d48e7cbcb2e7a7161e1bd"
     },
     "coop-million-tail": {
       "playerScores": [
@@ -1444,7 +204,604 @@
         "200",
         "200"
       ],
-      "sha256": "62a186a279b2d11919009a02c2b18cfce85d6d1502332feb40068e0ff0306a8b"
+      "sha256": "057f7b5c883ec059a7b8b584bc4768ae04cf55b8199022014e81cb92bee6f387"
     }
+  },
+  "atlasKeys": [
+    "brick:0",
+    "brick:1",
+    "brick:2",
+    "brick:3",
+    "brick:4",
+    "brick:5",
+    "brick:6",
+    "brick:7",
+    "brick:8",
+    "brick:9",
+    "brick:10",
+    "brick:11",
+    "brick:12",
+    "brick:13",
+    "brick:14",
+    "brick:15",
+    "steel",
+    "water:1",
+    "forest",
+    "ice",
+    "base:alive",
+    "base:dead",
+    "player:0:0:up:0",
+    "player:0:0:up:1",
+    "player:0:0:right:0",
+    "player:0:0:right:1",
+    "player:0:0:down:0",
+    "player:0:0:down:1",
+    "player:0:0:left:0",
+    "player:0:0:left:1",
+    "player:0:1:up:0",
+    "player:0:1:up:1",
+    "player:0:1:right:0",
+    "player:0:1:right:1",
+    "player:0:1:down:0",
+    "player:0:1:down:1",
+    "player:0:1:left:0",
+    "player:0:1:left:1",
+    "player:0:2:up:0",
+    "player:0:2:up:1",
+    "player:0:2:right:0",
+    "player:0:2:right:1",
+    "player:0:2:down:0",
+    "player:0:2:down:1",
+    "player:0:2:left:0",
+    "player:0:2:left:1",
+    "player:0:3:up:0",
+    "player:0:3:up:1",
+    "player:0:3:right:0",
+    "player:0:3:right:1",
+    "player:0:3:down:0",
+    "player:0:3:down:1",
+    "player:0:3:left:0",
+    "player:0:3:left:1",
+    "player:1:0:up:0",
+    "player:1:0:up:1",
+    "player:1:0:right:0",
+    "player:1:0:right:1",
+    "player:1:0:down:0",
+    "player:1:0:down:1",
+    "player:1:0:left:0",
+    "player:1:0:left:1",
+    "player:1:1:up:0",
+    "player:1:1:up:1",
+    "player:1:1:right:0",
+    "player:1:1:right:1",
+    "player:1:1:down:0",
+    "player:1:1:down:1",
+    "player:1:1:left:0",
+    "player:1:1:left:1",
+    "player:1:2:up:0",
+    "player:1:2:up:1",
+    "player:1:2:right:0",
+    "player:1:2:right:1",
+    "player:1:2:down:0",
+    "player:1:2:down:1",
+    "player:1:2:left:0",
+    "player:1:2:left:1",
+    "player:1:3:up:0",
+    "player:1:3:up:1",
+    "player:1:3:right:0",
+    "player:1:3:right:1",
+    "player:1:3:down:0",
+    "player:1:3:down:1",
+    "player:1:3:left:0",
+    "player:1:3:left:1",
+    "enemy:basic:flash:up:0",
+    "enemy:basic:flash:up:1",
+    "enemy:basic:flash:right:0",
+    "enemy:basic:flash:right:1",
+    "enemy:basic:flash:down:0",
+    "enemy:basic:flash:down:1",
+    "enemy:basic:flash:left:0",
+    "enemy:basic:flash:left:1",
+    "enemy:basic:normal:up:0",
+    "enemy:basic:normal:up:1",
+    "enemy:basic:normal:right:0",
+    "enemy:basic:normal:right:1",
+    "enemy:basic:normal:down:0",
+    "enemy:basic:normal:down:1",
+    "enemy:basic:normal:left:0",
+    "enemy:basic:normal:left:1",
+    "enemy:fast:flash:up:0",
+    "enemy:fast:flash:up:1",
+    "enemy:fast:flash:right:0",
+    "enemy:fast:flash:right:1",
+    "enemy:fast:flash:down:0",
+    "enemy:fast:flash:down:1",
+    "enemy:fast:flash:left:0",
+    "enemy:fast:flash:left:1",
+    "enemy:fast:normal:up:0",
+    "enemy:fast:normal:up:1",
+    "enemy:fast:normal:right:0",
+    "enemy:fast:normal:right:1",
+    "enemy:fast:normal:down:0",
+    "enemy:fast:normal:down:1",
+    "enemy:fast:normal:left:0",
+    "enemy:fast:normal:left:1",
+    "enemy:power:flash:up:0",
+    "enemy:power:flash:up:1",
+    "enemy:power:flash:right:0",
+    "enemy:power:flash:right:1",
+    "enemy:power:flash:down:0",
+    "enemy:power:flash:down:1",
+    "enemy:power:flash:left:0",
+    "enemy:power:flash:left:1",
+    "enemy:power:normal:up:0",
+    "enemy:power:normal:up:1",
+    "enemy:power:normal:right:0",
+    "enemy:power:normal:right:1",
+    "enemy:power:normal:down:0",
+    "enemy:power:normal:down:1",
+    "enemy:power:normal:left:0",
+    "enemy:power:normal:left:1",
+    "enemy:armor:flash:up:0",
+    "enemy:armor:flash:up:1",
+    "enemy:armor:flash:right:0",
+    "enemy:armor:flash:right:1",
+    "enemy:armor:flash:down:0",
+    "enemy:armor:flash:down:1",
+    "enemy:armor:flash:left:0",
+    "enemy:armor:flash:left:1",
+    "enemy:armor:hp1:up:0",
+    "enemy:armor:hp1:up:1",
+    "enemy:armor:hp1:right:0",
+    "enemy:armor:hp1:right:1",
+    "enemy:armor:hp1:down:0",
+    "enemy:armor:hp1:down:1",
+    "enemy:armor:hp1:left:0",
+    "enemy:armor:hp1:left:1",
+    "enemy:armor:hp2:up:0",
+    "enemy:armor:hp2:up:1",
+    "enemy:armor:hp2:right:0",
+    "enemy:armor:hp2:right:1",
+    "enemy:armor:hp2:down:0",
+    "enemy:armor:hp2:down:1",
+    "enemy:armor:hp2:left:0",
+    "enemy:armor:hp2:left:1",
+    "enemy:armor:hp3:up:0",
+    "enemy:armor:hp3:up:1",
+    "enemy:armor:hp3:right:0",
+    "enemy:armor:hp3:right:1",
+    "enemy:armor:hp3:down:0",
+    "enemy:armor:hp3:down:1",
+    "enemy:armor:hp3:left:0",
+    "enemy:armor:hp3:left:1",
+    "enemy:armor:hp4:up:0",
+    "enemy:armor:hp4:up:1",
+    "enemy:armor:hp4:right:0",
+    "enemy:armor:hp4:right:1",
+    "enemy:armor:hp4:down:0",
+    "enemy:armor:hp4:down:1",
+    "enemy:armor:hp4:left:0",
+    "enemy:armor:hp4:left:1",
+    "spawn:0",
+    "spawn:1",
+    "spawn:2",
+    "spawn:3",
+    "shield:0",
+    "shield:1",
+    "bullet:up",
+    "bullet:right",
+    "bullet:down",
+    "bullet:left",
+    "impact:0",
+    "impact:1",
+    "impact:2",
+    "explosion:0",
+    "explosion:1",
+    "explosion:2",
+    "explosion:3",
+    "explosion:4",
+    "item:star",
+    "item:helmet",
+    "item:timer",
+    "item:shovel",
+    "item:grenade",
+    "item:tank",
+    "points:100",
+    "points:200",
+    "points:300",
+    "points:400",
+    "points:500",
+    "glyph:0",
+    "glyph:1",
+    "glyph:2",
+    "glyph:3",
+    "glyph:4",
+    "glyph:5",
+    "glyph:6",
+    "glyph:7",
+    "glyph:8",
+    "glyph:9",
+    "glyph: ",
+    "glyph:A",
+    "glyph:B",
+    "glyph:C",
+    "glyph:D",
+    "glyph:E",
+    "glyph:F",
+    "glyph:G",
+    "glyph:H",
+    "glyph:I",
+    "glyph:Ⅱ",
+    "glyph:J",
+    "glyph:K",
+    "glyph:L",
+    "glyph:M",
+    "glyph:N",
+    "glyph:O",
+    "glyph:P",
+    "glyph:Q",
+    "glyph:R",
+    "glyph:S",
+    "glyph:T",
+    "glyph:U",
+    "glyph:V",
+    "glyph:W",
+    "glyph:X",
+    "glyph:Y",
+    "glyph:Z",
+    "glyph:Ⅰ",
+    "glyph:-",
+    "glyph:.",
+    "glyph:©",
+    "glyph:!",
+    "enemy-icon",
+    "life:0",
+    "life:1",
+    "flag",
+    "gray",
+    "pause",
+    "loss",
+    "water:2"
+  ],
+  "auxiliaryFrames": {
+    "brick:0": {"width": 8, "height": 8, "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1"},
+    "gray": {"width": 1, "height": 1, "sha256": "80752de9e9ed586a87302881822fc971b3722902cfa191dadcc6b5810324a499"}
+  },
+  "referenceFrames": {
+    "player:0:0:up:0": {"width": 16, "height": 16, "sha256": "632a08c17ba831aceb57088e621be2288ba88b670d068d6e3ab2a3ed455aac86"},
+    "player:0:0:up:1": {"width": 16, "height": 16, "sha256": "af9e02eb8ade170f2aac71b3d29b7c8965fe588bf2002c223d77a8ac052282cc"},
+    "player:0:0:right:0": {"width": 16, "height": 16, "sha256": "5c2284be24adef44cb66f31a3efa44898a46d252ae703a47a717abe73b579ddf"},
+    "player:0:0:right:1": {"width": 16, "height": 16, "sha256": "f4e0997a2bb3d1be62cb7446bd90161db4e60a788d9b263c9e4c55c45965309b"},
+    "player:0:0:down:0": {"width": 16, "height": 16, "sha256": "faf34959046fe67a3a098ec18327a55212a4ebf5edd803826538e5266b99f113"},
+    "player:0:0:down:1": {"width": 16, "height": 16, "sha256": "ac10616f2ffdba9abc4e8d59e1ab0c88a54c1384494e786c43d90e42a00041d0"},
+    "player:0:0:left:0": {"width": 16, "height": 16, "sha256": "2d40389e200506a3589e115ec3ea26431a1bed9705303cbf806724300b20bae1"},
+    "player:0:0:left:1": {"width": 16, "height": 16, "sha256": "79212d6cf1342848b9809a765a07417855b5b984039bac1296568d8062bfee72"},
+    "player:0:1:up:0": {"width": 16, "height": 16, "sha256": "cef8820ba12966b6e42eb0ee21f9f1f08ac6c34fd762149418a6ba244fda7667"},
+    "player:0:1:up:1": {"width": 16, "height": 16, "sha256": "c7206399f40c092284ba9beec4f46f1957a0fd78f95a99ecf0dfa859a744dd57"},
+    "player:0:1:right:0": {"width": 16, "height": 16, "sha256": "25017b9521eba929e88c95f6622dc0c04a03483e731eb336fe794a05cdd6de82"},
+    "player:0:1:right:1": {"width": 16, "height": 16, "sha256": "8a6153886684860b4cb67b6bd6a85455131308aff777ab22dac40658102b3b72"},
+    "player:0:1:down:0": {"width": 16, "height": 16, "sha256": "8860162bf274c7e784971c4eadf76e1836cc4578be7946f36ff659377406e94b"},
+    "player:0:1:down:1": {"width": 16, "height": 16, "sha256": "97e3f5b9827cb1a355d1db5b96683ad664a181d10c209b5597d66a0ed07bbffe"},
+    "player:0:1:left:0": {"width": 16, "height": 16, "sha256": "d372797c64cbc54065fb668b35bc5c7ada66b8f26ab980549f11f158284b47f5"},
+    "player:0:1:left:1": {"width": 16, "height": 16, "sha256": "98840a5023be26452fe6762e2ee22357bef43ad606e560a4ead216854bd11393"},
+    "player:0:2:up:0": {"width": 16, "height": 16, "sha256": "f991c96cf645787e98aa56711556d6f9aacc6d29252d42fde466a3b3667bc044"},
+    "player:0:2:up:1": {"width": 16, "height": 16, "sha256": "b8e7a74c8d901832b1c4a146977d45047a7069cf23b80e4d9b5b83d90b7efb7a"},
+    "player:0:2:right:0": {"width": 16, "height": 16, "sha256": "a952972a8686c03fcacab9d8b44b3b3f0c5bf91172fb8a9d36812af3b7069ce6"},
+    "player:0:2:right:1": {"width": 16, "height": 16, "sha256": "013391dab8719b2d88eda22138d2e0c77456e0c7e5f12db4f5751df82f1fb1d6"},
+    "player:0:2:down:0": {"width": 16, "height": 16, "sha256": "6d8cacb6fc86a6c8690b0929855073dba2075e7f3dce227c289c2338ddb89546"},
+    "player:0:2:down:1": {"width": 16, "height": 16, "sha256": "41e27dd1f85fd6741913e34409fbc4e2208f85b04d8f86d657f682dbf7bdef36"},
+    "player:0:2:left:0": {"width": 16, "height": 16, "sha256": "3b1878b6ed8364163716ae3087e488c3fd8ea10a66b5f4f6e0ee4dca0b127897"},
+    "player:0:2:left:1": {"width": 16, "height": 16, "sha256": "6a457e50f041854440b714a4d1bb7d93b4b1c46b71748c8b4db45f6cecc95388"},
+    "player:0:3:up:0": {"width": 16, "height": 16, "sha256": "ee4312990ec563b1143e1f16f654e2ed659a459f6595f15867818bb035c1b8bc"},
+    "player:0:3:up:1": {"width": 16, "height": 16, "sha256": "6909ece943682f8579cad3c684a7c7fe7595e1322d877a18b03edc7f1c877d65"},
+    "player:0:3:right:0": {"width": 16, "height": 16, "sha256": "fcf49db9c479b9c4a68f1490e58734e6c2a0bfb389c6043bc97fe882c3d85ee3"},
+    "player:0:3:right:1": {"width": 16, "height": 16, "sha256": "37051b53c43bd2bffccc832e1237f700b90a9f1f070a7e585e53916a379c56c5"},
+    "player:0:3:down:0": {"width": 16, "height": 16, "sha256": "2f5c457717574657d1d9b608f5f8da1a2ed3476050a9731d970cdf28f5388ce6"},
+    "player:0:3:down:1": {"width": 16, "height": 16, "sha256": "0d6406db2d97c96528d4f7434524c7fdf3260a80cb501fc809083472ec146656"},
+    "player:0:3:left:0": {"width": 16, "height": 16, "sha256": "c8ffc6f34cf0ef52f0daa444f1090625d5ffb44ed6792bcfd5264150dfde30eb"},
+    "player:0:3:left:1": {"width": 16, "height": 16, "sha256": "a8921055c251a556d7f40574bffbb1482469e07d22f0f2b3f06591e35deb43be"},
+    "player:1:0:up:0": {"width": 16, "height": 16, "sha256": "26fbe813eb7ce544a4e4f098dd019b327990150b22a006553154a26461519409"},
+    "player:1:0:up:1": {"width": 16, "height": 16, "sha256": "ae742fbcb5a219e564527e405684e9c3c7cc6fe0e861d3f63636ecdc288b71e0"},
+    "player:1:0:right:0": {"width": 16, "height": 16, "sha256": "424ae1e32a7a5ee5af6e6272108f64b1f72831828883c96685d0befd907de6c3"},
+    "player:1:0:right:1": {"width": 16, "height": 16, "sha256": "1b478d8247d5939e88f498654b6ecbc224722682ba51297cad4770dd0652b4d9"},
+    "player:1:0:down:0": {"width": 16, "height": 16, "sha256": "96b997fccbfdfb30284bfdebd3e8ccfa0843c6428598f14958ce91b134955d0a"},
+    "player:1:0:down:1": {"width": 16, "height": 16, "sha256": "1fa7ba9d658dd00a8a0542a086f3aa43b02bcb191434fd9c2b9bb757e7ab3ed4"},
+    "player:1:0:left:0": {"width": 16, "height": 16, "sha256": "b6abb0eb4b892ca1d28c67e3354cf338bbf46dc5cc54347df7426a0a0a47d115"},
+    "player:1:0:left:1": {"width": 16, "height": 16, "sha256": "a6d2b1e1e25e4c26f39983be18af9c521652e3eb060dc4b91ca930013f177ec1"},
+    "player:1:1:up:0": {"width": 16, "height": 16, "sha256": "3004437da57077d88bdbb1231e1660aa840d6ec4e73d21e4821040ab08391206"},
+    "player:1:1:up:1": {"width": 16, "height": 16, "sha256": "3fc47010cf8950f644c41f771135994597eb0658f32166ab9281a6871ffd9710"},
+    "player:1:1:right:0": {"width": 16, "height": 16, "sha256": "6224da3faf91eb5e48f20b409b841071f6f3381443e63ea269a841c8c88231f3"},
+    "player:1:1:right:1": {"width": 16, "height": 16, "sha256": "7130698a7166e49d7d49530f844c7d1341d90240568e3c53ae54da656501ba11"},
+    "player:1:1:down:0": {"width": 16, "height": 16, "sha256": "b97527b948afe2bd2d810f67b2a1f705b451d33f6aa1d3ad12903df0e50eb746"},
+    "player:1:1:down:1": {"width": 16, "height": 16, "sha256": "78505cfb3cf77bc23b44919c138249e9c87269e1ef73c6945bd2054456b7b27f"},
+    "player:1:1:left:0": {"width": 16, "height": 16, "sha256": "9916fc0474792c0e52f75bb44109a4b01fea5ea97583d32fded5b0781da1859e"},
+    "player:1:1:left:1": {"width": 16, "height": 16, "sha256": "65f58b3acc4762d22865eb2ee4a8077cb4a78f1165a0621227a692aba5308b74"},
+    "player:1:2:up:0": {"width": 16, "height": 16, "sha256": "f29ef6d97e8dd7faba17e549ae302ce19687a15e14a5f29d4556a25cfe1c02eb"},
+    "player:1:2:up:1": {"width": 16, "height": 16, "sha256": "863149218093cae6ce66597f989d0a964cdca482bb6e15ba75462deb1cecb2e7"},
+    "player:1:2:right:0": {"width": 16, "height": 16, "sha256": "f8bf6bfd582e54ddec117b6271709c2c8036ce56310886adcf2b3e0f97d3d7c0"},
+    "player:1:2:right:1": {"width": 16, "height": 16, "sha256": "1d7e39cd2f8732fd672573c5484b8346989c44acf24e1a927d371da099080e5d"},
+    "player:1:2:down:0": {"width": 16, "height": 16, "sha256": "6ccd00ce27ca8eed2d8a98ce8004541753429ddcda53da1a377386d37ed3956d"},
+    "player:1:2:down:1": {"width": 16, "height": 16, "sha256": "ef519254f86035158bcd5b35cc656870449a0dc1193204b828684bd6f477b451"},
+    "player:1:2:left:0": {"width": 16, "height": 16, "sha256": "16b990957117eb47bd8de2d4d9de077d6b0b0546036a20df38cfbaff2a61b297"},
+    "player:1:2:left:1": {"width": 16, "height": 16, "sha256": "f1dc9d8ee3125122e25051248faaf149890bdde4cc235dd79e6e67c4e7561423"},
+    "player:1:3:up:0": {"width": 16, "height": 16, "sha256": "e88e67a34b8bc8c2bb017c0c14de3feabd46b47a4ac3fd7976a090ded54d3fd5"},
+    "player:1:3:up:1": {"width": 16, "height": 16, "sha256": "a6ac356b17ebd7a0e0973b3204dddd9c5d1647a1781a9a151f2caf5afb3ebd7a"},
+    "player:1:3:right:0": {"width": 16, "height": 16, "sha256": "67790470f6ed6c4a5f6e927f5ddc5d7127ec065aa50b1b5485c96c394c78fa4b"},
+    "player:1:3:right:1": {"width": 16, "height": 16, "sha256": "32f27ba17504c96353168a94ad1bec02fcc54967796e71088919bbfb41ddead9"},
+    "player:1:3:down:0": {"width": 16, "height": 16, "sha256": "5e76d9108371ba05ad9ccb3af3c016dd4bba95206a7244b5c18f733661d718ac"},
+    "player:1:3:down:1": {"width": 16, "height": 16, "sha256": "590a6a885896bb672be3594245d0b13960460d6d3cb04da6a52aaab4faaff858"},
+    "player:1:3:left:0": {"width": 16, "height": 16, "sha256": "40249c01200997dfddde916911cbbfa12c85de08ef98b67122955d0efb1da9a8"},
+    "player:1:3:left:1": {"width": 16, "height": 16, "sha256": "88c923f9679b61f39ff8016116ba2c9fbe91badbfa4754c4b840873d9256c08e"},
+    "enemy:basic:normal:up:0": {"width": 16, "height": 16, "sha256": "0c2faf01dd507eb5e5db641d465b9cf3ee4951bbf151ffbed7f50d33307ab9bb"},
+    "enemy:basic:normal:up:1": {"width": 16, "height": 16, "sha256": "b8837fe50d1f16d63a7b8baa9a42212751084f7b9f8034ce9c095e3f76a18575"},
+    "enemy:basic:normal:right:0": {"width": 16, "height": 16, "sha256": "5c2f6b53d5219d3c923bfe258cb4db8d787fe997280dcd534b8bd55fdc95df6a"},
+    "enemy:basic:normal:right:1": {"width": 16, "height": 16, "sha256": "a7f4c158da1312b06d4aef1bbdf00674156b0186925e335fb3e9c0a818cb6417"},
+    "enemy:basic:normal:down:0": {"width": 16, "height": 16, "sha256": "9c451e4aeb151e30acfaa19c54ec70256af41322fb132d1cd73397804d5570ac"},
+    "enemy:basic:normal:down:1": {"width": 16, "height": 16, "sha256": "e10207a182234a815378bcb2109e952984ee08091cab1aee63acc6491cf946e7"},
+    "enemy:basic:normal:left:0": {"width": 16, "height": 16, "sha256": "2ce711b79a0c01da0a227db54f349249cadd1ab1cb7e932c8d24e56a22926575"},
+    "enemy:basic:normal:left:1": {"width": 16, "height": 16, "sha256": "0295016b0d7d93185a64ae519db6d6fb3204179740d6677966eb799e4b4501ec"},
+    "enemy:basic:flash:up:0": {"width": 16, "height": 16, "sha256": "c0e392fc3326ff446f9c698e388cf0e36b2fd9f1d0d47738f2bb2277eeb715e9"},
+    "enemy:basic:flash:up:1": {"width": 16, "height": 16, "sha256": "00fab032cfcb6517d3bda99a444e637d3636964a02c8b333114bfb4972cf3e97"},
+    "enemy:basic:flash:right:0": {"width": 16, "height": 16, "sha256": "5401c33ec85247dd401490c1e2b466f3e1ff6bc399fa22049c09653943d1e587"},
+    "enemy:basic:flash:right:1": {"width": 16, "height": 16, "sha256": "a7b59ebda958e2ab278017d11600994b722b36df5fb07bb7f5cf4b3679816215"},
+    "enemy:basic:flash:down:0": {"width": 16, "height": 16, "sha256": "097cfa0273b9d2d75490b920a152231a3460ad81e9ad49d4fe0d90d08f8b6fc5"},
+    "enemy:basic:flash:down:1": {"width": 16, "height": 16, "sha256": "4138b70fdc8fd217fd89c2fc2ff40bf8e47df8e869d033031775e58fb0ff4041"},
+    "enemy:basic:flash:left:0": {"width": 16, "height": 16, "sha256": "7278ee4152e699aa22b4b625a1b58701a6d4793d6e35c91ccdaae9615cb10f90"},
+    "enemy:basic:flash:left:1": {"width": 16, "height": 16, "sha256": "6319e400038cf4b75227cec96613eb0cf3bf2f520e8ad1b3fd27bd9b912701b2"},
+    "enemy:fast:normal:up:0": {"width": 16, "height": 16, "sha256": "1362ebe97ea44f6fb82040cd9d58ca4979b752c35520c3b0f7c314999fd2f88e"},
+    "enemy:fast:normal:up:1": {"width": 16, "height": 16, "sha256": "d65c82676719ed2ff278e4ac264d67c6200da793372e4af2b56a2f2e6c60e419"},
+    "enemy:fast:normal:right:0": {"width": 16, "height": 16, "sha256": "a437c059e9c11f8c474726d688011aff071cc6baa49459237159afaa454a008c"},
+    "enemy:fast:normal:right:1": {"width": 16, "height": 16, "sha256": "df67669841580d88091c1d4d614813d12daa0c067bfb5fff614d3fb1b1a359c7"},
+    "enemy:fast:normal:down:0": {"width": 16, "height": 16, "sha256": "0793c3ad6a91da3106b3186bba0bb32b3fe27df946d3123c9e78925241d830b1"},
+    "enemy:fast:normal:down:1": {"width": 16, "height": 16, "sha256": "a879eaabee362b646a6afa053cca6c6b930213344183417e59757e04a2a7fc83"},
+    "enemy:fast:normal:left:0": {"width": 16, "height": 16, "sha256": "b89f1ebbb10e7a184592de7b7df165134f05982a35692d080a4a7b4cec688182"},
+    "enemy:fast:normal:left:1": {"width": 16, "height": 16, "sha256": "a2f4ecfc9c39c26d4f1963d5ec65cd92288ea20508625fd246556dc8f71d05ad"},
+    "enemy:fast:flash:up:0": {"width": 16, "height": 16, "sha256": "5c9165be892086d3c95ad68d2e53fd1f3004d30f533cdba3aef9893ca98567e6"},
+    "enemy:fast:flash:up:1": {"width": 16, "height": 16, "sha256": "3f56f02ee75cb621e49239c4275ff04cfb2366301a7a96c31e872befce32feeb"},
+    "enemy:fast:flash:right:0": {"width": 16, "height": 16, "sha256": "45bcaec0da48d9da465c6341c4fa1005b29d64dd58c694df9fd262bb22fd5eb3"},
+    "enemy:fast:flash:right:1": {"width": 16, "height": 16, "sha256": "b801c1a81016646729a52b38a5016d8ae447f54e57b1eddb350737cd8a091f83"},
+    "enemy:fast:flash:down:0": {"width": 16, "height": 16, "sha256": "dd876c5232baaf2ba961ee6417ed30d1678eb551285f30c09ad9e5a571e813ca"},
+    "enemy:fast:flash:down:1": {"width": 16, "height": 16, "sha256": "b6b68d7583b6a293f7a5953a0081916eb1e6a0980293fb953507d0ade4058332"},
+    "enemy:fast:flash:left:0": {"width": 16, "height": 16, "sha256": "fe4578562f021f5f4a1f69e13d913abce6cb0ced67c0c2af6e810e7b75c2c9c0"},
+    "enemy:fast:flash:left:1": {"width": 16, "height": 16, "sha256": "b3d636bc53ef3946c921762547c6634ef11894a21a159943dfe4d875e5868a6e"},
+    "enemy:power:normal:up:0": {"width": 16, "height": 16, "sha256": "1b1a60c665dc21b4c82a7e037670cc58a6178039d3dfc81daa3bc3b6188929c3"},
+    "enemy:power:normal:up:1": {"width": 16, "height": 16, "sha256": "46c457d63eabfb81b25acff466af892e142e649c2489a1a0b26a40c1305903cc"},
+    "enemy:power:normal:right:0": {"width": 16, "height": 16, "sha256": "cd717456b50359c428fadba5de83f48276ad91f4d019d79dfb8588246d3186c5"},
+    "enemy:power:normal:right:1": {"width": 16, "height": 16, "sha256": "998f3eec91f038adf025ddf7e87592388a856d161ffdeb301297d487524a63de"},
+    "enemy:power:normal:down:0": {"width": 16, "height": 16, "sha256": "eff8f4640825d904bd5b7988e7a40e4bdb2b3194fbaf5ce2e1ea8ac306661c5f"},
+    "enemy:power:normal:down:1": {"width": 16, "height": 16, "sha256": "64d73e42cefe02b73fbbc7dec5b43dfec233650a0cc142f3ebd80fa1a7096867"},
+    "enemy:power:normal:left:0": {"width": 16, "height": 16, "sha256": "9e7904067704f7523bb704e31c13888b34640c3ff49d217fbb0b17aa5edbcf2e"},
+    "enemy:power:normal:left:1": {"width": 16, "height": 16, "sha256": "f5e899ad6708b14a32460166d0bc5f43e8ecba30559ea1c748ca3d7d0a4ca602"},
+    "enemy:power:flash:up:0": {"width": 16, "height": 16, "sha256": "d7fe11442e56633d4e73b2b4bc9261c5abcf6d5188c4a890d94c5052e186b531"},
+    "enemy:power:flash:up:1": {"width": 16, "height": 16, "sha256": "f030019ec022b2b1d092477bca92cc6e78e0572077252b2985892bc2455b05c9"},
+    "enemy:power:flash:right:0": {"width": 16, "height": 16, "sha256": "479e5d43ac1e4390786d19762013e31557575de3b4d288fbe2255320a18468ef"},
+    "enemy:power:flash:right:1": {"width": 16, "height": 16, "sha256": "32ffb48e08f62f915b031e88605ccb1d7cb12004cda6cff4d496e24447e29555"},
+    "enemy:power:flash:down:0": {"width": 16, "height": 16, "sha256": "92c2667de1daf6b3094ad60eeb40385e10cf266f16acd53d5b0402f1a1026ced"},
+    "enemy:power:flash:down:1": {"width": 16, "height": 16, "sha256": "f10b9109e65be14dda219538c607799c484f00b1cc6adbb6580d1cf203072f50"},
+    "enemy:power:flash:left:0": {"width": 16, "height": 16, "sha256": "f3dc7e5b8d1151f20ab6b12a4eed5fa6e2aaa2f9ab3babf4f1ac739a1aeb5d6f"},
+    "enemy:power:flash:left:1": {"width": 16, "height": 16, "sha256": "11792ffe135a590439b3ba434d6e0b7cf5c1954aa8df82aec75d283960a05462"},
+    "enemy:armor:flash:up:0": {"width": 16, "height": 16, "sha256": "6a5235741fc32f57661bc172bbc1ebfcbefed5df65888c233da6d9bbb9d34d9a"},
+    "enemy:armor:flash:up:1": {"width": 16, "height": 16, "sha256": "86c7dad4ab09c9a5f3e631df82ba395f3add0c935d3f1765077c2dfda4c12f51"},
+    "enemy:armor:flash:right:0": {"width": 16, "height": 16, "sha256": "14cd0201175e50410d83b82bb96287812abec6a5c2f713a5b82911990a6a2ca5"},
+    "enemy:armor:flash:right:1": {"width": 16, "height": 16, "sha256": "885c941f744904ed93d2495bcd8b15837edb80eef33f18268acab0b3bf47ea69"},
+    "enemy:armor:flash:down:0": {"width": 16, "height": 16, "sha256": "5c0c6eb05a7cddca0fa46b8a942696f194372b61ee486e26a36b53a2ec55178e"},
+    "enemy:armor:flash:down:1": {"width": 16, "height": 16, "sha256": "b4438413ec696c90f0c4e06e88a8aae4d139c8fe91d77a2e567b295975eb460c"},
+    "enemy:armor:flash:left:0": {"width": 16, "height": 16, "sha256": "372ec0d326ca1b8bb91eb0564ae4c2354fb337bb9a0f5c2e30ac92c55861c2da"},
+    "enemy:armor:flash:left:1": {"width": 16, "height": 16, "sha256": "9b2687287227fc42235ea018fd8879b4ad3d356a14eb138e14a7115897f41ed7"},
+    "enemy:armor:hp1:up:0": {"width": 16, "height": 16, "sha256": "caf3ab67188c7ab13800ed40a05f198228259e856567687c5efc7d7fd63e8c0f"},
+    "enemy:armor:hp1:up:1": {"width": 16, "height": 16, "sha256": "cbb1a9a7446bd5dd8c55a94c9cc2d7cf66aa5a23bec02b3ef8bc706d1a466040"},
+    "enemy:armor:hp1:right:0": {"width": 16, "height": 16, "sha256": "d42f6093276a68c3463e777c0a108214b4733d4fd332d278e59154f5c829613a"},
+    "enemy:armor:hp1:right:1": {"width": 16, "height": 16, "sha256": "29b1f0eb133328517d91e0199862c1912b45d547e3e6238ff8d758d2924a617d"},
+    "enemy:armor:hp1:down:0": {"width": 16, "height": 16, "sha256": "9e31c8fc55e2511a4d656a0eb194fa3c2998bcb6912021eee5d27adc415e95bd"},
+    "enemy:armor:hp1:down:1": {"width": 16, "height": 16, "sha256": "1a5b39234594954a8c8af6867ac06bc50d39a2cd8096da5231faf926ed510ee1"},
+    "enemy:armor:hp1:left:0": {"width": 16, "height": 16, "sha256": "f996a1b7f5696225a3bc3ce708a1907ccfe88a1fc28b8faf8e903679526b6631"},
+    "enemy:armor:hp1:left:1": {"width": 16, "height": 16, "sha256": "c6ee0e7b5e21060e37d9c86300c9b00ba3a13e8d6164480ebc0f23acf94f17ac"},
+    "enemy:armor:hp2:up:0": {"width": 16, "height": 16, "sha256": "dd424fe54d404748cf503cbb8ae95143896c91b4b83a027b50e1e1dbb797fe4a"},
+    "enemy:armor:hp2:up:1": {"width": 16, "height": 16, "sha256": "0dcef55e6ad85087b4c986323b8adfc75e66be0c94a4d815f505bbd4b393cac6"},
+    "enemy:armor:hp2:right:0": {"width": 16, "height": 16, "sha256": "aa750f2a17d5ec050ad4d4a23c1008cd45a379c036f6c7f7067ffc62fd61a317"},
+    "enemy:armor:hp2:right:1": {"width": 16, "height": 16, "sha256": "a62d08c16637fc70f1beadd1b28be9f7a7fef5d9c52fd422978dfe4daf992571"},
+    "enemy:armor:hp2:down:0": {"width": 16, "height": 16, "sha256": "bd8f8d26b214dc1bbfdeb844986bbbefdad186652dcc24146291fcdb5c4a15c0"},
+    "enemy:armor:hp2:down:1": {"width": 16, "height": 16, "sha256": "fd537a12a058177f895895375902e54caa2df04c151ca15e367c476d33359296"},
+    "enemy:armor:hp2:left:0": {"width": 16, "height": 16, "sha256": "903c9bda25df02a593075da883bd99fc8bf944a7131a4ea8af0ff2649e95d660"},
+    "enemy:armor:hp2:left:1": {"width": 16, "height": 16, "sha256": "5946274e14e09ed42af99da9f43ebd8c6419fd03585d18d99905f8cc009ded4a"},
+    "enemy:armor:hp3:up:0": {"width": 16, "height": 16, "sha256": "dd424fe54d404748cf503cbb8ae95143896c91b4b83a027b50e1e1dbb797fe4a"},
+    "enemy:armor:hp3:up:1": {"width": 16, "height": 16, "sha256": "0dcef55e6ad85087b4c986323b8adfc75e66be0c94a4d815f505bbd4b393cac6"},
+    "enemy:armor:hp3:right:0": {"width": 16, "height": 16, "sha256": "aa750f2a17d5ec050ad4d4a23c1008cd45a379c036f6c7f7067ffc62fd61a317"},
+    "enemy:armor:hp3:right:1": {"width": 16, "height": 16, "sha256": "a62d08c16637fc70f1beadd1b28be9f7a7fef5d9c52fd422978dfe4daf992571"},
+    "enemy:armor:hp3:down:0": {"width": 16, "height": 16, "sha256": "bd8f8d26b214dc1bbfdeb844986bbbefdad186652dcc24146291fcdb5c4a15c0"},
+    "enemy:armor:hp3:down:1": {"width": 16, "height": 16, "sha256": "fd537a12a058177f895895375902e54caa2df04c151ca15e367c476d33359296"},
+    "enemy:armor:hp3:left:0": {"width": 16, "height": 16, "sha256": "903c9bda25df02a593075da883bd99fc8bf944a7131a4ea8af0ff2649e95d660"},
+    "enemy:armor:hp3:left:1": {"width": 16, "height": 16, "sha256": "5946274e14e09ed42af99da9f43ebd8c6419fd03585d18d99905f8cc009ded4a"},
+    "enemy:armor:hp4:up:0": {"width": 16, "height": 16, "sha256": "ff027f5640b0d794ac9b4447ca4b9927484d31cbf01b5d76abba6261101da150"},
+    "enemy:armor:hp4:up:1": {"width": 16, "height": 16, "sha256": "cb4766e45fa66759815926c0124ae428e4c8a193e5ef50e6eaaf69b6079859d3"},
+    "enemy:armor:hp4:right:0": {"width": 16, "height": 16, "sha256": "373f7a35ee100557c28251b936f0e2488a505bbe2533f85be8b6438070988185"},
+    "enemy:armor:hp4:right:1": {"width": 16, "height": 16, "sha256": "5f91a39a62a99dd8bde544a4d4efedcc51db417a5daaa1a9a70a1e1321f2ef0a"},
+    "enemy:armor:hp4:down:0": {"width": 16, "height": 16, "sha256": "58cd6193b9cf6b79a9435b68bc6c25374bbd009a372bf94620ab9eeb394d7f03"},
+    "enemy:armor:hp4:down:1": {"width": 16, "height": 16, "sha256": "6c59b177ec699d5cd7035a2e8096df12675504aa57f2806e146d208131fe60fb"},
+    "enemy:armor:hp4:left:0": {"width": 16, "height": 16, "sha256": "73140aa8f4c66e779f9ee2a2f2e8eb3a943312aa9ff983cafcf7662b5a860a28"},
+    "enemy:armor:hp4:left:1": {"width": 16, "height": 16, "sha256": "fd7fb1dc1adcb91dd4d49c5e7629eb6dcbfb8f8572d3b86ac6372a22a0bbfb7e"},
+    "brick:1": {"width": 8, "height": 8, "sha256": "a16b1ce281d1f9476b4f7d59255a87fcb2cbf65b7a243310e5340f71dbb61d87"},
+    "brick:2": {"width": 8, "height": 8, "sha256": "963fc5d13077a0dad64668b6701b1d0ca9f807898922e99bb9c437df38e61163"},
+    "brick:3": {"width": 8, "height": 8, "sha256": "a092224f9fb51d63c0a68648c15dc1542bccda974348cbfe279cdaf23347518e"},
+    "brick:4": {"width": 8, "height": 8, "sha256": "7fe080d7f28c57c694fe7d5a55b76ab672db2682843541447eb282d6ef284701"},
+    "brick:5": {"width": 8, "height": 8, "sha256": "6d3f28145d37462e3a4695dfd1fa8c9bf9ddab362b811b1e36716667169eb81c"},
+    "brick:6": {"width": 8, "height": 8, "sha256": "42129104a6e5991470305216be71199041a687be810ca2e2c21330303940c37d"},
+    "brick:7": {"width": 8, "height": 8, "sha256": "aa412f9ca2a282c793c01d4f10262e5422d21a1d76cd17a875838e5337dc9e7d"},
+    "brick:8": {"width": 8, "height": 8, "sha256": "28f5716df35e6decf92d13c20decbb12eb82a87da4cba4a7bc0517f0c62d1db4"},
+    "brick:9": {"width": 8, "height": 8, "sha256": "1494566ad900af770573df9761251df8f42f3f7360564367efeeae6d8aa8736d"},
+    "brick:10": {"width": 8, "height": 8, "sha256": "b4331debe7bad16a8dcf3affc7e057b7ef31ada2d899ee194b5edfdfe25f0d25"},
+    "brick:11": {"width": 8, "height": 8, "sha256": "97ede1da1ea8d60fe5e28fce443ab114ea69370e682d7cc95aa4b4e88ddf629c"},
+    "brick:12": {"width": 8, "height": 8, "sha256": "ad030d18dfab00b0b84a9197b85ea309a04415bf33ec026a874a1b35b1d11d04"},
+    "brick:13": {"width": 8, "height": 8, "sha256": "a541800d4ce572ef11f4ec8853d8ff006c7fbdb6926104bdd112466a4c8b4315"},
+    "brick:14": {"width": 8, "height": 8, "sha256": "713b4a1cadb10c0d4c7634dcdcbb70109b9f77184a12b3d84d1801f48b384b8a"},
+    "brick:15": {"width": 8, "height": 8, "sha256": "10525b4ff9bf04414cd57e54e4ceb0eb84d90066406948c2081c78a00c7ff8ce"},
+    "steel": {"width": 8, "height": 8, "sha256": "07b114d60864f295793090225c862b6df0e97cfcb37cb79f9f99d021dc2d203c"},
+    "forest": {"width": 8, "height": 8, "sha256": "146e32fbd3d60e58cd0797411a55609382b2c500b87f5c1c422a95f4cdb4d8ed"},
+    "ice": {"width": 8, "height": 8, "sha256": "25ec1a8c38d46df7fb5b172c64fdafe6eea5b958bdfc4dd03f703bb183cc9052"},
+    "water:1": {"width": 8, "height": 8, "sha256": "809a1767febeb7a00ab5aee082565848089bcaf94f2c50bb4ecf982727f8a5e0"},
+    "water:2": {"width": 8, "height": 8, "sha256": "69bdf6c5c6f5b3767a203aea12e0480563ff5898cf84bdc3eae9744ce9d6ca52"},
+    "base:alive": {"width": 16, "height": 16, "sha256": "a5294ed1c16a41138ccf5a1ae0dba1795280b641ce39e86b06c726866d11f2db"},
+    "base:dead": {"width": 16, "height": 16, "sha256": "812bb1ca8386632d9db6d3cdfbbb173041c91c7c390f783f866524e1e5cec695"},
+    "spawn:0": {"width": 16, "height": 16, "sha256": "922b934b183beddf3cda076249f66e16d370f836791efed2afef3e684f504a3a"},
+    "spawn:1": {"width": 16, "height": 16, "sha256": "ac78826404ee392644b49dbcb7c2872f71f65b510942aa13da01d4703959f0ee"},
+    "spawn:2": {"width": 16, "height": 16, "sha256": "cd0112e9c7bee54fd461e30389d1938711f68db3387b722301a7c3a2d45e6784"},
+    "spawn:3": {"width": 16, "height": 16, "sha256": "b9ce81f0ba9ce88ca1c81598d23a532583faf540f08ec7a4d0810aaba53932bc"},
+    "shield:0": {"width": 16, "height": 16, "sha256": "6b5e81d303a120e55898a28ef35742c4728a42ca0f3ff719c76c290e55f3a9d3"},
+    "shield:1": {"width": 16, "height": 16, "sha256": "c09ce222313b90f2ebbd3319b8944413f7a900f4bba525e8314dffbf4aa31095"},
+    "item:helmet": {"width": 16, "height": 16, "sha256": "2a04908567106589264d275f812568332ff48b9fc16becff2f1136748bed8f8a"},
+    "item:timer": {"width": 16, "height": 16, "sha256": "54b5304ca72d625eb841d9bb83e9288d630b339121cbe180b0cf53662489163c"},
+    "item:shovel": {"width": 16, "height": 16, "sha256": "1384aa1a86380998f88db1fd0f1283586ab39116a1f3e82e555805928c6afd87"},
+    "item:star": {"width": 16, "height": 16, "sha256": "891319073ebd4fa9048a4fe615c5f874121a15765853ccd74a7d1c40d307418c"},
+    "item:grenade": {"width": 16, "height": 16, "sha256": "336cf6783d1a2875c9155c5e544565a07ac6571ccef7fc0d9802185ae55bb488"},
+    "item:tank": {"width": 16, "height": 16, "sha256": "34fea26813bb3ee186cb24f1ae556701ba0962d46f2226e5fce1fe5f02e93f66"},
+    "explosion:0": {"width": 16, "height": 16, "sha256": "f8324a76efdd774ccf7661b604c8c0f8c10e00e3972b4c78ecb34f9415b645a8"},
+    "impact:0": {"width": 16, "height": 16, "sha256": "f8324a76efdd774ccf7661b604c8c0f8c10e00e3972b4c78ecb34f9415b645a8"},
+    "explosion:1": {"width": 16, "height": 16, "sha256": "b246fb2e404b27405a523234325b2a4e9965dd0ef947822eb6ac11c47834d210"},
+    "impact:1": {"width": 16, "height": 16, "sha256": "b246fb2e404b27405a523234325b2a4e9965dd0ef947822eb6ac11c47834d210"},
+    "explosion:2": {"width": 16, "height": 16, "sha256": "048ffe621d18cbb7c0988c4651828edf6fb365ed00083ad9b0ba146a4230db98"},
+    "impact:2": {"width": 16, "height": 16, "sha256": "048ffe621d18cbb7c0988c4651828edf6fb365ed00083ad9b0ba146a4230db98"},
+    "explosion:3": {"width": 32, "height": 32, "sha256": "6b581f8fff61b3f1861b42713755a45e8e789a7e9787657681b0169727d46155"},
+    "explosion:4": {"width": 32, "height": 32, "sha256": "7458effa2febccb7cde53b10feabc7fcf9cd3004f03f68ac0f63dc2e1346e979"},
+    "points:100": {"width": 16, "height": 16, "sha256": "531a18c49a5491f688a1419a964aa281fc1965683bd9a63896fbb5e9327b7ca7"},
+    "points:200": {"width": 16, "height": 16, "sha256": "ac1f33a731038327a8440623187fe05b8add33543b81bfcf1d31249686ae7154"},
+    "points:300": {"width": 16, "height": 16, "sha256": "0e15a4e1dc01266abbdb38fef1438534621ca3933c238221ff56604d299ef66c"},
+    "points:400": {"width": 16, "height": 16, "sha256": "75e9b2274fe53009bb3dbee668704243cbf69ab4254587c4106469ab38311b02"},
+    "points:500": {"width": 16, "height": 16, "sha256": "2dfa5dcb210137af2a912c1ca0dc2cadae77bc6f7bfa7039066aa77522fc1e32"},
+    "bullet:up": {"width": 8, "height": 16, "sha256": "a91390947931f0db264c74809b167edced3eb5f38570db7e3d5b86bc162fb188"},
+    "bullet:right": {"width": 8, "height": 16, "sha256": "634023c3819006701db1f77cb016529847278218f0e617320ae05239d2e9ebd2"},
+    "bullet:down": {"width": 8, "height": 16, "sha256": "fea6adc6922984c6e293d8baea12c335339f63fc5a1e1f5a23e49982110fbb84"},
+    "bullet:left": {"width": 8, "height": 16, "sha256": "d2ad0b580ca0cf0b9703d99770d7717dec1f886a8d1d0755958275ad89a791aa"},
+    "score:0": {"width": 16, "height": 16, "sha256": "0c2faf01dd507eb5e5db641d465b9cf3ee4951bbf151ffbed7f50d33307ab9bb"},
+    "score:1": {"width": 16, "height": 16, "sha256": "1362ebe97ea44f6fb82040cd9d58ca4979b752c35520c3b0f7c314999fd2f88e"},
+    "score:2": {"width": 16, "height": 16, "sha256": "1b1a60c665dc21b4c82a7e037670cc58a6178039d3dfc81daa3bc3b6188929c3"},
+    "score:3": {"width": 16, "height": 16, "sha256": "caf3ab67188c7ab13800ed40a05f198228259e856567687c5efc7d7fd63e8c0f"},
+    "arrow": {"width": 8, "height": 8, "sha256": "0e227adeb7f73c5c9e26b9606c4dd08c31a493dcf531843663ef57caba90942a"},
+    "arrow-right": {"width": 8, "height": 8, "sha256": "ad6c27c8f7c5fabdbd8fca06b5dc25030d8e91c6963b9c8f205045533eef1130"},
+    "enemy-icon": {"width": 8, "height": 8, "sha256": "ba1c07b6ddab4fd26d2adf90482020c3abf974e0c0cf4fbe1a179df69a4dbcd7"},
+    "life:0": {"width": 8, "height": 8, "sha256": "738e10d5b082db12ae6d68e56cdaa182a5b94896b044e51f212c639af679a005"},
+    "life:1": {"width": 8, "height": 8, "sha256": "738e10d5b082db12ae6d68e56cdaa182a5b94896b044e51f212c639af679a005"},
+    "hud-player:0": {"width": 16, "height": 8, "sha256": "9b656248908b0b5d6af61c3282d473c0a8f803d1d23155fdcbedc6dea8b6b709"},
+    "hud-player:1": {"width": 16, "height": 8, "sha256": "ec16960817abff3bf2e9628463ed91e82732047f48fd94eab2705457cea536d8"},
+    "pause": {"width": 40, "height": 16, "sha256": "b4c4cc420ff3193f4b564a592538226d210bd90c8c470f94c155e416abd8f751"},
+    "flag": {"width": 16, "height": 16, "sha256": "254b24a19db3ca55a5296f42dc5d7d1353f07d2564c70d1b3a57f7d45abb69e3"},
+    "glyph:0": {"width": 8, "height": 8, "sha256": "a855a1f82c5dee7d314183218d0b217ddd05ae1b480277bf58b28c6ff987215a"},
+    "glyph:1": {"width": 8, "height": 8, "sha256": "9ca90bd2ac5f5b2274dd599b563b972762a6eaaeeedb03c2919d88255bc8d353"},
+    "glyph:2": {"width": 8, "height": 8, "sha256": "2ba4460e9ed0cc76d0795c294b65cc6c5132449eb683e45dbe6298e487076d4c"},
+    "glyph:3": {"width": 8, "height": 8, "sha256": "3c533ffbb8aef1934f33fe9932ce5fd564fc29426be08a6a3bfe05a4ed1f55b3"},
+    "glyph:4": {"width": 8, "height": 8, "sha256": "76981ec89890504a8899760ad3c6730f82fe38bf08cd125df00523431ca19933"},
+    "glyph:5": {"width": 8, "height": 8, "sha256": "4dbf035835c165707e972f5fb20e0d658b4d71dadfd5e23f14feff982068a67d"},
+    "glyph:6": {"width": 8, "height": 8, "sha256": "fc35ef48e9c2c22a765c701043dac3f032f4bf0be98e574ed093a81b27e6b4be"},
+    "glyph:7": {"width": 8, "height": 8, "sha256": "97eb65b18b2d45bf038c0176b56e5bd87704f63eb0f2ab986d00c970478b8051"},
+    "glyph:8": {"width": 8, "height": 8, "sha256": "d448500233765082f2f0d82d465d0fbdab12f77fff3fd06ed08e0a2940de5303"},
+    "glyph:9": {"width": 8, "height": 8, "sha256": "8413f05db579c379f7b7e8d4d3f1a7a7af4023ea52e570e39df300290edf84a3"},
+    "glyph:A": {"width": 8, "height": 8, "sha256": "4a23c2e3064dd9765d1756a327afdc91e256bb0599813d90bcb474354a533bc9"},
+    "glyph:B": {"width": 8, "height": 8, "sha256": "3ac661fec752fe14b87e49814a54f3523898bb66a837a40cd1ab6dbee5932961"},
+    "glyph:C": {"width": 8, "height": 8, "sha256": "223c7f475b5d8557461191bf048524cc693fc6e8ec0cd580333189e6bc3800be"},
+    "glyph:D": {"width": 8, "height": 8, "sha256": "2f3226d6252b63ef659bb41cd77832c560575f872209482cb364737a1ab6182c"},
+    "glyph:E": {"width": 8, "height": 8, "sha256": "0981112d86496614c09190b1ecd6e8bcbd6482e389365808cbdb0ba0f3a2e5ac"},
+    "glyph:F": {"width": 8, "height": 8, "sha256": "f49e02893b897cd80b508414e34673eff139e84ab7f77320a38d6c570e32692e"},
+    "glyph:G": {"width": 8, "height": 8, "sha256": "502e1dd09afdb4b79a5a844c1eeb331a89488c4dfa658f046dbdb51f64a6a519"},
+    "glyph:H": {"width": 8, "height": 8, "sha256": "b6ef5d67363897099f10460c0955cf6bd5639d35952e8dfaa1d174fa2dea9e81"},
+    "glyph:I": {"width": 8, "height": 8, "sha256": "f46972d9f7d292df5e2a50129f1974ac34ee6e64fb2896e89de3f4b19fac45fd"},
+    "glyph:J": {"width": 8, "height": 8, "sha256": "d95faea940e3c46eff8ba1d733876af6e99271d552bcec090a534daccfa0857b"},
+    "glyph:K": {"width": 8, "height": 8, "sha256": "2c0029e592e353a7c672ad1e32512d5319000245c1dd15fbb579b9b7102cac75"},
+    "glyph:L": {"width": 8, "height": 8, "sha256": "65a4ddaaca15de330404bd9cf628ec2e6429ea4c798f639686a548d83145ee79"},
+    "glyph:M": {"width": 8, "height": 8, "sha256": "bbf457b5be224ce10036664c0564016a59731217e88107a38e6cf60dc4a45f29"},
+    "glyph:N": {"width": 8, "height": 8, "sha256": "12df337e02faa40a55ccc2aeb706fde99a50b935606dcf363704d4b4af3235cb"},
+    "glyph:O": {"width": 8, "height": 8, "sha256": "1ee331e84ee97384a4ccda3fc1eb71067a0a8f0209b0407b6e322f9d378d2104"},
+    "glyph:P": {"width": 8, "height": 8, "sha256": "f7d00e3f3879a257276aa160b14e2bc0127916d2ec1c45fd62aefebad2557475"},
+    "glyph:Q": {"width": 8, "height": 8, "sha256": "0e15d51d926e9d9481c551b5e5d13419e65c5577cde0232b1036d6fa141da699"},
+    "glyph:R": {"width": 8, "height": 8, "sha256": "1c8c1953038dc2b3c464ca29bafa1fe39880fee71728cd23542404bec4bc02fd"},
+    "glyph:S": {"width": 8, "height": 8, "sha256": "97d1996d7af3695ddcbfea512d09db3be3951a95823a49536a42b3a3888c9459"},
+    "glyph:T": {"width": 8, "height": 8, "sha256": "4277cef57e70b092f846b50ec63cfed5e1ad83a45e4e1fe8665cf95360b3ca2b"},
+    "glyph:U": {"width": 8, "height": 8, "sha256": "6011a6f1a7ee11155d654027d8a80068607dd6ff0b5497a7df5fec62e31b8984"},
+    "glyph:V": {"width": 8, "height": 8, "sha256": "da40849d6fca6ead90e71ce81af74776d17d4d66c005c3d34b677f947542c66c"},
+    "glyph:W": {"width": 8, "height": 8, "sha256": "e611724f955e3f6bc7bc86b332c175355c3c773a09d9bf647ad9c3c1585aa785"},
+    "glyph:X": {"width": 8, "height": 8, "sha256": "5870802c424ae8ec6d842c4863510e631115e0163b8c016893c2152510b9a4c0"},
+    "glyph:Y": {"width": 8, "height": 8, "sha256": "eefa985c368f57184979eb0133b34858c5e97041e19619c508aceac335f9753c"},
+    "glyph:Z": {"width": 8, "height": 8, "sha256": "53dcdfcc3115d60bb1a1fae824e7a66974a79ae93d1b3cd7e1d0b0b2ef02c3c2"},
+    "glyph:-": {"width": 8, "height": 8, "sha256": "c94631694ea271c38b77b3ebe561966c48709ed7b021b05df0505383652b0287"},
+    "glyph: ": {"width": 8, "height": 8, "sha256": "5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1"},
+    "glyph:.": {"width": 8, "height": 8, "sha256": "61591c3feef33865da6d7aff2bb5322443790cf6f03ec0823a1294c71a014fe7"},
+    "glyph:!": {"width": 8, "height": 8, "sha256": "e2b60e6c99f1184299e69681fe1710e7db6602f5afbc310f876a0220aacca0e6"},
+    "glyph:©": {"width": 8, "height": 8, "sha256": "229ed89e19351b2ce72743636f9b2911f6590595bb708bc41efcab6bcb89338e"},
+    "glyph:Ⅰ": {"width": 8, "height": 8, "sha256": "0a1f1f19b4caadac6e379a7b9f4652b26540d4ef86ebce50d9edee2cae83cc6c"},
+    "glyph:Ⅱ": {"width": 8, "height": 8, "sha256": "ddd0b8bfcc5c9af387fd861fec597aef75980e45d404f6ebf98a2225e83aa540"},
+    "white": {"width": 1, "height": 1, "sha256": "ad95131bc0b799c0b1af477fb14fcf26a6a9f76079e48bf090acb7e8367bfd0e"},
+    "word:BATTLE": {"width": 192, "height": 32, "sha256": "e143ef7cc69b3b78ad7d45107256f54c5d5e89e8d0c3a7ff0494523c58944e79"},
+    "word:CITY": {"width": 128, "height": 32, "sha256": "5b37893dd5b3edbb9849c213d7445fdcab5c7ad6a940bb894be5cc6d0473a302"},
+    "word:GAME": {"width": 128, "height": 32, "sha256": "36991096bd2525bc61841ee239f881f88faa503d3166dd459aa978e42e781936"},
+    "word:OVER": {"width": 128, "height": 32, "sha256": "f10f8c6fcbdcfddf6580d67621fe649e170e0aa915b6989a23b321e19f9531cf"},
+    "hiscore:0:H": {"width": 32, "height": 32, "sha256": "47f40f966094743fa121cacaac00f25ea0e043ce565b37b68ba2c9aef348b75d"},
+    "hiscore:0:I": {"width": 32, "height": 32, "sha256": "094f2d298bc17887d43ed0193324b0dc151bd3c96d13d95da6ab7660a2de1f41"},
+    "hiscore:0:S": {"width": 32, "height": 32, "sha256": "ab0291a40bf59e5898cba54158c0f1e67a031786a03cb0de5497ad21fa6ca51e"},
+    "hiscore:0:C": {"width": 32, "height": 32, "sha256": "5b8a0569dd4f454834ee96e36b7aa3c2da5b053805f539a61a6afd36f804f68e"},
+    "hiscore:0:O": {"width": 32, "height": 32, "sha256": "59b70e02b3dc4dfd90e4f386ff4e562a4434abc96d9ceb5c54e06d36be0044a9"},
+    "hiscore:0:R": {"width": 32, "height": 32, "sha256": "1139965a901ad4fd5f5bcbae50b14fb1988b0ac54192283e93606d3b76e76ce9"},
+    "hiscore:0:E": {"width": 32, "height": 32, "sha256": "9c9db85c06d58cc042cbb757dfbdbe9d506bc9ea8bd6abf719ecfdbc7ba6d1a3"},
+    "hiscore:0:0": {"width": 32, "height": 32, "sha256": "15164feaa8e54f4ceebc83160a8a4d23a20d693f2b1d890513d5b2630510d27a"},
+    "hiscore:0:1": {"width": 32, "height": 32, "sha256": "929caa2a99f060e10fe9b647fdf55a167fb1bdc4dc2a6420151a59e7c12569a5"},
+    "hiscore:0:2": {"width": 32, "height": 32, "sha256": "45847d17cb428ff36f7f069510b66d54fdb7503085525f2875d79c9799d3d2ca"},
+    "hiscore:0:3": {"width": 32, "height": 32, "sha256": "436d5dc368ddd2cd06bdb3b1d53dd72c583d323dd6fdcf4a42030cee1c32ba68"},
+    "hiscore:0:4": {"width": 32, "height": 32, "sha256": "47bf405081f20a9b58d690af71d85edfce77c0410178078cc394784d9d67023d"},
+    "hiscore:0:5": {"width": 32, "height": 32, "sha256": "a2af7f5632a4d78927680f62c696e5d20373832557958338cf00b13d8875dc76"},
+    "hiscore:0:6": {"width": 32, "height": 32, "sha256": "b9a28e8295c9943e40fb67cb5d36cad2ad0f471d1656ac80f309affd40dce1ef"},
+    "hiscore:0:7": {"width": 32, "height": 32, "sha256": "e2b0a4d8d995da5c1fd1d4dba8ec9d3fce1d30b66f46edaef5cec504c0780000"},
+    "hiscore:0:8": {"width": 32, "height": 32, "sha256": "79f006f64f79d2973401f1b69725a3a7564d80f4ec17c518f95b82a47f20a0c9"},
+    "hiscore:0:9": {"width": 32, "height": 32, "sha256": "d7f7dc29388df577485c4a08d5a58be7f8b7d849d855f9ccb05b70bb3008b39d"},
+    "hiscore:1:H": {"width": 32, "height": 32, "sha256": "c4b6f0e59be8da3be9403abae2e1f49ef2b4d6d41cc7aa24642953b2d9f0ed21"},
+    "hiscore:1:I": {"width": 32, "height": 32, "sha256": "6d746dfb883562ad3f896b9426f2e9927e704d8511c240733d4566cb3a68f685"},
+    "hiscore:1:S": {"width": 32, "height": 32, "sha256": "641c3b90df148a73a46e1aefca67d0cbc485b6d753e3f1cf52fc645bab459ce2"},
+    "hiscore:1:C": {"width": 32, "height": 32, "sha256": "36b60cef8e7141700ad69f733e5a1a946a70689e7acba0096331d73ba0edbb61"},
+    "hiscore:1:O": {"width": 32, "height": 32, "sha256": "cae698febc439aa85fabdc1ea78cc679285d64d7b1cf0712fcde13b7f66ec6f8"},
+    "hiscore:1:R": {"width": 32, "height": 32, "sha256": "23b4939ad7c17002781dc6740eaa9b17bfc0df0cbbf45695e4e44e03ce7e1107"},
+    "hiscore:1:E": {"width": 32, "height": 32, "sha256": "0376713b62d6256e9476426eebae054246b44d70fe832a9a2cb9c01ca303bf1c"},
+    "hiscore:1:0": {"width": 32, "height": 32, "sha256": "898ca481fbdaac3980066662c8c6842b864f7d0339b34f6d8520015178e721b0"},
+    "hiscore:1:1": {"width": 32, "height": 32, "sha256": "3106c2e528aa4ad9799f47a04b2d564ab88cf9c4d8190144943cfaa196104dc4"},
+    "hiscore:1:2": {"width": 32, "height": 32, "sha256": "e90667bd227617139ae77e64da2357e8c92c5b8d3674d39459d302cc1c18d3d2"},
+    "hiscore:1:3": {"width": 32, "height": 32, "sha256": "c28c6743a8d87cc64075bd51c9904ba98a78ae90dc39edc26fe82fcb6e8a267c"},
+    "hiscore:1:4": {"width": 32, "height": 32, "sha256": "a52d628f25db82cf9a7140b07b945ac2aec2ccedbaf99efa175a6bd7c71ffae9"},
+    "hiscore:1:5": {"width": 32, "height": 32, "sha256": "a66e9e0e0fcb3f45413d995a71bcc31f3f267704ea76a171cd10799e5e6aa29a"},
+    "hiscore:1:6": {"width": 32, "height": 32, "sha256": "30f7f38c2cdd0d4e219984b9b537dd0dcc15973a052dc1ccd3fdbb09cf88079e"},
+    "hiscore:1:7": {"width": 32, "height": 32, "sha256": "574ee480679d77781e8a370af03903814e8341b4c9f2d1085b409a7bd1570435"},
+    "hiscore:1:8": {"width": 32, "height": 32, "sha256": "dc9e1523025338932e7cce4dd91d548b36d990c6f525ab0ed5dfef067bb6c82e"},
+    "hiscore:1:9": {"width": 32, "height": 32, "sha256": "83b44b35a91508226ca0d5bde65b5471683a663d38aef6a268b2fa3196106744"},
+    "hiscore:2:H": {"width": 32, "height": 32, "sha256": "544b459abbbcd6617becf7cf412a06c7d404bd5841ae262655b2ca751f32684e"},
+    "hiscore:2:I": {"width": 32, "height": 32, "sha256": "a247f7d97fd85d37b8b37be2797f34f182cdaa950c5113cfe843735955bb465c"},
+    "hiscore:2:S": {"width": 32, "height": 32, "sha256": "70b4f8d14711c56018e8ff730a9b3593e944beda82c093927b2594c425b879a5"},
+    "hiscore:2:C": {"width": 32, "height": 32, "sha256": "fe3d8fafc1cb694111ee892f7811232ab7190b69a63bee29a30c9ea05999d6ea"},
+    "hiscore:2:O": {"width": 32, "height": 32, "sha256": "4614f8bc9a8bd82c29947655f570d98c94f553cceda23f66c148524e2ccc8d8e"},
+    "hiscore:2:R": {"width": 32, "height": 32, "sha256": "b51689675cec1173a7e624d5565e691b7ea5e77b197956ca29fd8db05b1a6a3a"},
+    "hiscore:2:E": {"width": 32, "height": 32, "sha256": "46c97618a1af9479433446727c809a3b794053445425cb934f9779c793a2d253"},
+    "hiscore:2:0": {"width": 32, "height": 32, "sha256": "f276e449b6cf28ae56eafca41e8a1da953bc7b829978aad9da012c17b5a87715"},
+    "hiscore:2:1": {"width": 32, "height": 32, "sha256": "5139f399b7cdd6bb859f055442a709dd15c13588d1d494639cdb374a0300a4cf"},
+    "hiscore:2:2": {"width": 32, "height": 32, "sha256": "10588060cfebce522e2273d824ab2c331674419ecb6b9153cd11025003ec9b9d"},
+    "hiscore:2:3": {"width": 32, "height": 32, "sha256": "df0c50f30ee47d7c7943b06cfaff0d50a0cf8c3955200bb05bd8a11c91124491"},
+    "hiscore:2:4": {"width": 32, "height": 32, "sha256": "d2ce4ca0c9b3ac6214b7f5e6ae830cc0e6848abb6f2ffdeb1f91c6c2558e123b"},
+    "hiscore:2:5": {"width": 32, "height": 32, "sha256": "219420a7ff9710a219836c9e4ed15fb0ed5829cafbdf1f0d5cdae3633b655907"},
+    "hiscore:2:6": {"width": 32, "height": 32, "sha256": "06c82c40ff1264828576d25b9da9eab3309f25749ff911e0b99b3889911738fe"},
+    "hiscore:2:7": {"width": 32, "height": 32, "sha256": "f85fa3652ec5fcad38483e0c3f57e943cc64ab891c48bba1392863d0cdd6dfe8"},
+    "hiscore:2:8": {"width": 32, "height": 32, "sha256": "05f391ebf94229bc9da32e52c19eaf0cd97338bbed14140dd559dfc2ee8b35e1"},
+    "hiscore:2:9": {"width": 32, "height": 32, "sha256": "65496cacab926b00ecfff53fda7160286c9e801bf49731a72d37fa9cd265551b"},
+    "hiscore:3:H": {"width": 32, "height": 32, "sha256": "471f277e41f2cbf1123a8c20963225ddc635410f7f15a0043357a06031f86026"},
+    "hiscore:3:I": {"width": 32, "height": 32, "sha256": "ba1d338c5ce244f9f86b793a01b9d95f2b7680a77166c0d73f1c393810fa091c"},
+    "hiscore:3:S": {"width": 32, "height": 32, "sha256": "9b87b19ef4845861d11441c75dceef0805aa0b8c46c7017d45561cf8133773a1"},
+    "hiscore:3:C": {"width": 32, "height": 32, "sha256": "409075e27eed6fe3d951d367ec05b1b506d1cd70ae741590e63de74e7cb03d0e"},
+    "hiscore:3:O": {"width": 32, "height": 32, "sha256": "fa1523875a222069ba8fda550a15fdc0c7f19b41d82369eb9a2c072ec387764c"},
+    "hiscore:3:R": {"width": 32, "height": 32, "sha256": "a8b68d22a2c341b4b4333fcaad382030c1a843f0715f6c7c2c2985a282c70b8e"},
+    "hiscore:3:E": {"width": 32, "height": 32, "sha256": "8d1f518feb964c1ddd3658d335cc7a00b6a97460c729d3036b2007ef6130a29d"},
+    "hiscore:3:0": {"width": 32, "height": 32, "sha256": "db9597419a13eeff57290546071b474d9e7aee7c44f78751cb3f40aada9e4011"},
+    "hiscore:3:1": {"width": 32, "height": 32, "sha256": "bc8dac634acb7a4649bf75bc4bdd1bd601274345f21127471df114470539fe8a"},
+    "hiscore:3:2": {"width": 32, "height": 32, "sha256": "f9e1e1bce846b5e04a736f0ff3388c73ca58ceb0ced148f3c90862fcd30afb84"},
+    "hiscore:3:3": {"width": 32, "height": 32, "sha256": "e4870641b2efdc7df17db65fd7aeaf2b9bc9ace1421493338e9647fba9da78d4"},
+    "hiscore:3:4": {"width": 32, "height": 32, "sha256": "ab0f50324b6ff59a91be50f9a2fd847759382c8f1adf5bb7d4922a7846390269"},
+    "hiscore:3:5": {"width": 32, "height": 32, "sha256": "8b44c0b2ced1f7040a5deeb15744c564f15c531e6ee990a5e1e764c168e82a6b"},
+    "hiscore:3:6": {"width": 32, "height": 32, "sha256": "9c8a49644e40c93edcfa02f3515c5cd7bd00ba845fd8bc316b9add4041d55fd4"},
+    "hiscore:3:7": {"width": 32, "height": 32, "sha256": "5b04560f012fa5ca7526e723634035d773575cc90dba7bfb2a275f8ec03618c7"},
+    "hiscore:3:8": {"width": 32, "height": 32, "sha256": "87c083a0e472f6f5498c906693e54c487260ec104b2fec82d38f5fbe4a6761a5"},
+    "hiscore:3:9": {"width": 32, "height": 32, "sha256": "8530ed8b602a532141d93cfca1656bbddab7a6b4374856b167d883de56172e84"},
+    "namcot": {"width": 72, "height": 8, "sha256": "fe38dcc1207f1dbaeca9d4eb3500af4ad75b795f442ec5016b5f2a65e10b919b"},
+    "loss": {"width": 32, "height": 16, "sha256": "132959ae35f2783d8aa510ca402be8eb2e2ae47506f1e0323278813eb4deac84"},
+    "credits": {"width": 16, "height": 16, "sha256": "bf6885bb28f0469940f1d79504abf21d745fd931136e068511abdf54cf3985a5"}
   }
 }

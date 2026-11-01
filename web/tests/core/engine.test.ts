@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { GameEngine } from '../../src/core/engine';
-import type { CoreContext } from '../../src/core/context';
 import { destroyEnemy, fireBullet, updateBullets } from '../../src/core/combat';
-import { EMPTY_INPUT, Tile, type Bullet, type EnemyKind, type GameMode,
+import { type CoreContext, EMPTY_INPUT, Tile, type Bullet, type EnemyKind, type GameMode,
   type LevelDefinition, type PlayerInput, type Tank } from '../../src/core/types';
 import { getLevel } from '../../src/data/levels';
 import { FORTRESS_CELLS, spawnInterval } from '../../src/core/rules';
 import { chooseEnemyDirection, moveEnemy } from '../../src/core/ai';
 import { moveTank } from '../../src/core/movement';
-import { updateSpawning } from '../../src/core/spawning';
+import { updateTankTimers, updateSpawning } from '../../src/core/spawning';
 
 const level = (enemies: EnemyKind[] = Array(20).fill('basic')): LevelDefinition => ({
   tiles: Array(26 * 26).fill(Tile.Empty), enemies,
@@ -31,6 +30,14 @@ function advance(engine: GameEngine, ticks: number, inputs: readonly PlayerInput
   for (let tick = 0; tick < ticks; tick++) engine.step(inputs);
 }
 
+function finishDeaths(engine: GameEngine): void {
+  const context: CoreContext = { state: engine.state, events: [], nextId: () => shotId++ };
+  for (let i = 0; i < 160 && engine.state.tanks.some(tank => tank.deathTimer > 0); i++) {
+    engine.state.tick++; updateTankTimers(context);
+  }
+  expect(engine.state.tanks.every(tank => tank.deathTimer === 0)).toBe(true);
+}
+
 function enemy(engine: GameEngine, kind: EnemyKind = 'basic', x = 96, y = 80): Tank {
   const tank: Tank = {
     ...engine.state.tanks[0]!, id: 100 + engine.state.tanks.length,
@@ -38,7 +45,7 @@ function enemy(engine: GameEngine, kind: EnemyKind = 'basic', x = 96, y = 80): T
     enemySlot: engine.state.tanks.filter(candidate => candidate.team === 'enemy').length,
     kind, x, y, direction: 'down',
     hp: kind === 'armor' ? 4 : 1, stars: 0,
-    spawnTicks: 0, shieldTicks: 0, stunTicks: 0, carryingPowerUp: false,
+    spawnTicks: 0, shieldTicks: 0, deathTimer: 0, deathPoints: 0, stunTicks: 0, carryingPowerUp: false,
   };
   engine.state.tanks.push(tank);
   engine.state.freezeTicks = 10_000;
@@ -68,7 +75,7 @@ describe('fixed simulation, input and transitions', () => {
     advance(engine, 300, [input({ firePressed: true, up: true })]);
     expect(engine.state).toEqual(snapshot);
     engine.setPaused(false);
-    advance(engine, 89);
+    advance(engine, 65);
     expect(engine.state.phase).toBe('intro');
     expect(engine.step([])).toEqual([{ type: 'stage-start' }]);
     expect(engine.state.phase).toBe('playing');
@@ -133,17 +140,17 @@ describe('fixed simulation, input and transitions', () => {
     engine.step([]);
     expect(engine.state.phase).toBe('playing');
     expect(engine.state.pendingOutcome).toBe('won');
-    expect(engine.state.outroTicks).toBe(127);
+    expect(engine.state.outroTicks).toBe(128);
     shot(engine, 104, 190, { team: 'enemy', playerIndex: null, gunSlot: 3 });
     engine.step([]);
     expect(engine.state.pendingOutcome).toBe('lost');
-    expect(engine.state.outroTicks).toBe(126);
-    advance(engine, 126);
+    expect(engine.state.outroTicks).toBe(127);
+    advance(engine, 127);
     expect(engine.state.baseAlive).toBe(false);
     expect(engine.state.phase).toBe('lost');
   });
 
-  it('stops all tracks on the exact tick the base is destroyed and keeps the tanks still', () => {
+  it('ignores player controls after the fatal HQ hit while the enemy battlefield continues', () => {
     const engine = game();
     const player = engine.state.tanks[0]!;
     const tank = enemy(engine, 'basic', 32, 64);
@@ -153,10 +160,9 @@ describe('fixed simulation, input and transitions', () => {
     // Both tanks completed their movement before the fatal shot was resolved.
     expect([player.y, tank.y]).toEqual([191, 65]);
     expect(engine.state.pendingOutcome).toBe('lost');
-    expect(engine.state.tanks.every(candidate => !candidate.moving)).toBe(true);
     advance(engine, 10, [input({ up: true })]);
-    expect([player.y, tank.y]).toEqual([191, 65]);
-    expect(engine.state.tanks.every(candidate => !candidate.moving)).toBe(true);
+    expect(player.y).toBe(191); expect(player.moving).toBe(false);
+    expect(tank.y).toBeGreaterThan(65);
   });
 
   it('clears motion when a player skips a frame or releases input and an enemy freezes or spawns', () => {
@@ -234,7 +240,7 @@ describe('presentation event context without changing combat outcomes', () => {
     expect(engine.step([])).toContainEqual({ type: 'explosion', owner: 'player', playerIndex: 1, enemyKind: null });
     shot(engine, 104, 190);
     expect(engine.step([])).toContainEqual({ type: 'explosion', owner: 'base', playerIndex: null, enemyKind: null });
-    expect(engine.state.effects.some(item => item.explosionVariant === 'base')).toBe(true);
+    expect(engine.state.baseExplosionTicks).toBe(38);
   });
 });
 
@@ -391,7 +397,7 @@ describe('collision, projectiles and terrain', () => {
     shot(engine, 104, 190, { team, playerIndex: team === 'player' ? 0 : null, gunSlot: team === 'enemy' ? 2 : 0 });
     engine.step([]);
     expect(engine.state.baseAlive).toBe(false);
-    expect(engine.state.effects).toEqual([{ kind: 'explosion', explosionVariant: 'base', x: 104, y: 200, remainingTicks: 24 }]);
+    expect(engine.state.baseExplosionTicks).toBe(38);
   });
 });
 
@@ -412,13 +418,11 @@ describe('lives, scoring and power-ups', () => {
       }
       if (hit === 1) expect(engine.state.powerUp).not.toBeNull();
     }
-    expect(engine.state.killed).toBe(1);
+    expect(tank.deathTimer).toBe(0x73); expect(engine.state.killed).toBe(0);
+    finishDeaths(engine); expect(engine.state.killed).toBe(1);
     expect(engine.state.players[0]!.score).toBe(400);
     expect(engine.state.players[0]!.kills).toEqual([0, 0, 0, 1]);
-    expect(engine.state.effects).toEqual([
-      { kind: 'explosion', explosionVariant: 'tank', x: 104, y: 88, remainingTicks: 24 },
-      { kind: 'points', x: 104, y: 88, remainingTicks: 48, value: 400 },
-    ]);
+    expect(tank.deathPoints).toBe(400);
   });
 
   it('respawns with upgrades reset, then survives on the last active tank without spare lives', () => {
@@ -427,10 +431,10 @@ describe('lives, scoring and power-ups', () => {
     tank.stars = engine.state.players[0]!.stars = 3;
     enemyShot(engine, tank);
     engine.step([]);
-    expect(engine.state.effects).toEqual([{ kind: 'explosion', explosionVariant: 'tank', x: 72, y: 200, remainingTicks: 24 }]);
-    expect(engine.state.players[0]!.lives).toBe(1);
+    expect(tank.deathTimer).toBe(0x73); expect(engine.state.players[0]!.lives).toBe(2);
     expect(engine.state.players[0]!.stars).toBe(0);
-    advance(engine, 48);
+    for (let i = 0; i < 100 && engine.state.tanks.includes(tank); i++) engine.step([]);
+    expect(engine.state.players[0]!.lives).toBe(1);
     tank = engine.state.tanks.find(candidate => candidate.team === 'player')!;
     expect(tank.stars).toBe(0);
     expect(tank.spawnTicks).toBeGreaterThan(0);
@@ -441,8 +445,9 @@ describe('lives, scoring and power-ups', () => {
     tank.shieldTicks = 0;
     enemyShot(engine, tank);
     engine.step([]);
+    for (let i = 0; i < 100 && !engine.state.players[0]!.eliminated; i++) engine.step([]);
     expect(engine.state.players[0]!.eliminated).toBe(true);
-    advance(engine, 128);
+    advance(engine, 256);
     expect(engine.state.phase).toBe('lost');
   });
 
@@ -481,34 +486,20 @@ describe('lives, scoring and power-ups', () => {
     expect(next.state.players[0]!.nextExtraLife).toBe(Infinity);
   });
 
-  it('revives an eliminated cooperative player when its remaining shot earns the first score life', () => {
-    const engine = game('coop');
-    const state = engine.state;
-    const original = state.tanks[0]!;
-    Object.assign(original, { x: 64, y: 16, direction: 'right' });
-    Object.assign(state.players[0]!, { lives: 0, score: 19_900 });
-    enemy(engine, 'basic', 88, 16);
-    state.freezeTicks = 8;
-    enemyShot(engine, original);
-    engine.step([input({ firePressed: true }), EMPTY_INPUT]);
-    expect(state.players[0]!.eliminated).toBe(true);
-    expect(state.pendingOutcome).toBeNull();
-    advance(engine, 3);
-    expect(state.players[0]!.score).toBe(19_900); // Muzzle x=80, then 82/84/86: the 10px boundary does not hit.
+  it('revives an eliminated cooperative player when a retained shot earns the first score life', () => {
+    const engine = game('coop'), state = engine.state, original = state.tanks[0]!;
+    Object.assign(state.players[0]!, { lives: 0, score: 19900 });
+    enemyShot(engine, original); engine.step([]);
+    for (let i = 0; i < 100 && !state.players[0]!.eliminated; i++) engine.step([]);
+    expect(state.players[0]!.eliminated).toBe(true); expect(state.pendingOutcome).toBeNull();
+    const target = enemy(engine, 'basic', 96, 80);
+    shot(engine, target.x + 8, target.y - 2);
     const events = engine.step([]);
     expect(events.filter(event => event.type === 'extra-life')).toHaveLength(1);
-    expect(state.players[0]).toMatchObject({
-      score: 20_000, lives: 0, stars: 0, eliminated: false,
-      respawnTicks: 1, nextExtraLife: Infinity,
-    });
-    expect(state.pendingOutcome).toBeNull();
+    expect(state.players[0]).toMatchObject({ score: 20000, lives: 0, eliminated: false, respawnTicks: 1 });
     engine.step([]);
-    const replacement = state.tanks.find(tank => tank.playerIndex === 0)!;
-    expect(replacement.id).not.toBe(original.id);
-    expect(replacement.spawnTicks).toBe(28);
-    advance(engine, 38);
-    expect(replacement.spawnTicks).toBe(0);
-    expect(replacement.shieldTicks).toBeGreaterThan(0);
+    const replacement = state.tanks.find(tank => tank.team === 'player' && tank.playerIndex === 0)!;
+    expect(replacement.id).not.toBe(original.id); expect(replacement.spawnTicks).toBe(28);
   });
 
   it('never resurrects an eliminated partner merely by carrying to the next stage', () => {
@@ -517,6 +508,7 @@ describe('lives, scoring and power-ups', () => {
     partner.lives = 0;
     enemyShot(engine, engine.state.tanks[1]!);
     engine.step([]);
+    finishDeaths(engine);
     const next = new GameEngine(level(), { mode: 'coop', stage: 2, players: engine.state.players });
     expect(next.state.tanks.filter(tank => tank.team === 'player').map(tank => tank.playerIndex)).toEqual([0]);
     expect(next.state.players[1]!.eliminated).toBe(true);
@@ -530,14 +522,15 @@ describe('lives, scoring and power-ups', () => {
     player.lives = 0;
     engine.state.spawned = engine.state.enemyQueue.length;
     engine.state.killed = engine.state.enemyQueue.length - 1;
-    const lastEnemy = enemy(engine);
-    // This player shot reaches the enemy three ticks after the final death.
-    shot(engine, lastEnemy.x + 8, lastEnemy.y - 8);
+    enemy(engine, 'basic', 192, 32);
+    // The long retained shot reaches its target after the player's death animation.
+    shot(engine, 8, 40, { direction: 'right' });
     enemyShot(engine, engine.state.tanks[0]!);
     engine.step([]);
+    for (let i = 0; i < 100 && !player.eliminated; i++) engine.step([]);
     expect(engine.state.pendingOutcome).toBe('lost');
     expect(player.eliminated).toBe(true);
-    const events = Array.from({ length: 3 }, () => engine.step([])).flat();
+    const events = Array.from({ length: 110 }, () => engine.step([])).flat();
     expect(player.score).toBe(20_000);
     expect(engine.state.killed).toBe(engine.state.enemyQueue.length);
     expect(events.some(event => event.type === 'extra-life')).toBe(false);
@@ -550,7 +543,7 @@ describe('lives, scoring and power-ups', () => {
     expect(engine.state.phase).toBe('lost');
   });
 
-  it('allows a winning cooperative bonus to earn the first score life for an eliminated partner', () => {
+  it('keeps an eliminated cooperative leader eliminated through the result bonus', () => {
     const engine = game('coop');
     const partner = engine.state.players[1]!;
     partner.score = 19_000;
@@ -558,22 +551,19 @@ describe('lives, scoring and power-ups', () => {
     partner.kills = [1, 0, 0, 0];
     enemyShot(engine, engine.state.tanks[1]!);
     engine.step([]);
-    expect(partner.eliminated).toBe(true);
+    finishDeaths(engine); expect(partner.eliminated).toBe(true);
     engine.state.spawned = engine.state.enemyQueue.length;
     engine.state.killed = engine.state.enemyQueue.length;
     let events = engine.step([]);
     expect(engine.state.pendingOutcome).toBe('won');
-    for (let tick = 0; tick < 127; tick++) events = engine.step([]);
+    for (let tick = 0; tick < 256; tick++) events = engine.step([]);
     expect(engine.state.phase).toBe('won');
-    expect(events).toContainEqual({ type: 'extra-life', playerIndex: 1, reason: 'score' });
-    expect(partner.score).toBe(20_000);
-    expect(partner.nextExtraLife).toBe(Infinity);
-    expect(partner.eliminated).toBe(false);
-    expect(partner.lives).toBe(0);
-    expect(partner.respawnTicks).toBe(1);
+    events = engine.awardCoopBonus();
+    expect(events).toEqual([]);
+    expect(partner.score).toBe(19_000); expect(partner.nextExtraLife).toBe(20_000);
+    expect(partner.eliminated).toBe(true); expect(partner.lives).toBe(0); expect(partner.respawnTicks).toBe(0);
     const next = new GameEngine(level(), { mode: 'coop', stage: 2, players: engine.state.players });
-    expect(next.state.tanks.filter(tank => tank.team === 'player').map(tank => tank.playerIndex)).toEqual([0, 1]);
-    expect(next.state.players[1]!.lives).toBe(0);
+    expect(next.state.tanks.filter(tank => tank.team === 'player').map(tank => tank.playerIndex)).toEqual([0]);
   });
 
   it.each(['helmet', 'timer', 'shovel', 'star', 'tank'] as const)('collects %s with 500 points and its authentic effect', kind => {
@@ -607,8 +597,8 @@ describe('lives, scoring and power-ups', () => {
     const player = engine.state.tanks[0]!;
     engine.state.powerUp = { kind: 'grenade', x: player.x, y: player.y };
     const events = engine.step([]);
-    expect(engine.state.killed).toBe(1);
-    expect(engine.state.tanks).not.toContain(active);
+    expect(engine.state.killed).toBe(0); expect(active.deathTimer).toBe(0x73);
+    expect(engine.state.tanks).toContain(active);
     expect(engine.state.tanks).toContain(spawning);
     expect(spawning).toMatchObject({ hp: 4, carryingPowerUp: true });
     expect(spawning.spawnTicks).toBeGreaterThan(0);
@@ -699,6 +689,7 @@ describe('waves and authentic map spawn entries', () => {
     const oldShot = engine.state.bullets[0]!;
     expect(oldShot.gunSlot).toBe(mode === 'single' ? 5 : 7);
     destroyEnemy(context, original, null);
+    finishDeaths(engine);
     engine.state.spawnTimer = 0;
     updateSpawning(context);
     const replacement = engine.state.tanks.find(tank => tank.team === 'enemy')!;
@@ -759,7 +750,8 @@ describe('waves and authentic map spawn entries', () => {
       shot(engine, tank.x + 8, tank.y - 2);
     }
     engine.step([]);
-    expect(engine.state.killed).toBe(2);
+    expect(engine.state.killed).toBe(0);
+    finishDeaths(engine); expect(engine.state.killed).toBe(2);
     engine.step([]);
     const firstReplacement = engine.state.tanks.find(tank => tank.team === 'enemy' && tank.enemySlot === maximum - 1)!;
     expect(firstReplacement.id).not.toBe(enemies[0]!.id);
@@ -801,7 +793,7 @@ describe('waves and authentic map spawn entries', () => {
     const tank = enemy(engine, 'fast', 80, 80);
     tank.enemySlot = slot;
     tank.id = 101 + slot;
-    engine.state.tick = 120 + 24 * 256;
+    engine.state.battleTicks = 24 * 64;
     const initialRng = engine.state.rng;
     chooseEnemyDirection(engine.state, tank);
     const direction = tank.direction;
@@ -852,7 +844,7 @@ describe('waves and authentic map spawn entries', () => {
     first.step([input({ firePressed: true })]);
     second.step([]);
     first.state.bullets = [];
-    first.state.effects.push({ kind: 'explosion', x: 32, y: 32, remainingTicks: 24 });
+    first.state.effects.push({ x: 32, y: 32, remainingTicks: 50, value: 500 });
     for (const engine of [first, second]) {
       engine.state.spawnTimer = 0;
       engine.step([]);
@@ -940,10 +932,10 @@ describe('waves and authentic map spawn entries', () => {
     const tank = enemy(engine, 'fast', 32, 32);
     engine.state.tanks[0]!.x = 0;
     engine.state.tanks[0]!.y = 0;
-    engine.state.tick = 120 + 24 * 256;
+    engine.state.battleTicks = 24 * 64;
     chooseEnemyDirection(engine.state, tank);
     expect(['up', 'left']).toContain(tank.direction);
-    engine.state.tick = 120 + 47 * 256;
+    engine.state.battleTicks = 47 * 64;
     chooseEnemyDirection(engine.state, tank);
     expect(['down', 'right']).toContain(tank.direction);
   });
@@ -953,13 +945,15 @@ describe('waves and authentic map spawn entries', () => {
     engine.state.players[0]!.kills = [1, 0, 0, 0];
     engine.state.spawned = engine.state.enemyQueue.length;
     engine.state.killed = engine.state.enemyQueue.length;
-    advance(engine, 128);
+    advance(engine, 129);
     expect(engine.state.phase).toBe('won');
+    expect(engine.state.players.map(player => player.score)).toEqual([0, 0]);
+    expect(engine.awardCoopBonus()).toContainEqual({type:'score-bonus',playerIndex:0});
     expect(engine.state.players.map(player => player.score)).toEqual([1000, 0]);
     const tied = game('coop');
     tied.state.spawned = tied.state.enemyQueue.length;
     tied.state.killed = tied.state.enemyQueue.length;
-    advance(tied, 128);
+    advance(tied, 129);
     expect(tied.state.players.map(player => player.score)).toEqual([0, 0]);
   });
 

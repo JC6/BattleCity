@@ -1,10 +1,9 @@
 import type { GameEngine } from '../core/engine';
-import type { LossPresentationWorld } from '../core/loss-presentation';
 
 interface TimedState { engine: GameEngine; duration: number; ticks: number }
-export type TimedAppState =
-  | (TimedState & { kind: 'loss'; world: LossPresentationWorld })
-  | (TimedState & { kind: 'score' | 'gameover' | 'hiscore' });
+type TimedAppState =
+  | (TimedState & { kind: 'score'; bonusChecked: boolean; bonusPlayer: 0 | 1 | null })
+  | (TimedState & { kind: 'gameover' | 'hiscore' });
 /** Each battle/presentation owns its required engine; menus cannot retain one. */
 export type AppState =
   | { kind: 'menu' | 'editor' | 'stage-select' }

@@ -1,4 +1,4 @@
-import type { CoreContext } from './context';
+import type { CoreContext } from './types';
 
 export function addScore(context: CoreContext, playerIndex: number, value: number): void {
   const player = context.state.players[playerIndex];
@@ -15,11 +15,16 @@ export function addScore(context: CoreContext, playerIndex: number, value: numbe
   }
 }
 
+/** CCD4–CEE7: only the surviving strict leader of a completed win. */
 export function awardCoopBonus(context: CoreContext): void {
-  if (context.state.mode !== 'coop') return;
+  if (context.state.mode !== 'coop' || context.state.phase !== 'won') return;
   const [first, second] = context.state.players;
   if (!first || !second) return;
-  const firstKills = first.kills.reduce((sum, count) => sum + count, 0);
-  const secondKills = second.kills.reduce((sum, count) => sum + count, 0);
-  if (firstKills !== secondKills) addScore(context, firstKills > secondKills ? 0 : 1, 1000);
+  const a = first.kills.reduce((sum, count) => sum + count, 0);
+  const b = second.kills.reduce((sum, count) => sum + count, 0);
+  if (a === b) return;
+  const winner = a > b ? first : second;
+  if (winner.eliminated) return;
+  addScore(context, winner.index, 1000);
+  context.events.push({ type: 'score-bonus', playerIndex: winner.index });
 }

@@ -23,7 +23,6 @@ export class GameAudio {
   private lastMovingTick = -100;
   private scoreState?: GameState;
   private scoreCues = 0;
-  private scoreBonus = false;
   constructor(volume: number, private readonly clock = () => performance.now()) {
     this.transport = new AudioTransport(volume, () => {
       const offset = Math.max(0, Math.floor(((this.pausedAt ?? this.clock()) - this.musicStarted) * AUDIO_TICK_HZ / 1000));
@@ -42,7 +41,7 @@ export class GameAudio {
   }
   stopScene(): void {
     this.music = null; this.musicStarted = this.clock(); this.pausedAt = null; this.introPlayed = false; this.engine = null; this.ice = false;
-    this.scoreState = undefined; this.scoreCues = 0; this.scoreBonus = false; this.lastMovingTick = -100;
+    this.scoreState = undefined; this.scoreCues = 0; this.lastMovingTick = -100;
     this.transport.stopScene();
   }
   startPresentation(music: Exclude<Music, 'intro' | null>): void { this.startMusic(music); }
@@ -53,7 +52,7 @@ export class GameAudio {
   syncState(state: GameState | null): void {
     if (state?.phase === 'intro' && !this.introPlayed) { this.startMusic('intro'); this.introPlayed = true; }
     const active = state?.phase === 'playing' && state.pendingOutcome === null;
-    const players = active ? state.tanks.filter(tank => tank.team === 'player' && !tank.spawnTicks) : [];
+    const players = active ? state.tanks.filter(tank => tank.team === 'player' && !tank.spawnTicks && !tank.deathTimer) : [];
     if (state && players.some(tank => tank.moving && !tank.stunTicks)) this.lastMovingTick = state.tick;
     const engine = active ? (state.tick - this.lastMovingTick <= 1 ? 'player' : 'enemy') : null;
     if (engine !== this.engine) {
@@ -67,11 +66,9 @@ export class GameAudio {
   }
   updateScore(state: GameState, elapsedMs: number): void {
     const timeline = scoreTimeline(state, elapsedMs);
-    if (this.scoreState !== state) { this.scoreState = state; this.scoreCues = 0; this.scoreBonus = false; }
+    if (this.scoreState !== state) { this.scoreState = state; this.scoreCues = 0; }
     if (timeline.cueCount > this.scoreCues) { this.cue(CUE.countPulse); this.cue(CUE.countNoise); }
-    const bonus = state.phase === 'won' && timeline.totalVisible && state.mode === 'coop' && timeline.totals.length === 2 && timeline.totals[0] !== timeline.totals[1];
-    if (bonus && !this.scoreBonus) this.cue(CUE.bonus1000);
-    this.scoreCues = timeline.cueCount; this.scoreBonus = bonus;
+    this.scoreCues = timeline.cueCount;
   }
   play(events: readonly GameEvent[]): void {
     for (const event of events) switch (event.type) {
@@ -87,6 +84,7 @@ export class GameAudio {
         else this.cue(event.owner === 'enemy' ? CUE.enemyExplosion : CUE.playerExplosion);
         break;
       case 'powerup': this.cue(event.action === 'appear' ? CUE.appear : CUE.pickup); break;
+      case 'score-bonus': this.cue(CUE.bonus1000); break;
       case 'extra-life': this.cue(CUE.lifePulse1); this.cue(CUE.lifePulse2); break;
       case 'stage-start': if (!this.introPlayed) { this.startMusic('intro'); this.introPlayed = true; } break;
       case 'stage-clear': case 'game-over': break;

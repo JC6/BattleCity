@@ -416,7 +416,7 @@ describe('keyboard application flow', () => {
     }
   });
 
-  it('reveals zero-kill results on the measured frames and advances after the full TOTAL hold', () => {
+  it('reveals zero-kill results on the source-derived frames and advances after the full TOTAL hold', () => {
     tap('Enter'); tap('Enter');
     api.debug({ phase: 'lost' }); api.step();
     until('score');
@@ -425,11 +425,11 @@ describe('keyboard application flow', () => {
       assert(presentation.kind === 'score');
       return scoreTimeline(api.state()!, presentation.elapsedMs);
     };
-    frame(34);
+    frame(30);
     expect(timeline().rows[0].counts).toEqual([null]);
     frame();
     expect(timeline().rows[0].counts).toEqual([0]);
-    frame(126);
+    frame(128);
     expect(timeline().totalVisible).toBe(false);
     frame();
     expect(timeline().totalVisible).toBe(true);

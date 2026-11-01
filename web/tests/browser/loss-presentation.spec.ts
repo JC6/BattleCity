@@ -6,45 +6,36 @@ import { advancePresentation, begin, presentation, readyWithClock, snapshot } fr
 test.setTimeout(60000);
 
 // Debug fixtures exercise browser integration; they are not original-game evidence.
-test('loss locks the result while its battlefield animates and settles automatically', async ({ page }) => {
-  await readyWithClock(page);
-  await begin(page);
-  const result = await page.evaluate(() => {
-    const api = window.__BATTLECITY__!;
-    const state = api.state()!;
-    state.players[0].score = 12345;
-    state.players[0].kills = [1, 2, 3, 4];
-    api.debug({ phase: 'lost', pendingOutcome: 'lost', baseAlive: false, players: state.players });
-    api.step(0);
-    return api.state();
+test('failure animates the authoritative battlefield, pauses explicitly, then enters score once', async ({ page }) => {
+  await readyWithClock(page); await begin(page);
+  const origin = await page.evaluate(() => {
+    const api = window.__BATTLECITY__!, state = api.state()!;
+    state.players[0].score = 12345; state.players[0].kills = [1, 2, 3, 4];
+    state.tanks = state.tanks.filter(tank => tank.team === 'player');
+    state.tanks.forEach(tank => { tank.spawnTicks = 0; tank.shieldTicks = 10000; });
+    api.debug({ baseAlive: false, players: state.players, tanks: state.tanks, bullets: [], spawnTimer: 100000 });
+    api.step(1); return api.state()!.tanks[0];
   });
   await page.clock.runFor(34);
-  const banner = await presentation(page);
-  expect(banner.kind).toBe('game');
-  if (banner.kind !== 'game') throw new Error('Loss banner was not shown');
-  expect(banner.lossBannerProgress).toBeGreaterThan(0);
-  for (const key of ['w', 'j', 'Enter']) {
-    try {
-      await page.keyboard.down(key);
-      await page.clock.runFor(34);
-      expect(await snapshot(page)).toEqual(result);
-    } finally {
-      await page.keyboard.up(key);
-    }
-  }
-  expect(await snapshot(page)).toEqual(result);
-  const laterBanner = await presentation(page);
-  expect(laterBanner.kind).toBe('game');
-  if (laterBanner.kind !== 'game') throw new Error('Loss banner ended early');
-  expect(laterBanner.lossBannerProgress).toBeGreaterThan(banner.lossBannerProgress!);
-  const score = await advancePresentation(page, 'game', 'score', 2500);
-  expect(score.kind).toBe('score');
-  if (score.kind !== 'score') throw new Error('Score was not shown');
-  expect(score.state).toEqual(result);
-  expect(await snapshot(page)).toEqual(result);
+  expect((await snapshot(page))!.lossBannerTicks).toBeLessThan(256);
+  await page.keyboard.down('w'); await page.keyboard.down('j');
+  await page.clock.runFor(100);
+  const running = (await snapshot(page))!;
+  expect(running.tanks[0]).toMatchObject({ x: origin.x, y: origin.y, moving: false });
+  expect(running.bullets).toHaveLength(0);
+  await page.keyboard.up('w'); await page.keyboard.up('j');
+  await page.keyboard.press('Enter'); await page.clock.runFor(100);
+  const paused = await snapshot(page); expect(paused!.phase).toBe('paused');
+  await page.clock.runFor(500); expect(await snapshot(page)).toEqual(paused);
+  await page.keyboard.press('Enter');
+  await advancePresentation(page, 'game', 'score', 5000);
+  const result = await snapshot(page);
+  expect(result).toMatchObject({ phase: 'lost', lossBannerTicks: 0 });
+  expect(result!.players[0]).toMatchObject({ score: 12345, kills: [1, 2, 3, 4] });
   await advancePresentation(page, 'score', 'gameover', 8000);
   expect(await snapshot(page)).toEqual(result);
-  await advancePresentation(page, 'gameover', 'menu', 2500);
+  await page.keyboard.press('Enter'); await page.clock.runFor(34);
+  expect(await presentation(page)).toMatchObject({ kind: 'menu' });
   expect(await snapshot(page)).toBeNull();
 });
 

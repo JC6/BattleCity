@@ -1,13 +1,12 @@
 import { GRID_SIZE, normalizeStage } from './constants';
-import type { CoreContext } from './context';
 import { moveEnemy } from './ai';
 import { advanceBullets, destroyEnemy, enemyFire, fireBullet, resolveBulletHits, tankSlot, updateEffects } from './combat';
 import { movePlayer } from './movement';
 import { collectPowerUp, updatePowerUpTimers } from './powerups';
-import { EXTRA_LIFE_SCORE, INTRO_TICKS, OUTRO_TICKS } from './rules';
+import { EXTRA_LIFE_SCORE, INTRO_MAP_TICKS, INTRO_TICKS, OUTRO_TICKS } from './rules';
 import { awardCoopBonus } from './scoring';
 import { spawnPlayer, updateSpawning, updateTankTimers } from './spawning';
-import { EMPTY_INPUT, Tile, type GameEvent, type GameOptions,
+import { type CoreContext, EMPTY_INPUT, Tile, type GameEvent, type GameOptions,
   type GameState, type LevelDefinition, type PlayerInput, type PlayerState } from './types';
 
 export class GameEngine {
@@ -31,13 +30,14 @@ export class GameEngine {
     // The data layer resolves stage 35's composition for the second round.
     // Rules never substitute a fabricated or independently duplicated wave.
     this.state = {
-      tick: 0, stage: normalizeStage(options.stage), mode: options.mode, phase: 'intro',
+      tick: 0, battleTicks: 0, stage: normalizeStage(options.stage), mode: options.mode, phase: 'intro',
       pendingOutcome: null,
       tiles: [...level.tiles], brickMasks: level.tiles.map(tile => tile === Tile.Brick ? 15 : 0),
       players, tanks: [], bullets: [], powerUp: null, effects: [],
       spawned: 0, killed: 0, enemyQueue: [...level.enemies],
       spawnTimer: 0, freezeTicks: 0, fortifyTicks: 0, baseAlive: true,
-      rng: (options.seed ?? 0x19850909) >>> 0, introTicks: INTRO_TICKS, outroTicks: 0,
+      baseExplosionTicks: 0, lossBannerTicks: 0, eliminationPlayer: null, eliminationTicks: 0,
+      rng: (options.seed ?? 0x19850909) >>> 0, introTicks: INTRO_TICKS - (options.customMap ? INTRO_MAP_TICKS : 0), outroTicks: 0,
     };
     this.context = { state: this.state, events: [], nextId: () => ++this.id };
     for (const player of players) if (!player.eliminated) spawnPlayer(this.context, player.index);
@@ -64,66 +64,66 @@ export class GameEngine {
       return this.context.events;
     }
 
+    state.battleTicks++;
     updateEffects(this.context);
     updatePowerUpTimers(this.context);
     updateTankTimers(this.context);
-    if (state.pendingOutcome !== 'lost') {
-      // DBF1 advances fixed tank slots 7→0, even after a respawn changes array order.
-      for (const tank of [...state.tanks].sort((a, b) => tankSlot(b) - tankSlot(a))) {
-        tank.moving = false;
-        if (tank.spawnTicks > 0) continue;
-        if (tank.team === 'player') {
-          const input = inputs[tank.playerIndex!] ?? EMPTY_INPUT;
-          movePlayer(state, tank, input);
-        } else {
-          moveEnemy(state, tank);
-        }
+    // DBF1 advances fixed tank slots 7→0, even after a respawn changes array order.
+    for (const tank of [...state.tanks].sort((a, b) => tankSlot(b) - tankSlot(a))) {
+      tank.moving = false;
+      if (tank.spawnTicks > 0 || tank.deathTimer > 0) continue;
+      if (tank.team === 'player') {
+        const input = state.pendingOutcome === 'lost' ? EMPTY_INPUT : inputs[tank.playerIndex!] ?? EMPTY_INPUT;
+        movePlayer(state, tank, input);
+      } else {
+        moveEnemy(state, tank);
       }
     }
     advanceBullets(this.context);
-    if (state.pendingOutcome !== 'lost') {
-      // Firing follows old-shot movement: a new shot can collide now, but
-      // remains at the barrel until the next frame. Players are checked 2P first.
-      for (let index = state.players.length - 1; index >= 0; index--) {
-        const tank = state.tanks.find(candidate => candidate.team === 'player' && candidate.playerIndex === index);
-        if (tank && inputs[index]?.firePressed) fireBullet(this.context, tank);
-      }
-      for (const tank of state.tanks.filter(candidate => candidate.team === 'enemy')
-        .sort((a, b) => b.enemySlot! - a.enemySlot!)) enemyFire(this.context, tank);
-      updateSpawning(this.context);
+    // Firing follows old-shot movement: a new shot can collide now, but
+    // remains at the barrel until the next frame. Players are checked 2P first.
+    for (let index = state.players.length - 1; index >= 0; index--) {
+      const tank = state.tanks.find(candidate => candidate.team === 'player' && candidate.playerIndex === index);
+      if (state.pendingOutcome !== 'lost' && tank && inputs[index]?.firePressed) fireBullet(this.context, tank);
     }
+    for (const tank of state.tanks.filter(candidate => candidate.team === 'enemy')
+      .sort((a, b) => b.enemySlot! - a.enemySlot!)) enemyFire(this.context, tank);
+    updateSpawning(this.context);
     resolveBulletHits(this.context);
-    if (state.pendingOutcome !== 'lost') collectPowerUp(this.context,
+    collectPowerUp(this.context,
       (tank, index) => destroyEnemy(this.context, tank, index));
     this.updateOutcome();
     return this.context.events;
   }
 
+  /** Called once by the result presentation, at its original bonus boundary. */
+  awardCoopBonus(): GameEvent[] {
+    this.context.events = [];
+    awardCoopBonus(this.context);
+    return this.context.events;
+  }
+
   private updateOutcome(): void {
     const state = this.state;
-    const someoneAlive = state.players.some(player => player.respawnTicks > 0 ||
-      state.tanks.some(tank => tank.team === 'player' && tank.playerIndex === player.index));
+    const someoneAlive = state.players.some(player => !player.eliminated);
     let result: GameState['pendingOutcome'] = null;
     if (!state.baseAlive || !someoneAlive) result = 'lost';
     else if (state.killed === state.enemyQueue.length) result = 'won';
+    if (state.baseExplosionTicks > 0) state.baseExplosionTicks--;
     if (result && state.pendingOutcome === null) {
       state.pendingOutcome = result;
-      state.outroTicks = OUTRO_TICKS;
-    } else if (result === 'lost') state.pendingOutcome = 'lost';
-
-    if (state.pendingOutcome === 'lost') {
-      for (const tank of state.tanks) tank.moving = false;
+      if (result === 'won') { state.outroTicks = state.eliminationTicks > 0 ? 256 : OUTRO_TICKS; return; }
     }
-
-    if (state.outroTicks > 0) {
-      state.outroTicks--;
-      if (state.outroTicks === 0 && state.pendingOutcome) {
-        state.phase = state.pendingOutcome;
-        awardCoopBonus(this.context);
-        if (state.phase === 'won') {
-          this.context.events.push({ type: 'stage-clear' });
-        } else this.context.events.push({ type: 'game-over' });
-      }
+    if (result === 'lost') state.pendingOutcome = 'lost';
+    if (state.pendingOutcome === null) return;
+    if (state.outroTicks === 0) {
+      if (state.baseExplosionTicks > 0) return;
+      state.lossBannerTicks = 256; state.eliminationTicks = 0; state.outroTicks = 256; return;
+    }
+    if (state.lossBannerTicks > 0) state.lossBannerTicks--;
+    if (--state.outroTicks === 0) {
+      state.phase = state.pendingOutcome;
+      this.context.events.push({ type: state.phase === 'won' ? 'stage-clear' : 'game-over' });
     }
   }
 }

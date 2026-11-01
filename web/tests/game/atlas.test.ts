@@ -6,14 +6,18 @@ import { crop, hashPixels, PixelCanvas, renderer } from './native-renderer';
 vi.mock('phaser', () => ({ default: { Scene: class {}, CANVAS: 1 } }));
 
 describe('native texture atlas', () => {
-  it('preserves every bitmap, direction, tread, armor palette and damaged brick against the frozen native pixels', () => {
+  it('preserves every bitmap, direction, tread, armor palette and damaged brick against the reviewed regression pixels', () => {
     const { textures } = renderer();
     const atlas = textures.get('arena-atlas')!;
-    expect([...atlas.frames.keys()].filter(name => name !== '__BASE').sort()).toEqual(Object.keys(golden.frames).sort());
-    for (const [name, expected] of Object.entries(golden.frames)) {
-      const frame = atlas.frames.get(name)!;
-      expect({ width: frame.width, height: frame.height }, name).toEqual({ width: expected.width, height: expected.height });
-      expect(hashPixels(crop(atlas.canvas, frame.x, frame.y, frame.width, frame.height).data), name).toBe(expected.sha256);
+    expect([...atlas.frames.keys()].filter(name => name !== '__BASE').sort()).toEqual([...golden.atlasKeys].sort());
+    const expected: Record<string, { width: number; height: number; sha256: string }> = {
+      ...golden.referenceFrames, ...golden.auxiliaryFrames,
+    };
+    expect(Object.keys(golden.referenceFrames)).toHaveLength(335);
+    for (const name of golden.atlasKeys) {
+      const frame = atlas.frames.get(name)!, hash = expected[name];
+      expect({ width: frame.width, height: frame.height }, name).toEqual({ width: hash.width, height: hash.height });
+      expect(hashPixels(crop(atlas.canvas, frame.x, frame.y, frame.width, frame.height).data), name).toBe(hash.sha256);
     }
   });
   it('packs separate padded frames into one nearest-filtered 512-pixel texture uploaded once', () => {

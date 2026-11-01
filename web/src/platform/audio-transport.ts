@@ -3,7 +3,7 @@ import type { AudioCommand, PersistentAudio, PauseReason } from './audio-protoco
 import { AudioRuntime, type AudioRuntimeHooks } from './audio-runtime';
 
 export type AudioEndpoint = Pick<AudioRuntime, 'status' | 'connected' | 'ready' | 'unlock' | 'setGain' | 'post' | 'dispose'>;
-export type AudioRuntimeFactory = (hooks: AudioRuntimeHooks) => AudioEndpoint;
+type AudioRuntimeFactory = (hooks: AudioRuntimeHooks) => AudioEndpoint;
 
 /** Coalesces semantic changes. The receiver's sample clock owns playback. */
 export class AudioTransport {

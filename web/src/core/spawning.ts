@@ -1,8 +1,8 @@
+import { clearPowerUp } from './powerups';
 import { TANK_SIZE } from './constants';
-import type { CoreContext } from './context';
 import { SPAWN_SHIELD_TICKS, SPAWN_TICKS, enemyMovementTick, maximumEnemies, playerMovementTick, spawnInterval, timerDuration } from './rules';
 import { forEachTile } from './terrain';
-import { Tile, type EnemyKind, type Tank } from './types';
+import { type CoreContext, Tile, type EnemyKind, type Tank } from './types';
 
 function createTank(context: CoreContext, team: Tank['team'], index: 0 | 1 | null,
   kind: EnemyKind, x: number, y: number, enemySlot: number | null): Tank {
@@ -12,7 +12,7 @@ function createTank(context: CoreContext, team: Tank['team'], index: 0 | 1 | nul
     hp: kind === 'armor' ? 4 : 1,
     stars: index === null ? 0 : context.state.players[index]!.stars,
     shieldTicks: 0, spawnTicks: SPAWN_TICKS,
-    stunTicks: 0, aiTicks: 0, slideTicks: 0, moving: false,
+    deathTimer: 0, deathPoints: 0, stunTicks: 0, aiTicks: 0, aiTurn: false, aiTarget: false, tread: 0, slideTicks: 0, moving: false,
     carryingPowerUp: false,
   };
 }
@@ -45,13 +45,12 @@ export function updateSpawning(context: CoreContext): void {
   updateEnemySpawning(context);
 }
 
-/** Enemy-wave updates are also usable by the isolated terminal presentation. */
 export function updateEnemySpawning(context: CoreContext): void {
   const state = context.state;
-  if (state.spawnTimer > 0) state.spawnTimer--;
+  if (state.spawnTimer > 0) { state.spawnTimer--; return; }
   const enemies = state.tanks.filter(tank => tank.team === 'enemy');
   const maximum = maximumEnemies(state.mode);
-  if (state.spawnTimer > 0 || state.spawned >= state.enemyQueue.length ||
+  if (state.spawned >= state.enemyQueue.length ||
       enemies.length >= maximum) return;
 
   // Allocate the highest free enemy slot, including tanks still spawning.
@@ -64,14 +63,37 @@ export function updateEnemySpawning(context: CoreContext): void {
   clearSpawnTerrain(context, x, 0);
   const tank = createTank(context, 'enemy', null, state.enemyQueue[state.spawned]!, x, 0, enemySlot);
   tank.carryingPowerUp = [4, 11, 18].includes(state.spawned + 1);
-  if (tank.carryingPowerUp) state.powerUp = null;
+  if (tank.carryingPowerUp) { clearPowerUp(state); if (tank.kind === 'armor') tank.hp = 1; }
   state.tanks.push(tank);
   state.spawned++;
   state.spawnTimer = spawnInterval(state.stage, state.mode);
 }
 
 export function updateTankTimers(context: CoreContext): void {
-  for (const tank of context.state.tanks) {
+  const state = context.state;
+  if (state.eliminationTicks > 0) state.eliminationTicks--;
+  for (const tank of [...state.tanks]) {
+    if (tank.deathTimer <= 0) continue;
+    const advance = tank.team === 'player' ? playerMovementTick(state.tick) :
+      (tank.kind === 'fast' && tank.deathPoints > 0) || enemyMovementTick(state.tick, tank.enemySlot!);
+    if (!advance || (--tank.deathTimer & 15) !== 0) continue;
+    tank.deathTimer -= 16;
+    if (tank.deathTimer > 0) { tank.deathTimer |= tank.deathTimer === 16 ? 6 : 3; continue; }
+    state.tanks = state.tanks.filter(other => other.id !== tank.id);
+    if (tank.team === 'enemy') state.killed++;
+    else {
+      const player = state.players[tank.playerIndex!]!;
+      if (player.lives > 0) { player.lives--; player.respawnTicks = 1; }
+      else {
+        player.eliminated = true; player.respawnTicks = 0;
+        if (state.baseAlive && state.players.some(other => other !== player && !other.eliminated)) {
+          state.eliminationPlayer = player.index; state.eliminationTicks = 208;
+        }
+      }
+    }
+  }
+  for (const tank of state.tanks) {
+    if (tank.deathTimer > 0) continue;
     if (tank.spawnTicks > 0) {
       // All enemies advance their two 14-step spawning phases on alternate
       // frames, even fast tanks.

@@ -1,6 +1,15 @@
-import type { GameEvent, GameState, PlayerInput, Tile } from '../core/types';
+import type { GameEvent, GameMode, GameState, PlayerInput, Tile } from '../core/types';
 import type { LogicalPad } from '../platform/input';
-import type { ArenaPresentation } from './presentation';
+
+export type ArenaPresentation =
+  | { kind: 'menu'; selection: 0 | 1 | 2; highScore: number; playerScores: number[] }
+  | { kind: 'intro'; stage: number; elapsedMs: number; paused?: boolean }
+  | { kind: 'stage-select'; stage: number; mode?: GameMode }
+  | { kind: 'game'; paused?: boolean }
+  | { kind: 'score'; state: GameState; highScore: number; elapsedMs: number; bonusPlayer?: 0 | 1 | null }
+  | { kind: 'gameover'; highScore?: number }
+  | { kind: 'hiscore'; highScore: number; tick: number }
+  | { kind: 'editor'; cursor?: { x: number; y: number }; baseVisible?: boolean };
 
 export interface AppInput {
   read(): PlayerInput[];
@@ -20,11 +29,8 @@ export interface AppAudio {
 /** Borrowed views: the controller owns mutations, the renderer only reads. */
 export interface AppRenderer {
   state: Readonly<GameState> | null;
-  hudState: Readonly<GameState> | null;
   draft: readonly Tile[] | null;
   presentation: ArenaPresentation;
-  resetAnimation(): void;
-  observeStep(state: Readonly<GameState>): void;
 }
 export interface AppPorts {
   input: AppInput;

@@ -1,7 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 import type { GameMode, GameState } from '../../src/core/types';
 import type { AppTestAdapter } from '../../src/app/test-adapter';
-import type { ArenaPresentation } from '../../src/app/presentation';
+import type { ArenaPresentation } from '../../src/app/ports';
 import type { ArenaScene } from '../../src/game/arena';
 
 type TestHarness = AppTestAdapter & { renderScene(): ArenaScene };

@@ -2,7 +2,7 @@ import { BASE_X, BASE_Y } from './constants';
 import { DIRECTIONS, opposite } from './geometry';
 import { moveTank, turnTank } from './movement';
 import { randomInt } from './random';
-import { INTRO_TICKS, enemyMovementTick, spawnInterval } from './rules';
+import { enemyMovementTick, spawnInterval } from './rules';
 import type { GameState, Tank } from './types';
 
 // Targeting chooses between an X-biased and Y-biased direction from relative signs.
@@ -12,7 +12,7 @@ const TARGET_DIRECTIONS = [
 ] as const;
 
 export function chooseEnemyDirection(state: GameState, tank: Tank): void {
-  const frameHigh = Math.floor(Math.max(0, state.tick - INTRO_TICKS) / 256);
+  const frameHigh = (Math.floor(state.battleTicks / 64) & 255);
   const interval = spawnInterval(state.stage, state.mode);
   if (frameHigh <= (interval >> 3)) {
     // Pick an absolute direction, each with probability 1/4.
@@ -30,22 +30,29 @@ export function chooseEnemyDirection(state: GameState, tank: Tank): void {
   turnTank(state, tank, TARGET_DIRECTIONS[randomInt(state, 2)]![index]!);
 }
 
+function requestDirection(state: GameState, tank: Tank): void {
+  const high = Math.floor(state.battleTicks / 64) & 255;
+  if (high <= (spawnInterval(state.stage, state.mode) >> 3)) turnTank(state, tank, DIRECTIONS[randomInt(state, 4)]!);
+  else tank.aiTarget = true;
+}
+
 export function moveEnemy(state: GameState, tank: Tank): void {
+  tank.moving = false;
   if (state.freezeTicks > 0 || (tank.kind !== 'fast' && !enemyMovementTick(state.tick, tank.enemySlot!))) return;
-  if ((tank.x & 7) === 0 && (tank.y & 7) === 0 && randomInt(state, 16) === 0) {
-    // Enemies evolve from random roaming to following a player and finally
-    // the base as the stage's frame counter crosses its two thresholds.
-    chooseEnemyDirection(state, tank);
-    // DC93 chooses a direction and returns; translation starts on a later tick.
-    tank.moving = false;
+  if (tank.aiTicks > 0) { tank.aiTicks--; return; }
+  if (tank.aiTurn) {
+    tank.aiTurn = false;
+    if (randomInt(state, 2) === 0) requestDirection(state, tank);
+    else {
+      const direction = DIRECTIONS.indexOf(tank.direction);
+      turnTank(state, tank, DIRECTIONS[(direction + (randomInt(state, 2) === 0 ? 3 : 1)) % 4]!);
+    }
     return;
   }
-  if (!moveTank(state, tank)) {
-    tank.aiTicks++;
-    if (randomInt(state, 4) === 0) tank.direction = opposite(tank.direction);
-    else if (tank.aiTicks >= 8 && (tank.x & 7) === 0 && (tank.y & 7) === 0) {
-      chooseEnemyDirection(state, tank);
-      tank.aiTicks = 0;
-    }
-  } else tank.aiTicks = 0;
+  if (tank.aiTarget) { tank.aiTarget = false; chooseEnemyDirection(state, tank); return; }
+  const aligned = (tank.x & 7) === 0 && (tank.y & 7) === 0;
+  if (aligned && randomInt(state, 16) === 0) { requestDirection(state, tank); return; }
+  if (moveTank(state, tank)) { tank.tread = tank.tread === 0 ? 1 : 0; return; }
+  if (randomInt(state, 4) !== 0) { tank.aiTicks = 2; tank.tread = tank.tread === 0 ? 1 : 0; }
+  else { tank.direction = opposite(tank.direction); tank.aiTurn = aligned; }
 }

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Page } from '@playwright/test';
 import { GameEngine } from '../../src/core/engine';
 import { getLevel } from '../../src/data/levels';
-import type { ArenaPresentation } from '../../src/app/presentation';
+import type { ArenaPresentation } from '../../src/app/ports';
 import { advancePresentation, readyWithClock } from '../browser/helpers';
 import { canvasScreenshot } from '../browser/native-pixels';
 

@@ -51,9 +51,11 @@ export function movePlayer(state: GameState, tank: Tank, input: PlayerInput): vo
   if (ice && tank.slideTicks > 16) direction = tank.direction;
   if (direction) {
     turnTank(state, tank, direction);
+    tank.tread = tank.tread === 0 ? 1 : 0;
     if (moveTank(state, tank) && ice && tank.slideTicks === 0) tank.slideTicks = ICE_SLIDE_STEPS;
     else if (!ice || !tank.moving) tank.slideTicks = 0;
   } else if (ice && tank.slideTicks > 0) {
+    tank.tread = tank.tread === 0 ? 1 : 0;
     if (!moveTank(state, tank)) tank.slideTicks = 0;
   } else {
     tank.slideTicks = 0;

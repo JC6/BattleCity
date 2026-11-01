@@ -18,7 +18,7 @@ export function forEachTile(rect: Rect, visit: (index: number, x: number, y: num
 }
 
 // Four 4px quadrants in each 8px brick cell: TL=1, TR=2, BL=4, BR=8.
-export function brickIntersects(mask: number, x: number, y: number, rect: Rect): boolean {
+function brickIntersects(mask: number, x: number, y: number, rect: Rect): boolean {
   for (let quadrant = 0; quadrant < 4; quadrant++) {
     if ((mask & (1 << quadrant)) && overlaps(rect, {
       x: x + (quadrant & 1) * 4, y: y + (quadrant >> 1) * 4, width: 4, height: 4,
@@ -43,7 +43,7 @@ export function canOccupy(state: GameState, tank: Tank, x: number, y: number): b
   const rect = tankRect({ x, y });
   if (terrainBlocks(state, rect)) return false;
   return !state.tanks.some(other => {
-    if (other.id === tank.id) return false;
+    if (other.id === tank.id || other.deathTimer > 0) return false;
     const otherRect = tankRect(other);
     const nextOverlap = overlapArea(rect, otherRect);
     if (nextOverlap === 0) return false;

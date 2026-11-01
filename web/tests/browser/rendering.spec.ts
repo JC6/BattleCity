@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import type { Textures } from 'phaser';
-import type { ArenaPresentation } from '../../src/app/presentation';
+import type { ArenaPresentation } from '../../src/app/ports';
 import type { ArenaScene } from '../../src/game/arena';
 import type { GameState, Tile } from '../../src/core/types';
 import { renderFixtures } from '../game/render-fixtures';
@@ -12,17 +12,17 @@ const golden = JSON.parse(readFileSync(new URL('../game/fixtures/native-golden.j
   scenes: Record<string, string>; hiscore: string[];
   menuHeaders: Record<string, { playerScores: number[]; highScore: number; sha256: string }>;
 };
-interface Fixture { presentation: ArenaPresentation; state: GameState | null; hudState: GameState | null; draft: Tile[] | null }
+interface Fixture { presentation: ArenaPresentation; state: GameState | null; draft: Tile[] | null }
 function fixture(name: string): Fixture {
-  const result: Fixture = { presentation: { kind: 'game' }, state: null, hudState: null, draft: null };
+  const result: Fixture = { presentation: { kind: 'game' }, state: null, draft: null };
   renderFixtures().find(value => value.name === name)!.apply(result as ArenaScene);
   return result;
 }
 async function draw(page: Page, value: Fixture): Promise<void> {
   await page.evaluate(value => {
     const scene = window.__BATTLECITY__!.renderScene();
-    scene.onFrame = () => {}; scene.resetAnimation(); Object.assign(scene, value);
-    if (scene.state) scene.observeStep(scene.state);
+    scene.onFrame = () => {}; Object.assign(scene, value);
+
   }, value);
   // Allow animation callbacks for depth sorting and the compositor to publish
   // the replaced fixture. The simulation stays frozen.
@@ -58,7 +58,7 @@ async function checkMenuHeaders(page: Page, integerBlocks = false): Promise<void
 }
 
 test.use({ viewport: { width: 1280, height: 720 } });
-test('static pages preserve independent native pixel goldens', async ({ page }) => {
+test('static pages preserve reviewed native pixel regression snapshots', async ({ page }) => {
   await readyWithClock(page);
   for (const name of ['menu-0', 'menu-1', 'menu-2', 'stage-35', 'gameover']) await check(page, name);
   await checkMenuHeaders(page);
@@ -75,9 +75,9 @@ test('both water phases preserve damaged walls and entity sprites', async ({ pag
   await readyWithClock(page);
   for (const name of ['entities-0', 'entities-16']) await check(page, name);
 });
-test('forest, locked HUD, result banner and editor keep their overlap order', async ({ page }) => {
+test('forest, live HUD, failure banner and editor keep their overlap order', async ({ page }) => {
   await readyWithClock(page);
-  for (const name of ['locked-hud', 'editor']) await check(page, name);
+  for (const name of ['loss-battlefield', 'editor']) await check(page, name);
 });
 test('HISCORE uses four source-derived palettes without uploading each flash', async ({ page }) => {
   await readyWithClock(page);

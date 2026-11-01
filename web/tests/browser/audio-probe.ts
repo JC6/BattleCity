@@ -118,10 +118,9 @@ function installPcmProbeInPage({ observeScenes, deferRecording }: PcmProbeOption
           if (scene && context.state === 'running') {
             if (scene.kind !== lastKind) { lastKind = scene.kind; scoreTick = -1; mark(scene.kind); }
             if (scene.kind === 'score') {
-              // Independent literal reference boundary: 35-frame lead + 9-frame
-              // first count. No scoreTimeline call or synthetic tick advancement.
+              // Independent CCD4–CDD8 boundary: first increment at tick 31. No scoreTimeline call or synthetic tick advancement.
               const tick = Math.round(scene.elapsedMs * 60.0988 / 1000);
-              if (scoreTick < 35 + 9 && tick >= 35 + 9) mark('score-count', tick);
+              if (scoreTick < 31 && tick >= 31) mark('score-count', tick);
               scoreTick = tick;
             }
           }

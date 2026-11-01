@@ -63,15 +63,15 @@ function picture(cursor: Cursor | null, code = 13, wallColumns = 0, waterPhase =
     if (code === 9) steel(cursor.column, cursor.row);
     else if (code === 0) {
       for (const dy of [0, 8]) drawBitmap(surface, BRICK_TILES[15], x + 8, y + dy,
-        { M: 0xadadad, D: 0x801000, B: 0xa05000 });
+        { M: 0x666666, D: 0x801000, B: 0xa05000 });
     } else if (code !== 13) {
-      const [bitmap, colors] = code === 10 ? [WATER[waterPhase], { B: 0x4854ff, W: 0xa5dfb6 }]
-        : code === 11 ? [FOREST, { D: 0x004e0f, L: 0x8ac900 }] : [ICE, { G: 0xb3b3b3, W: 0xf3f2f3 }];
+      const [bitmap, colors] = code === 10 ? [WATER[waterPhase === 0 ? 2 : 1], { B: 0x4444fc, W: 0xb8f8f8 }]
+        : code === 11 ? [FOREST, { D: 0x005800, L: 0x80d010 }] : [ICE, { G: 0x666666, L: 0xadadad, W: 0xfcfcfc }];
       for (const [dx, dy] of [[0, 0], [8, 0], [0, 8], [8, 8]]) {
         drawBitmap(surface, bitmap, x + dx, y + dy, colors);
       }
     }
-    drawBitmap(surface, PLAYER, x, y, { Y: 0xf8b800, D: 0x687000 });
+    drawBitmap(surface, PLAYER, x, y + 1, { Y: 0xf8b800, D: 0x687000, H: 0xf8d878 });
   }
   return rgba;
 }
@@ -84,11 +84,11 @@ beforeEach(() => {
 
 describe('Construction compositor observations', () => {
   it.each([
-    [0, [0, 0xa05000, 0, 0xadadad]],
+    [0, [0, 0x801000, 0, 0x666666]],
     [13, [0, 0, 0, 0]],
-    [12, [0xb3b3b3, 0xb3b3b3, 0xb3b3b3, 0xb3b3b3]],
-    [11, [0x004e0f, 0x004e0f, 0x8ac900, 0x8ac900]],
-    [10, [0x4854ff, 0x4854ff, 0x4854ff, 0x4854ff]],
+    [12, [0xadadad, 0xfcfcfc, 0x666666, 0x666666]],
+    [11, [0x005800, 0x005800, 0x80d010, 0x80d010]],
+    [10, [0x4444fc, 0x4444fc, 0x4444fc, 0x4444fc]],
     [9, [0xadadad, 0xadadad, 0x666666, 0x666666]],
   ] as const)('reads code %i at the transparent cursor edges', (code, signature) => {
     const result = inspectConstruction(picture(start, code));
@@ -108,7 +108,7 @@ describe('Construction compositor observations', () => {
     const rgba = picture(start), second = picture(end);
     for (let offset = 0; offset < rgba.length; offset += 4) {
       const color = (second[offset] << 16) | (second[offset + 1] << 8) | second[offset + 2];
-      if (color === 0xf8b800 || color === 0x687000) second.copy(rgba, offset, offset, offset + 4);
+      if (color === 0xf8b800 || color === 0x687000 || color === 0xf8d878) second.copy(rgba, offset, offset, offset + 4);
     }
     const result = inspectConstruction(rgba);
     expect(result.cursor).toBeNull(); expect(result.signature).toBeNull();

@@ -1,12 +1,11 @@
-import { ARENA_SIZE, GRID_SIZE, TANK_SIZE, TILE_SIZE } from './constants';
-import type { CoreContext } from './context';
+import { ARENA_SIZE, GRID_SIZE, TILE_SIZE } from './constants';
 import { VECTORS } from './geometry';
 import { randomInt } from './random';
-import { ENEMY_KINDS, ENEMY_SCORE, FRIENDLY_STUN_TICKS, RESPAWN_TICKS } from './rules';
+import { ENEMY_KINDS, ENEMY_SCORE, FRIENDLY_STUN_TICKS } from './rules';
 import { addScore } from './scoring';
 import { BASE_RECT } from './terrain';
 import { dropPowerUp } from './powerups';
-import { Tile, type Bullet, type GunSlot, type Tank } from './types';
+import { type CoreContext, Tile, type Bullet, type GunSlot, type Tank } from './types';
 
 /** Original tank index and its primary gun share slots 0–7. */
 export function tankSlot(tank: Tank): GunSlot {
@@ -15,7 +14,7 @@ export function tankSlot(tank: Tank): GunSlot {
 
 export function fireBullet(context: CoreContext, tank: Tank): void {
   const state = context.state;
-  if (tank.spawnTicks > 0) return;
+  if (tank.spawnTicks > 0 || tank.deathTimer > 0) return;
   const primarySlot = tankSlot(tank);
   const primary = state.bullets.find(bullet => bullet.gunSlot === primarySlot);
   if (primary) {
@@ -39,24 +38,12 @@ export function fireBullet(context: CoreContext, tank: Tank): void {
 }
 
 export function enemyFire(context: CoreContext, tank: Tank): void {
-  if (tank.spawnTicks === 0 && context.state.freezeTicks === 0 && randomInt(context.state, 32) === 0) fireBullet(context, tank);
-}
-
-function effect(context: CoreContext, left: number, top: number, value?: number,
-  explosionVariant: 'tank' | 'base' = 'tank'): void {
-  context.state.effects.push({
-    kind: value === undefined ? 'explosion' : 'points',
-    x: left + TANK_SIZE / 2, y: top + TANK_SIZE / 2,
-    remainingTicks: value === undefined ? 24 : 48,
-    ...(value === undefined ? { explosionVariant } : { value }),
-  });
+  if (tank.spawnTicks === 0 && tank.deathTimer === 0 && context.state.freezeTicks === 0 && randomInt(context.state, 32) === 0) fireBullet(context, tank);
 }
 
 export function destroyEnemy(context: CoreContext, tank: Tank, playerIndex: number | null): void {
-  if (!context.state.tanks.includes(tank)) return;
-  context.state.tanks = context.state.tanks.filter(other => other.id !== tank.id);
-  context.state.killed++;
-  effect(context, tank.x, tank.y);
+  if (!context.state.tanks.includes(tank) || tank.deathTimer > 0) return;
+  tank.deathTimer = 0x73; tank.deathPoints = 0; tank.moving = false;
   context.events.push({ type: 'explosion', owner: 'enemy', playerIndex: null, enemyKind: tank.kind });
   if (playerIndex !== null) {
     const player = context.state.players[playerIndex];
@@ -64,13 +51,13 @@ export function destroyEnemy(context: CoreContext, tank: Tank, playerIndex: numb
       player.kills[ENEMY_KINDS.indexOf(tank.kind)]!++;
       const value = ENEMY_SCORE[tank.kind];
       addScore(context, playerIndex, value);
-      effect(context, tank.x, tank.y, value);
+      tank.deathPoints = value;
     }
   }
 }
 
 function hitTank(context: CoreContext, tank: Tank, bullet: Bullet): void {
-  if (tank.spawnTicks > 0 || tank.shieldTicks > 0) return;
+  if (tank.spawnTicks > 0 || tank.deathTimer > 0 || tank.shieldTicks > 0) return;
   if (tank.team === 'player') {
     if (bullet.team === 'player') {
       if (tank.stunTicks === 0) tank.stunTicks = FRIENDLY_STUN_TICKS;
@@ -81,15 +68,7 @@ function hitTank(context: CoreContext, tank: Tank, bullet: Bullet): void {
     }
     const player = context.state.players[tank.playerIndex!]!;
     player.stars = 0;
-    if (player.lives > 0) {
-      player.lives--;
-      player.respawnTicks = RESPAWN_TICKS;
-    } else {
-      player.respawnTicks = 0;
-      player.eliminated = true;
-    }
-    context.state.tanks = context.state.tanks.filter(other => other.id !== tank.id);
-    effect(context, tank.x, tank.y);
+    tank.deathTimer = 0x73; tank.deathPoints = 0; tank.moving = false;
     context.events.push({ type: 'explosion', owner: 'player', playerIndex: tank.playerIndex, enemyKind: null });
   } else {
     if (tank.carryingPowerUp) {
@@ -123,7 +102,7 @@ function hitTerrain(context: CoreContext, bullet: Bullet): void {
       cellY >= BASE_RECT.y && cellY < BASE_RECT.y + BASE_RECT.height) {
       state.baseAlive = false;
       bullet.impactTicks = 9;
-      effect(context, BASE_RECT.x, BASE_RECT.y, undefined, 'base');
+      state.baseExplosionTicks = 39;
       context.events.push({ type: 'explosion', owner: 'base', playerIndex: null, enemyKind: null });
       return false;
     }
@@ -201,7 +180,7 @@ export function resolveBulletHits(context: CoreContext): void {
       }
     }
   }
-  const contact = (tank: Tank, bullet: Bullet) => tank.spawnTicks === 0 &&
+  const contact = (tank: Tank, bullet: Bullet) => tank.spawnTicks === 0 && tank.deathTimer === 0 &&
     Math.abs(tank.x + 8 - bullet.x) < 10 && Math.abs(tank.y + 8 - bullet.y) < 10;
   const playerTanks = state.tanks.filter(tank => tank.team === 'player')
     .sort((a, b) => b.playerIndex! - a.playerIndex!);

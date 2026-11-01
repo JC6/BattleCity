@@ -1,6 +1,6 @@
 import { AUDIO_TRACKS, NOTE_PERIODS } from './audio-cues';
 
-export type RegisterWriter = (channel: number, register: number, value: number) => void;
+type RegisterWriter = (channel: number, register: number, value: number) => void;
 interface Slot { flag: number; channel: number; registers: Uint8Array; pointer: number; duration: number; remaining: number }
 
 /** The reference's two-pass, fixed-slot sequencer (EA7E–ECAC). Slot priority

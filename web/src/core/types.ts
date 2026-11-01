@@ -1,6 +1,6 @@
 export type Direction = 'up' | 'right' | 'down' | 'left';
 export type GameMode = 'single' | 'coop';
-export type GamePhase = 'intro' | 'playing' | 'paused' | 'won' | 'lost';
+type GamePhase = 'intro' | 'playing' | 'paused' | 'won' | 'lost';
 export type EnemyKind = 'basic' | 'fast' | 'power' | 'armor';
 export type PowerUpKind = 'helmet' | 'timer' | 'shovel' | 'star' | 'grenade' | 'tank';
 /** Original ten physical guns: player primary 0/1, enemy 2–7, player secondary 8/9. */
@@ -58,8 +58,13 @@ export interface Tank {
   stars: number;
   shieldTicks: number;
   spawnTicks: number;
+  deathTimer: number;
+  deathPoints: number;
   stunTicks: number;
   aiTicks: number;
+  aiTurn: boolean;
+  aiTarget: boolean;
+  tread: 0 | 1;
   slideTicks: number;
   moving: boolean;
   carryingPowerUp: boolean;
@@ -87,14 +92,11 @@ export interface PowerUp {
 }
 
 export interface Effect {
-  kind: 'explosion' | 'points';
-  /** Base and tank bursts can use different presentation without changing combat. */
-  explosionVariant?: 'tank' | 'base';
-  /** Logical-pixel center for both explosions and score labels. */
+  /** Logical-pixel center of a pickup score label. */
   x: number;
   y: number;
   remainingTicks: number;
-  value?: number;
+  value: number;
 }
 
 export type GameEvent =
@@ -104,11 +106,13 @@ export type GameEvent =
       tankTeam?: Tank['team']; targetPlayerIndex?: 0 | 1 | null; enemyKind?: EnemyKind }
   | { type: 'explosion'; owner: 'player' | 'enemy' | 'base'; playerIndex: 0 | 1 | null; enemyKind: EnemyKind | null }
   | { type: 'powerup'; action: 'appear' | 'pickup'; kind: PowerUpKind; playerIndex: 0 | 1 | null }
+  | { type: 'score-bonus'; playerIndex: 0 | 1 }
   | { type: 'extra-life'; playerIndex: 0 | 1; reason: 'score' | 'powerup' }
   | { type: 'stage-start' | 'game-over' | 'stage-clear' };
 
 export interface GameState {
   tick: number;
+  battleTicks: number;
   stage: number;
   mode: GameMode;
   phase: GamePhase;
@@ -128,12 +132,24 @@ export interface GameState {
   freezeTicks: number;
   fortifyTicks: number;
   baseAlive: boolean;
+  baseExplosionTicks: number;
+  lossBannerTicks: number;
+  eliminationPlayer: 0 | 1 | null;
+  eliminationTicks: number;
   rng: number;
   introTicks: number;
   outroTicks: number;
 }
 
+export interface CoreContext {
+  state: GameState;
+  events: GameEvent[];
+  /** Unique tank/bullet identity only; gameplay cadence uses fixed enemy slots. */
+  nextId(): number;
+}
+
 export interface GameOptions {
+  customMap?: boolean;
   mode: GameMode;
   stage: number;
   seed?: number;

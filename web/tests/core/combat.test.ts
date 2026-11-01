@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { advanceBullets, enemyFire, fireBullet, resolveBulletHits, updateBullets } from '../../src/core/combat';
-import type { CoreContext } from '../../src/core/context';
 import { GameEngine } from '../../src/core/engine';
-import { EMPTY_INPUT, Tile, type Bullet, type GunSlot, type Tank } from '../../src/core/types';
+import { type CoreContext, EMPTY_INPUT, Tile, type Bullet, type GunSlot, type Tank } from '../../src/core/types';
 
 function fixture() {
   const engine = new GameEngine({ tiles: Array(26 * 26).fill(Tile.Empty), enemies: Array(20).fill('basic') },
@@ -69,8 +68,8 @@ describe('original physical gun slots and combat phases', () => {
     const owned = [...state.bullets];
     addShot(2, { x: tank.x + 8, y: tank.y + 6 });
     engine.step([]);
-    expect(state.tanks).not.toContain(tank);
-    expect(state.players[0]).toMatchObject({ stars: 0, respawnTicks: 48 });
+    expect(state.tanks).toContain(tank); expect(tank.deathTimer).toBe(0x73);
+    expect(state.players[0]).toMatchObject({ stars: 0, respawnTicks: 0 });
     expect(state.bullets).toEqual(expect.arrayContaining(owned));
     expect(owned.map(bullet => bullet.gunSlot).sort()).toEqual([0, 8]);
     expect(owned.every(bullet => bullet.speed === 4 && bullet.steelPower)).toBe(true);
@@ -222,7 +221,7 @@ describe('original physical gun slots and combat phases', () => {
     const target = addEnemy(64, 64);
     addShot(0, { y: 62 });
     updateBullets(context);
-    expect(state.tanks).not.toContain(target);
+    expect(target.deathTimer).toBe(0x73);
     expect(state.players[0]!.kills).toEqual([1, 0, 0, 0]);
   });
 

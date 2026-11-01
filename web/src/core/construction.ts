@@ -4,8 +4,8 @@ import { VECTORS } from './geometry';
 import { FORTRESS_CELLS } from './rules';
 import { Tile, type Direction } from './types';
 
-export const CONSTRUCTION_SIZE = GRID_SIZE / 2;
-export const CONSTRUCTION_CODE_COUNT = 14;
+const CONSTRUCTION_SIZE = GRID_SIZE / 2;
+const CONSTRUCTION_CODE_COUNT = 14;
 const BASE_BLOCK = BASE_Y / TILE_SIZE / 2 * CONSTRUCTION_SIZE + BASE_X / TILE_SIZE / 2;
 
 /** One volatile Construction map, independent of the game's destructible terrain. */

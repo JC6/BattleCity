@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Tile } from '../../src/core/types';
 import { TICK_MS } from '../../src/core/constants';
-import { directionalBitmap, PALETTE } from '../../src/game/pixel-assets';
+import { PALETTE } from '../../src/game/pixel-assets';
 import { SCORE_TIMING, scoreCompletionMs } from '../../src/game/score-timeline';
 import golden from './fixtures/native-golden.json';
 import { crop, hashPixels, PixelCanvas, renderer, withPixelDocument } from './native-renderer';
@@ -124,17 +124,10 @@ describe('native texture presentation', () => {
     expect([...backing.subarray(0, offset)]).toEqual(Array(offset).fill(0xa5));
     expect([...backing.subarray(offset + 48)]).toEqual([0xa5, 0xa5, 0xa5, 0xa5]);
   });
-  it('preserves asymmetric bitmap rotations on the native grid', () => {
-    const bitmap = ['12', '34', '56'];
-    expect(directionalBitmap(bitmap, 'up')).toEqual(bitmap);
-    expect(directionalBitmap(bitmap, 'right')).toEqual(['531', '642']);
-    expect(directionalBitmap(bitmap, 'down')).toEqual(['65', '43', '21']);
-    expect(directionalBitmap(bitmap, 'left')).toEqual(['246', '135']);
-  });
-  it('matches independent pre-texture whole-frame baselines including intro covers, PTS rows and layer overlap', () => {
+  it('matches reviewed whole-frame regression baselines including intro covers, PTS rows and layer overlap', () => {
     const { scene, frame } = renderer();
     for (const fixture of renderFixtures()) {
-      scene.state = scene.hudState = null; scene.draft = null; scene.resetAnimation();
+      scene.state = null; scene.draft = null;
       fixture.apply(scene); scene.update(0, 0);
       expect(hashPixels(frame().data), fixture.name).toBe(golden.scenes[fixture.name as keyof typeof golden.scenes]);
     }
@@ -278,15 +271,17 @@ describe('native texture presentation', () => {
     expect(hashPixels(frame().data)).toBe(golden.scenes['intro-0-true']);
     scene.state.tiles[0] = Tile.Water; scene.presentation.elapsedMs = 1500; scene.update(0, 0);
     expect(textures.get('arena-map-0')!.refreshes).toBe(1); expect(textures.get('arena-map-1')!.refreshes).toBe(1);
+    expect(textures.get('arena-hud')!.refreshes).toBe(0);
+    scene.presentation.elapsedMs = 93 * TICK_MS; scene.update(0, 0);
     expect(textures.get('arena-hud')!.refreshes).toBe(1);
   });
-  it('keeps the cached HUD tied to the authoritative final result while its world continues', () => {
-    const { scene, textures } = renderer(); const world = entityWorld(); scene.state = world; scene.hudState = structuredClone(world);
+  it('updates the cached HUD from the authoritative battlefield during a pending loss', () => {
+    const { scene, textures } = renderer(); const world = entityWorld(); scene.state = world;
+    world.pendingOutcome = 'lost'; world.lossBannerTicks = 100;
     scene.presentation = { kind: 'game' }; scene.update(0, 0);
     const hud = textures.get('arena-hud')!; const initial = hashPixels(hud.canvas.data);
     world.spawned++; world.players[0].lives--; world.stage++; scene.update(0, 0);
-    expect(hud.refreshes).toBe(1); expect(hashPixels(hud.canvas.data)).toBe(initial);
-    scene.hudState = null; scene.update(0, 0); expect(hud.refreshes).toBe(2); expect(hashPixels(hud.canvas.data)).not.toBe(initial);
+    expect(hud.refreshes).toBe(2); expect(hashPixels(hud.canvas.data)).not.toBe(initial);
   });
   it('shows overwritten Construction terrain instead of the base when the draft hides its eagle', () => {
     const { scene, frame } = renderer(); const draft = emptyWorld().tiles; scene.draft = draft;
@@ -294,7 +289,7 @@ describe('native texture presentation', () => {
     scene.presentation = { kind: 'editor', baseVisible: false }; scene.update(0, 0);
     const colors = new Set<number>(); const pixels = crop(frame(), 112, 208, 16, 16).data;
     for (let index = 0; index < pixels.length; index += 4) colors.add(pixels[index] << 16 | pixels[index + 1] << 8 | pixels[index + 2]);
-    expect(colors).toEqual(new Set([0x4854ff, 0xa5dfb6]));
+    expect(colors).toEqual(new Set([0x4444fc, 0xb8f8f8]));
     scene.presentation.baseVisible = true; scene.update(0, 0);
     expect(hashPixels(crop(frame(), 112, 208, 16, 16).data)).not.toBe(hashPixels(pixels));
   });
@@ -305,12 +300,12 @@ describe('native texture presentation', () => {
       scene.state.tanks.forEach(tank => { tank.id += 100; tank.x++; }); scene.update(0, 0);
     }
     expect(images.length).toBe(count);
-    const poolFrames = [/^(player:|enemy:|spawn:|shield$)/, /^(bullet:|impact:)/, /^explosion:/, /^glyph:/];
+    const poolFrames = [/^(player:|enemy:|spawn:|shield:)/, /^(bullet:|impact:)/, /^explosion:/, /^(glyph:|points:)/];
     const actors = images.filter(image => image.visible && poolFrames.some(pattern => pattern.test(image.frame.name)));
     for (const pattern of poolFrames) expect(actors.some(image => pattern.test(image.frame.name))).toBe(true);
     const restore = () => {
       const state = entityWorld();
-      scene.state = state; scene.hudState = null; scene.draft = null; scene.presentation = { kind: 'game' };
+      scene.state = state; scene.draft = null; scene.presentation = { kind: 'game' };
       scene.update(0, 0);
       expect(actors.every(image => image.visible)).toBe(true); expect(images.length).toBe(count);
       return state;
@@ -326,7 +321,9 @@ describe('native texture presentation', () => {
     for (const paused of [false, true]) {
       restore(); scene.presentation = { kind: 'intro', stage: 21, elapsedMs: 999, paused }; scene.update(0, 0);
       expect(actors.every(image => !image.visible)).toBe(true);
-      scene.presentation.elapsedMs = 1000; scene.update(0, 0);
+      scene.presentation.elapsedMs = 1500; scene.update(0, 0);
+      expect(actors.every(image => !image.visible)).toBe(true);
+      scene.presentation = {kind:'game'}; scene.update(0,0);
       expect(actors.every(image => image.visible)).toBe(true); expect(images.length).toBe(count);
     }
     restore(); scene.draft = scene.state!.tiles; scene.state = null; scene.presentation = { kind: 'editor', cursor: { x: 4, y: 12 } };
@@ -334,7 +331,7 @@ describe('native texture presentation', () => {
     expect(actors.every(image => !image.visible)).toBe(true);
     expect(images.some(image => image.visible && image.depth === 600)).toBe(true);
     const state = restore();
-    state.tanks = []; state.bullets = []; state.effects = []; state.powerUp = null; scene.update(0, 0);
+    state.tanks = []; state.bullets = []; state.effects = []; state.powerUp = null; state.baseExplosionTicks = 0; scene.update(0, 0);
     expect(actors.every(image => !image.visible)).toBe(true);
     expect(images.filter(image => image.visible && image.depth >= 20 && image.depth < 400)).toHaveLength(0);
     scene.presentation = { kind: 'menu', selection: 0, highScore: 20000, playerScores: [0] }; scene.update(0, 0);

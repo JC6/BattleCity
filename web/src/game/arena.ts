@@ -1,18 +1,18 @@
-import type { ArenaPresentation } from '../app/presentation';
+import { INTRO_TICKS, INTRO_OPEN_TICKS, INTRO_SETUP_TICKS } from '../core/rules';
+import type { ArenaPresentation } from '../app/ports';
 import Phaser from 'phaser';
-import { ARENA_SIZE, BASE_X, BASE_Y, GRID_SIZE, TILE_SIZE } from '../core/constants';
+import { TICK_MS, ARENA_SIZE, BASE_X, BASE_Y, GRID_SIZE, TILE_SIZE } from '../core/constants';
 import { Tile, type GameState } from '../core/types';
 import { ENEMY_KINDS } from '../core/rules';
-import { GAMEOVER_BRICKS, HISCORE_PALETTES, NAMCOT, PALETTE, PLAYER,
-  SCORE_ENEMIES, directionalBitmap, drawBitmap, drawBrickWord, drawText, type PixelSurface } from './pixel-assets';
-import { TankAnimation } from './animation';
+import { ARROW, ARROW_RIGHT, GAMEOVER_BRICKS, HISCORE_PALETTES, HUD_COLORS, HUD_PLAYERS, NAMCOT, PALETTE, PLAYER_RIGHT,
+  SCORE_ENEMIES, drawBitmap, drawBrickWord, drawText, type PixelSurface } from './pixel-assets';
 import { scoreTimeline } from './score-timeline';
 import { NativeAtlas, tankFrame, tileFrame } from './atlas';
 import { NativeTexture } from './textures';
 
 export const CANVAS_WIDTH = 256;
 export const CANVAS_HEIGHT = 240;
-export const ARENA_OFFSET = { x: 16, y: 16 };
+const ARENA_OFFSET = { x: 16, y: 16 };
 
 // Title fields start at score + 1 in the original seven-digit counter.
 function menuScore(score: number): string {
@@ -48,8 +48,6 @@ class ImagePool {
 
 export class ArenaScene extends Phaser.Scene {
   state: Readonly<GameState> | null = null;
-  // The loss world can animate while these authoritative HUD values stay locked.
-  hudState: Readonly<GameState> | null = null;
   draft: readonly Tile[] | null = null;
   presentation: ArenaPresentation = { kind: 'menu', selection: 0, highScore: 20000, playerScores: [] };
   onFrame: (delta: number) => void = () => {};
@@ -80,7 +78,6 @@ export class ArenaScene extends Phaser.Scene {
   private hudKey: string | null = null;
   private staticKey: string | null = null;
   private hiscoreKeys: (number | null)[] = [null, null, null, null];
-  private animation = new TankAnimation();
   constructor() { super('arena'); }
 
   create(): void {
@@ -118,29 +115,29 @@ export class ArenaScene extends Phaser.Scene {
     this.events.once('shutdown', this.releaseResources, this);
     this.events.once('destroy', this.releaseResources, this);
   }
-  observeStep(state: GameState): void { this.animation.observe(state); }
-  resetAnimation(): void { this.animation.reset(); }
 
   update(_time: number, delta: number): void {
     this.onFrame(delta);
     if (!this.atlas) return;
     for (const image of this.fixedImages) image.setVisible(false);
     const presentation = this.presentation;
+    const introRemaining = presentation.kind === 'intro' ? Math.max(0, INTRO_TICKS - Math.floor(presentation.elapsedMs / TICK_MS + 1e-7)) : 0;
+    const opaqueIntro = presentation.kind === 'intro' && introRemaining >= INTRO_OPEN_TICKS + INTRO_SETUP_TICKS;
     const isPage = ['menu', 'stage-select', 'score', 'gameover', 'hiscore'].includes(presentation.kind);
-    if (isPage || (presentation.kind === 'intro' && presentation.elapsedMs < 1000)) {
+    if (isPage || opaqueIntro) {
       this.tanks.hide(); this.bullets.hide(); this.explosions.hide(); this.points.hide();
     }
     if (isPage) {
       this.renderPage(presentation); return;
     }
-    if (presentation.kind === 'intro' && presentation.elapsedMs < 1000) {
-      // An opaque intro has no visible world. Simulation and animation history
+    if (opaqueIntro) {
+      // An opaque intro has no visible world. Simulation updates
       // continue above, and the first revealed frame synchronizes current tiles.
       this.renderStage(presentation.stage);
     } else {
-      this.renderWorld();
+      this.renderWorld(presentation.kind !== 'intro' || introRemaining <= INTRO_SETUP_TICKS);
       if (presentation.kind === 'intro') {
-        const cover = Math.max(0, Math.ceil(120 * (2000 - presentation.elapsedMs) / 1000));
+        const cover = Math.max(0, Math.min(112, (introRemaining - INTRO_SETUP_TICKS) * 8));
         if (cover > 0) this.covers.forEach((image, index) => {
           show(image, this.atlas!.key, 'gray', 0, index ? CANVAS_HEIGHT - cover : 0, 800 + index);
           image.setDisplaySize(CANVAS_WIDTH, cover);
@@ -148,11 +145,11 @@ export class ArenaScene extends Phaser.Scene {
       }
     }
     if ((presentation.kind === 'game' || presentation.kind === 'intro') && presentation.paused) {
-      show(this.pauseImage, this.atlas.key, 'pause', 88, 112, 1000);
+      show(this.pauseImage, this.atlas.key, 'pause', 100, 121, 1000);
     }
   }
 
-  private renderWorld(): void {
+  private renderWorld(hudVisible: boolean): void {
     const atlas = this.atlas!;
     const state = this.state, tick = state?.tick ?? 0;
     const tiles = this.draft ?? state?.tiles;
@@ -166,47 +163,61 @@ export class ArenaScene extends Phaser.Scene {
         ARENA_OFFSET.x + BASE_X, ARENA_OFFSET.y + BASE_Y, 10);
     }
     this.tanks.begin(); this.bullets.begin(); this.explosions.begin(); this.points.begin();
-    if (state) {
+    if (state && presentation.kind !== 'intro') {
       state.tanks.forEach((tank, index) => {
-        const x = ARENA_OFFSET.x + Math.round(tank.x), y = ARENA_OFFSET.y + Math.round(tank.y);
+        if (tank.deathTimer > 0) return;
+        if (tank.team === 'player' && tank.stunTicks > 0 && (tick & 8) !== 0) return;
+        const x = ARENA_OFFSET.x + Math.round(tank.x), y = 17 + Math.round(tank.y);
         if (tank.spawnTicks > 0) {
-          const phase = Math.floor((28 - Math.min(28, tank.spawnTicks)) / 3) % 3;
+          const phase = Math.min(3, Math.floor(Math.abs(((28 - Math.min(28, tank.spawnTicks)) % 14) - 7) / 2));
           this.tanks.draw(`spawn:${phase}`, x, y, 20 + index * 2);
         } else {
-          this.tanks.draw(tankFrame(tank, this.animation.frame(tank), tick), x, y, 20 + index * 2);
-          if (tank.shieldTicks > 0 && tick % 12 < 7) this.tanks.draw('shield', x, y, 21 + index * 2);
+          this.tanks.draw(tankFrame(tank, tank.tread, tick), x, y, 20 + index * 2);
+          if (tank.shieldTicks > 0) this.tanks.draw(`shield:${(tick >> 1) & 1}`, x, y, 21 + index * 2);
         }
       });
       state.bullets.forEach((bullet, index) => {
         const impact = bullet.impactTicks;
         this.bullets.draw(impact ? `impact:${Math.min(2, Math.floor((9 - impact) / 3))}` : `bullet:${bullet.direction}`,
-          ARENA_OFFSET.x + Math.round(bullet.x) - (impact ? 4 : 2),
-          ARENA_OFFSET.y + Math.round(bullet.y) - (impact ? 4 : 2), 100 + index);
+          ARENA_OFFSET.x + Math.round(bullet.x) - (impact ? 8 : 4),
+          17 + Math.round(bullet.y) - 8, (impact ? 410 : 100) + index);
       });
-      if (state.powerUp && tick % 32 < 24) show(this.itemImage, atlas.key, `item:${state.powerUp.kind}`,
-        ARENA_OFFSET.x + state.powerUp.x, ARENA_OFFSET.y + state.powerUp.y, 200);
+      if (state.powerUp && (tick & 8) !== 0) show(this.itemImage, atlas.key, `item:${state.powerUp.kind}`,
+        ARENA_OFFSET.x + state.powerUp.x, 17 + state.powerUp.y, 470);
       let explosions = 0, glyphs = 0;
-      state.effects.forEach(effect => {
-        if (effect.kind === 'explosion') {
-          const phase = Math.min(2, Math.floor((24 - Math.min(24, effect.remainingTicks)) / 8));
-          const frame = `explosion:${effect.explosionVariant === 'base' ? Math.max(1, phase) : phase}`;
-          const size = atlas.frames.get(frame)!;
-          this.explosions.draw(frame, ARENA_OFFSET.x + Math.round(effect.x) - size.width / 2,
-            ARENA_OFFSET.y + Math.round(effect.y) - size.height / 2, 300 + explosions++);
-        } else {
-          const text = String(effect.value ?? 0);
-          [...text].forEach((char, index) => this.points.draw(`glyph:${char}`,
-            ARENA_OFFSET.x + Math.round(effect.x) - text.length * 4 + index * 8,
-            ARENA_OFFSET.y + Math.round(effect.y) - 4, 500 + glyphs++));
+      state.tanks.forEach(tank => {
+        if (tank.deathTimer <= 0) return;
+        const stage = tank.deathTimer >> 4;
+        const frame = stage === 1 && tank.deathPoints > 0 ? `points:${tank.deathPoints}` :
+          `explosion:${({ 7: 0, 6: 1, 5: 2, 4: 3, 3: 4, 2: 2 } as Record<number, number>)[stage] ?? 0}`;
+        const size = atlas.frames.get(frame)!;
+        const x = 24 + tank.x - size.width / 2, y = 25 + tank.y - size.height / 2;
+        if (stage === 1 && tank.deathPoints > 0) this.points.draw(frame, x, y, 500 + glyphs++);
+        else this.explosions.draw(frame, x, y, 450 + explosions++);
+      });
+      if (state.baseExplosionTicks > 0) {
+        const phase = 5 - Math.abs((state.baseExplosionTicks >> 2) - 5);
+        if (phase > 0) {
+          const frame = `explosion:${phase - 1}`, size = atlas.frames.get(frame)!;
+          this.explosions.draw(frame, 120 - size.width / 2, 217 - size.height / 2, 450 + explosions++);
         }
+      }
+      state.effects.forEach(effect => {
+        this.points.draw(`points:${effect.value}`, ARENA_OFFSET.x + Math.round(effect.x) - 8,
+          17 + Math.round(effect.y) - 8, 500 + glyphs++);
       });
     }
     this.tanks.finish(); this.bullets.finish(); this.explosions.finish(); this.points.finish();
     if (this.draft && presentation.kind === 'editor' && presentation.cursor) show(this.cursorImage, atlas.key, 'player:0:0:up:0',
-      ARENA_OFFSET.x + presentation.cursor.x * TILE_SIZE, ARENA_OFFSET.y + presentation.cursor.y * TILE_SIZE, 600);
-    this.renderHud(this.hudState ?? state);
-    if (presentation.kind === 'game' && presentation.lossBannerProgress !== undefined) {
-      show(this.lossImage, atlas.key, 'loss', 96, Math.round(208 - Math.max(0, Math.min(1, presentation.lossBannerProgress)) * 104), 900);
+      ARENA_OFFSET.x + presentation.cursor.x * TILE_SIZE, 17 + presentation.cursor.y * TILE_SIZE, 600);
+    if (hudVisible) this.renderHud(state);
+    if (state && presentation.kind === 'game') {
+      if (state.lossBannerTicks > 0) show(this.lossImage, atlas.key, 'loss', 104,
+        233 - Math.min(127, 256 - state.lossBannerTicks), 900);
+      else if (state.eliminationTicks > 0) {
+        const progress = Math.min(63, 208 - state.eliminationTicks);
+        show(this.lossImage, atlas.key, 'loss', state.eliminationPlayer === 0 ? 24 + progress : 184 - progress, 209, 900);
+      }
     }
   }
 
@@ -239,16 +250,16 @@ export class ArenaScene extends Phaser.Scene {
     const remaining = state ? Math.max(0, state.enemyQueue.length - state.spawned) : 20;
     const players = state?.players ?? [{ lives: 2 }];
     const stage = state?.stage ?? 1;
-    const key = JSON.stringify([remaining, players.map(player => player.lives), stage]);
+    const key = JSON.stringify([remaining, players.map(player => 'eliminated' in player && player.eliminated ? 0 : player.lives), stage]);
     if (key !== this.hudKey) {
       this.hud.clear();
       const g = this.hud.pixels;
       for (let i = 0; i < remaining; i++) this.atlas!.draw(this.hud, 'enemy-icon', 8 + i % 2 * 8, 8 + Math.floor(i / 2) * 8);
       players.forEach((player, index) => {
         const y = 120 + index * 24;
-        drawText(g, index ? 'II' : 'IP', 8, y, PALETTE.black);
+        drawBitmap(g, HUD_PLAYERS[index], 8, y, HUD_COLORS);
         this.atlas!.draw(this.hud, `life:${index}`, 8, y + 8);
-        drawText(g, String(player.lives), 16, y + 8, PALETTE.black);
+        drawText(g, String('eliminated' in player && player.eliminated ? 0 : player.lives), 16, y + 8, PALETTE.black);
       });
       this.atlas!.draw(this.hud, 'flag', 8, 168);
       const label = String(stage); drawText(g, label, 24 - label.length * 8, 184, PALETTE.black);
@@ -262,8 +273,8 @@ export class ArenaScene extends Phaser.Scene {
     if (this.staticKey !== key) {
       this.staticPage.paint(g => {
         g.fillStyle(PALETTE.gray); g.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-        const label = `STAGE ${stage}`;
-        drawText(g, label, Math.floor((CANVAS_WIDTH - label.length * 8) / 2), 120, PALETTE.black);
+        drawText(g, 'STAGE', 96, 112, PALETTE.black);
+        const label = String(stage); drawText(g, label, 160 - label.length * 8, 112, PALETTE.black);
       });
       this.staticKey = key;
     }
@@ -281,7 +292,7 @@ export class ArenaScene extends Phaser.Scene {
       menuScore(presentation.highScore), menuScore(presentation.playerScores[0] ?? 0),
       presentation.playerScores.length > 1 ? menuScore(presentation.playerScores[1] ?? 0) : null]) : presentation.kind === 'gameover' ? 'gameover' :
       presentation.kind === 'score' ? JSON.stringify(['score', presentation.state.stage, presentation.highScore,
-        scoreTimeline(presentation.state, presentation.elapsedMs), presentation.state.players.map(player => [player.index, player.score])]) : null;
+        scoreTimeline(presentation.state, presentation.elapsedMs), presentation.state.players.map(player => [player.index, player.score]), presentation.bonusPlayer ?? null]) : null;
     if (key === null) return;
     if (key !== this.staticKey) {
       this.staticPage.paint(g => {
@@ -311,8 +322,8 @@ export class ArenaScene extends Phaser.Scene {
     const page = this.hiscorePages[phase], label = String(highScore);
     page.paint(g => {
       g.fillStyle(PALETTE.black); g.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-      drawBrickWord(g, 'HISCORE', 16, 48, false, 4, HISCORE_PALETTES[phase]);
-      drawBrickWord(g, label, Math.floor((CANVAS_WIDTH - label.length * 32) / 2), 104, false, 4, HISCORE_PALETTES[phase]);
+      drawBrickWord(g, 'HISCORE', 16, 52, false, 4, HISCORE_PALETTES[phase]);
+      drawBrickWord(g, label, 240 - label.length * 32, 104, false, 4, HISCORE_PALETTES[phase]);
     });
     this.hiscoreKeys[phase] = highScore;
   }
@@ -332,12 +343,11 @@ export class ArenaScene extends Phaser.Scene {
     this.baseImage = this.itemImage = this.cursorImage = this.pauseImage = this.lossImage = undefined!;
     this.tanks = this.bullets = this.explosions = this.points = undefined!;
     this.atlas = undefined; this.tileKeys.fill(-1); this.hudKey = this.staticKey = null; this.hiscoreKeys.fill(null);
-    this.animation.reset();
   }
   private menu(g: PixelSurface, presentation: Extract<ArenaPresentation, { kind: 'menu' }>): void {
     g.fillStyle(PALETTE.black); g.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     const playerScore = menuScore(presentation.playerScores[0] ?? 0), highScore = menuScore(presentation.highScore);
-    drawText(g, 'I-', 16, 24); drawText(g, playerScore, 80 - playerScore.length * 8, 24);
+    drawText(g, 'Ⅰ-', 16, 24); drawText(g, playerScore, 80 - playerScore.length * 8, 24);
     drawText(g, 'HI-', 88, 24); drawText(g, highScore, 160 - highScore.length * 8, 24);
     if (presentation.playerScores.length > 1) {
       const playerTwoScore = menuScore(presentation.playerScores[1] ?? 0);
@@ -345,7 +355,7 @@ export class ArenaScene extends Phaser.Scene {
     }
     drawBrickWord(g, 'BATTLE', 24, 48); drawBrickWord(g, 'CITY', 64, 88, true);
     ['1 PLAYER', '2 PLAYERS', 'CONSTRUCTION'].forEach((text, i) => drawText(g, text, 88, 136 + i * 16));
-    drawBitmap(g, directionalBitmap(PLAYER, 'right'), 64, 132 + presentation.selection * 16, { Y: PALETTE.yellow, D: PALETTE.olive });
+    drawBitmap(g, PLAYER_RIGHT, 64, 132 + presentation.selection * 16, { Y: PALETTE.yellow, D: PALETTE.olive, H: 0xf8d878 });
     drawBitmap(g, NAMCOT, 88, 184, { '1': PALETTE.red });
     drawText(g, '©', 32, 200); drawText(g, '1980 1985 NAMCO LTD.', 48, 200); drawText(g, 'ALL RIGHTS RESERVED', 48, 216);
   }
@@ -353,35 +363,36 @@ export class ArenaScene extends Phaser.Scene {
     const state = presentation.state;
     const timeline = scoreTimeline(state, presentation.elapsedMs);
     g.fillStyle(PALETTE.black); g.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    drawText(g, 'HI-SCORE', 64, 24, PALETTE.red); drawText(g, String(presentation.highScore), 152, 24, PALETTE.yellow);
-    const stage = `STAGE ${state.stage}`;
-    drawText(g, stage, Math.floor((256 - stage.length * 8) / 2), 40);
+    const number = (value: number, right: number, y: number, color = PALETTE.white) => {
+      const label = String(value); drawText(g, label, right - label.length * 8, y, color);
+    };
+    drawText(g, 'HI-SCORE', 64, 24, PALETTE.red); number(presentation.highScore, 192, 24, PALETTE.yellow);
+    drawText(g, 'STAGE', 96, 40); number(state.stage, 160, 40);
     state.players.forEach((player, index) => {
-      const right = index === 1, color = right ? PALETTE.green : PALETTE.red;
-      drawText(g, right ? 'II-PLAYER' : 'I-PLAYER', right ? 160 : 24, 56, color);
-      const totalScore = String(player.score);
-      drawText(g, totalScore, right ? 232 - totalScore.length * 8 : 88 - totalScore.length * 8, 72, PALETTE.yellow);
+      const right = index === 1, offset = right ? 144 : 0;
+      drawText(g, right ? 'Ⅱ-PLAYER' : 'Ⅰ-PLAYER', right ? 168 : 24, 56, right ? PALETTE.green : PALETTE.red);
+      number(player.score, 88 + offset, 72, PALETTE.yellow);
       ENEMY_KINDS.forEach((_kind, row) => {
-        const y = 104 + row * 24;
-        const value = timeline.rows[row].points[index];
-        const points = String(value ?? 0);
-        // Labels are already present before each row's numbers are revealed.
-        drawText(g, 'PTS', right ? 200 : 64, y);
+        const y = 96 + row * 24, value = timeline.rows[row].points[index];
+        drawText(g, 'PTS', 64 + offset, y);
         if (value === null) return;
-        drawText(g, points, right ? 160 : 56 - points.length * 8, y);
-        const count = String(timeline.rows[row].counts[index]);
-        drawText(g, count, right ? 144 : 112 - count.length * 8, y);
+        number(value, 56 + offset, y);
+        const count = timeline.rows[row].counts[index];
+        if (count !== null) number(count, right ? 160 : 112, y);
       });
-      drawText(g, 'TOTAL', right ? 160 : 48, 192);
-      if (timeline.totalVisible) {
-        drawText(g, String(timeline.totals[index]), right ? 144 : 104, 192);
-      }
+      if (timeline.totalVisible) number(timeline.totals[index], right ? 160 : 112, 184);
     });
+    drawText(g, 'TOTAL', 48, 184);
     SCORE_ENEMIES.forEach((sprite, row) => {
-      const y = 100 + row * 24;
-      drawBitmap(g, sprite, 120, y, { W: PALETTE.white, S: PALETTE.light, C: PALETTE.cyan });
-      drawBitmap(g, ['....1...', '...11...', '..111111', '.1111111', '..111111', '...11...', '....1...', '........'], 112, y + 4, { '1': PALETTE.white });
+      drawBitmap(g, sprite, 121, 93 + row * 24, { W: PALETTE.white, S: PALETTE.light, C: PALETTE.enemyDark });
+      drawBitmap(g, ARROW, 112, 96 + row * 24, { '1': PALETTE.white });
+      if (state.players.length > 1) drawBitmap(g, ARROW_RIGHT, 136, 96 + row * 24, { '1': PALETTE.white });
     });
-    g.fillStyle(PALETTE.white); g.fillRect(96, 189, 64, 2);
+    g.fillStyle(PALETTE.white); g.fillRect(96, 181, 64, 2);
+    if (presentation.bonusPlayer !== undefined && presentation.bonusPlayer !== null) {
+      const x = presentation.bonusPlayer === 0 ? 24 : 176;
+      drawText(g, 'BONUS!', x, 200, PALETTE.red);
+      drawText(g, '1000', x, 208); drawText(g, 'PTS', x + 40, 208);
+    }
   }
 }

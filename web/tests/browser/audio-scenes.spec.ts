@@ -24,12 +24,12 @@ test('real score counts remain short and GAME OVER music belongs to its presenta
   });
   const scoreAt = await audioMarkTime(page, 'score', { timeout: 12000 });
   const countAt = await audioMarkTime(page, 'score-count', { after: scoreAt, timeout: 12000 });
-  // Count sound must be present after the 35-frame lead and 9-frame count.
-  const countFrameTime = (35 + 9) / 60.0988;
-  await pcmAssert(page, countAt + 0.70 - countFrameTime, countAt + 0.90 - countFrameTime, [], value => {
+  // First increment is tick 31. Keep the 200ms active/quiet windows anchored
+  // to that independently observed boundary, without advancing either clock.
+  await pcmAssert(page, countAt - 0.03, countAt + 0.17, [], value => {
     expect(value.rms).toBeGreaterThan(0.0005);
   }, failure => attachPcmFailure(testInfo, failure, 'score count', { scoreAt, countAt }));
-  await pcmAssert(page, countAt + 1.10 - countFrameTime, countAt + 1.30 - countFrameTime, [], value => {
+  await pcmAssert(page, countAt + 0.37, countAt + 0.57, [], value => {
     expect(value.peak).toBeLessThan(0.0001);
   }, failure => attachPcmFailure(testInfo, failure, 'score count silence', { scoreAt, countAt }));
   const musicAt = await audioMarkTime(page, 'gameover', { after: scoreAt, timeout: 12000 });

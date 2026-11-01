@@ -33,7 +33,7 @@ test('production entry loads assets and responds to controller keys without erro
   expect(stageTwo.player).toBeNull();
   await controllerKey(page, 'Enter');
   const battle = await renderedStageTwo(page);
-  expect(battle.player).toMatchObject({ x: 81, y: 210, width: 13, height: 13 });
+  expect(battle.player).toMatchObject({ x: 81, y: 211, width: 13, height: 13 });
   expect(battle.bullet, 'The empty shot corridor is a negative bullet sample').toBe(false);
   await controllerKey(page, 'w', 320);
   const moved = await probeCanvas(page);
@@ -62,7 +62,7 @@ test('production entry loads assets and responds to controller keys without erro
   }
   for (const [published, source] of [
     ['LICENSE.txt', '../../../LICENSE'],
-    ['THIRD_PARTY_NOTICES.md', '../../THIRD_PARTY_NOTICES.md'],
+    ['THIRD_PARTY_NOTICES.md', '../../../THIRD_PARTY_NOTICES.md'],
   ]) {
     const response = await page.request.get(published);
     expect(response.ok(), published).toBe(true);
@@ -117,11 +117,12 @@ test('cooperative play starts two players from the keyboard', async ({ page }) =
   const pixels = await nativePixels(page);
   let green = 0, darkGreen = 0;
   // The second player's cleared spawn block contains its green tank, while
-  // spawn stars and the shield cannot supply the two required tank colors.
+  // the pale-green highlights count as hull ink. Spawn stars and the shield
+  // cannot supply the required green and dark-green tank colors.
   for (let y = 208; y < 224; y++) for (let x = 144; x < 160; x++) {
     const offset = (y * 256 + x) * 4;
     const color = pixels[offset] << 16 | pixels[offset + 1] << 8 | pixels[offset + 2];
-    green += Number(color === 0x80d010); darkGreen += Number(color === 0x005800);
+    green += Number(color === 0x008800 || color === 0xb8f8b8); darkGreen += Number(color === 0x006800);
   }
   expect(green).toBeGreaterThanOrEqual(40); expect(darkGreen).toBeGreaterThanOrEqual(15);
 });

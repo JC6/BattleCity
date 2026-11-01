@@ -1,6 +1,5 @@
 import { GameEngine } from '../core/engine';
 import { ConstructionState } from '../core/construction';
-import { LossPresentationWorld } from '../core/loss-presentation';
 import { BASE_X, BASE_Y, GRID_SIZE, TILE_SIZE, TICK_MS, normalizeStage } from '../core/constants';
 import { INTRO_TICKS } from '../core/rules';
 import type { Direction, GameMode, PlayerCarry } from '../core/types';
@@ -8,10 +7,9 @@ import { getLevel } from '../data/levels';
 import type { AppPorts } from './ports';
 import { type AppState, isTimedState } from './state';
 import { createAppTestAdapter, type AppTestAdapter } from './test-adapter';
-import { scoreCompletionMs } from '../game/score-timeline';
+import { scoreCompletionMs, scoreTimeline } from '../game/score-timeline';
 import { AUDIO_SCENE_TICKS } from '../platform/audio-cues';
 
-const LOSS_TIME = 2000;
 const GAMEOVER_TIME = AUDIO_SCENE_TICKS.gameover * TICK_MS;
 const HISCORE_TIME = AUDIO_SCENE_TICKS.hiscore * TICK_MS;
 /** Pure application flow; browser resources are owned by bootstrap. */
@@ -25,7 +23,6 @@ export class AppController {
   private get highScore() { return this.ports.records.getHighScore(); }
   private get screen() { return this.state.kind; }
   private get engine() { return 'engine' in this.state ? this.state.engine : null; }
-  private get lossWorld() { return this.state.kind === 'loss' ? this.state.world : null; }
   private get presentationTicks() { return isTimedState(this.state) ? this.state.ticks : 0; }
   private get presentationTime() {
     return isTimedState(this.state) ? Math.max(0, this.state.duration - this.state.ticks * TICK_MS) : 0;
@@ -36,6 +33,8 @@ export class AppController {
   private selectedStage = 1;
   private selectedMode: GameMode = 'single';
   private menuSelection: 0 | 1 | 2 = 0;
+  private stageHeld = 0;
+  private stageHoldTicks = 0;
   private editorHeld = 0;
   private editorHoldTicks = 0;
   private presentationSuspended = false;
@@ -58,6 +57,7 @@ export class AppController {
   inactive(): void {
     if (this.disposed) return;
     this.input.resetForFocus(); this.accumulator = 0;
+    this.stageHeld = 0; this.stageHoldTicks = 0;
     this.editorHeld = 0; this.editorHoldTicks = 0;
     if (!this.pause('focus')) { this.presentationSuspended = true; this.audio.setPaused(true, 'focus'); }
   }
@@ -69,7 +69,7 @@ export class AppController {
   start(mode: GameMode, stage: number, carries?: PlayerCarry[], custom = this.customMapReady): void {
     if (this.disposed) return;
     if (!carries) this.runHighScore = this.highScore;
-    this.clearLossPresentation();
+
     this.input.clear(); this.audio.stopScene();
     const normalizedStage = normalizeStage(stage);
     const level = getLevel(normalizedStage);
@@ -81,35 +81,36 @@ export class AppController {
       for (const index of [cell, cell + 1, cell + GRID_SIZE, cell + GRID_SIZE + 1]) level.tiles[index] = 0;
     }
     const engine = new GameEngine(level, {
-      mode, stage: normalizedStage, seed: this.ports.seed(),
+      mode, stage: normalizedStage, seed: this.ports.seed(), customMap: custom,
       ...(carries ? { players: carries } : {}),
     });
     this.state = { kind: 'game', engine }; this.accumulator = 0;
     this.presentationSuspended = false;
     this.scene.draft = null; this.scene.state = engine.state;
-    this.scene.resetAnimation(); this.scene.observeStep(engine.state);
+
     this.audio.syncState(engine.state); this.audio.commitFrame();
     this.present();
   }
 
   private menu(): void {
-    this.clearLossPresentation();
+
     this.state = { kind: 'menu' }; this.scene.state = null; this.scene.draft = null;
     this.input.clear(); this.audio.stopScene();
     this.accumulator = 0; this.presentationSuspended = false;
     this.menuSelection = 0; this.selectedStage = 1;
-    this.scene.resetAnimation(); this.present();
+    this.present();
   }
 
   private openEditor(): void {
-    this.clearLossPresentation();
+
     this.construction.enter();
     this.state = { kind: 'editor' }; this.scene.state = null; this.scene.draft = this.construction.tiles;
     this.customMapReady = true;
     this.input.clear(); this.audio.stopScene();
     this.accumulator = 0; this.presentationSuspended = false;
+    this.stageHeld = 0; this.stageHoldTicks = 0;
     this.editorHeld = 0; this.editorHoldTicks = 0;
-    this.scene.resetAnimation(); this.present();
+    this.present();
   }
 
   startKey(): void {
@@ -117,14 +118,16 @@ export class AppController {
     if (this.screen === 'game') { if (this.engine?.state.phase === 'paused') this.resume(); else this.pause(); return; }
     if (this.presentationSuspended) {
       this.presentationSuspended = false; this.audio.setPaused(false); this.accumulator = 0;
-      this.editorHeld = 0; this.editorHoldTicks = 0;
+      this.stageHeld = 0; this.stageHoldTicks = 0;
+    this.editorHeld = 0; this.editorHoldTicks = 0;
       this.input.clear(); this.present(); return;
     }
+    if (this.screen === 'gameover') { this.advancePresentation(); return; }
     if (this.screen === 'menu') {
       if (this.menuSelection === 2) this.openEditor();
       else {
         this.selectedMode = this.menuSelection === 1 ? 'coop' : 'single';
-        this.state = { kind: 'stage-select' }; this.input.clear(); this.accumulator = 0; this.present();
+        this.state = { kind: 'stage-select' }; this.stageHeld = 0; this.stageHoldTicks = 0; this.input.clear(); this.accumulator = 0; this.present();
       }
     } else if (this.screen === 'stage-select') this.start(this.selectedMode, this.selectedStage);
     else if (this.screen === 'editor') this.menu();
@@ -132,6 +135,7 @@ export class AppController {
 
   selectKey(): void {
     if (this.disposed) return;
+    if (this.screen === 'gameover' && !this.presentationSuspended) { this.advancePresentation(); return; }
     if (this.screen !== 'menu') return;
     this.presentationSuspended = false; this.audio.setPaused(false);
     this.menuSelection = ((this.menuSelection + 1) % 3) as 0 | 1 | 2;
@@ -161,7 +165,6 @@ export class AppController {
       this.accumulator -= TICK_MS;
       if (this.screen === 'game' && this.engine) {
         this.audio.play(this.engine.step(this.input.read()));
-        this.scene.observeStep(this.engine.state);
         this.audio.syncState(this.engine.state);
         if (this.engine.state.phase === 'won' || this.engine.state.phase === 'lost') {
           this.audio.commitFrame();
@@ -169,17 +172,19 @@ export class AppController {
         }
       } else if (this.screen === 'editor') this.editorTick();
       else if (this.screen === 'stage-select') {
-        const pad = this.input.readPads()[0];
-        if (pad.aPressed !== pad.bPressed) {
-          this.selectedStage = (this.selectedStage - 1 + (pad.aPressed ? 1 : 34)) % 35 + 1;
-        }
+        this.stageTick();
       } else if (isTimedState(this.state)) {
         this.input.readPads();
         this.state.ticks++;
-        if (this.screen === 'loss' && this.lossWorld) {
-          this.lossWorld.step(); this.scene.observeStep(this.lossWorld.state);
-        } else if (this.screen === 'score' && this.engine) {
-          this.audio.updateScore(this.engine.state, this.presentationTicks * TICK_MS);
+        if (this.state.kind === 'score') {
+          const score = this.state;
+          if (!score.bonusChecked && score.ticks * TICK_MS + 1e-7 >= scoreTimeline(score.engine.state, 0).bonusAtMs) {
+            score.bonusChecked = true;
+            const events = score.engine.awardCoopBonus();
+            score.bonusPlayer = events.find(event => event.type === 'score-bonus')?.playerIndex ?? null;
+            this.audio.play(events);
+          }
+          this.audio.updateScore(score.engine.state, score.ticks * TICK_MS);
         }
         if (!this.presentationTime) {
           // The boundary tick belongs to the scene it enters. Submit its new
@@ -190,6 +195,18 @@ export class AppController {
     }
     this.audio.commitFrame();
     this.present();
+  }
+
+  private stageTick(): void {
+    const pad = this.input.readPads()[0];
+    const a = pad.a || pad.aPressed, b = pad.b || pad.bPressed;
+    const direction = a === b ? 0 : a ? 1 : -1;
+    if (!direction) { this.stageHeld = 0; this.stageHoldTicks = 0; return; }
+    let change = false;
+    if (direction !== this.stageHeld || (direction > 0 ? pad.aPressed : pad.bPressed)) {
+      this.stageHeld = direction; this.stageHoldTicks = 0; change = true;
+    } else if (++this.stageHoldTicks === 8) { this.stageHoldTicks = 0; change = true; }
+    if (change) this.selectedStage = Math.max(1, Math.min(35, this.selectedStage + direction));
   }
 
   private editorTick(): void {
@@ -214,30 +231,19 @@ export class AppController {
 
   private finishBattle(): void {
     this.lastScores = this.engine!.state.players.map(player => player.score);
-    if (this.engine!.state.phase === 'won') { this.showScore(); return; }
-    const engine = this.engine!, world = new LossPresentationWorld(engine.state);
-    this.state = { kind: 'loss', engine, world, duration: LOSS_TIME, ticks: 0 };
-    this.input.clear(); this.accumulator = 0;
-    this.scene.state = world.state; this.scene.hudState = engine.state;
-    this.audio.syncState(null); this.present();
+    this.showScore();
   }
 
   private showScore(): void {
-    this.clearLossPresentation();
+
     const engine = this.engine!;
-    this.state = { kind: 'score', engine, duration: scoreCompletionMs(engine.state), ticks: 0 };
+    this.state = { kind: 'score', engine, duration: scoreCompletionMs(engine.state), ticks: 0, bonusChecked: false, bonusPlayer: null };
     this.input.clear(); this.accumulator = 0;
     this.audio.stopScene(); this.audio.updateScore(this.engine!.state, 0);
     this.present();
   }
 
-  private clearLossPresentation(): void {
-    this.scene.hudState = null;
-    this.scene.state = this.engine?.state ?? null;
-  }
-
   private advancePresentation(): void {
-    if (this.screen === 'loss') { this.showScore(); return; }
     if (this.screen === 'score' && this.engine) {
       const state = this.engine.state;
       if (state.phase === 'won') {
@@ -279,10 +285,10 @@ export class AppController {
       this.scene.presentation = { kind: 'editor', cursor: { x: cursor.x * 2, y: cursor.y * 2 }, baseVisible: this.construction.baseVisible };
     } else if (this.screen === 'score' && state) this.scene.presentation = {
       kind: 'score', state, highScore: this.highScore, elapsedMs: this.presentationTicks * TICK_MS,
+      bonusPlayer: this.state.kind === 'score' ? this.state.bonusPlayer : null,
     };
     else if (this.screen === 'gameover') this.scene.presentation = { kind: 'gameover', highScore: this.highScore };
     else if (this.screen === 'hiscore') this.scene.presentation = { kind: 'hiscore', highScore: this.highScore, tick: this.presentationTicks };
-    else if (this.screen === 'loss') this.scene.presentation = { kind: 'game', lossBannerProgress: 1 - this.presentationTime / LOSS_TIME };
     else if (state && state.introTicks > 0) this.scene.presentation = {
       kind: 'intro', stage: state.stage, elapsedMs: (INTRO_TICKS - state.introTicks) * TICK_MS,
       paused: state.phase === 'paused',

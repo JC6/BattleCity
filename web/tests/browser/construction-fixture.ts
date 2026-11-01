@@ -13,11 +13,11 @@ export interface ConstructionInspection {
 }
 const steelPalette = [0x666666, 0xadadad, 0xfcfcfc];
 const signatures = {
-  0: [0x000000, 0xa05000, 0x000000, 0xadadad],
+  0: [0x000000, 0x801000, 0x000000, 0x666666],
   13: [0, 0, 0, 0],
-  12: [0xb3b3b3, 0xb3b3b3, 0xb3b3b3, 0xb3b3b3],
-  11: [0x004e0f, 0x004e0f, 0x8ac900, 0x8ac900],
-  10: [0x4854ff, 0x4854ff, 0x4854ff, 0x4854ff],
+  12: [0xadadad, 0xfcfcfc, 0x666666, 0x666666],
+  11: [0x005800, 0x005800, 0x80d010, 0x80d010],
+  10: [0x4444fc, 0x4444fc, 0x4444fc, 0x4444fc],
   9: [0xadadad, 0xadadad, 0x666666, 0x666666],
 } as const;
 
@@ -33,7 +33,7 @@ export function inspectConstruction(rgba: Uint8Array): ConstructionInspection {
     let yellow = 0, olive = 0;
     for (let y = 16 + row * 16; y < 32 + row * 16; y++) for (let x = 16 + column * 16; x < 32 + column * 16; x++) {
       const color = pixel(x, y);
-      yellow += Number(color === 0xf8b800); olive += Number(color === 0x687000);
+      yellow += Number(color === 0xf8b800 || color === 0xf8d878); olive += Number(color === 0x687000);
     }
     if (yellow >= 40 && olive >= 15) cursorCandidates.push({ column, row, yellow, olive });
   }
@@ -42,8 +42,8 @@ export function inspectConstruction(rgba: Uint8Array): ConstructionInspection {
   let signature: Signature | null = null;
   if (cursor) {
     const x = 16 + cursor.column * 16, y = 16 + cursor.row * 16;
-    // The fixed upward editor cursor leaves its first and last rows transparent.
-    signature = [pixel(x + 1, y), pixel(x + 9, y), pixel(x + 1, y + 15), pixel(x + 9, y + 15)];
+    // The upward cursor is drawn one scanline below the terrain; these four edge samples stay uncovered.
+    signature = [pixel(x + 1, y), pixel(x + 11, y), pixel(x + 5, y + 15), pixel(x + 9, y + 15)];
   }
   const rows: ConstructionInspection['rows'] = [];
   for (let row = 1; row <= 5; row++) {

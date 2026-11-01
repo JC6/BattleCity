@@ -5,7 +5,7 @@ import type { ArenaScene } from '../../src/game/arena';
 
 export function emptyWorld(mode: GameMode = 'single'): GameState {
   const state = new GameEngine(getLevel(1), { mode, stage: 1, seed: 1 }).state;
-  state.tanks = []; state.tiles.fill(Tile.Empty); state.brickMasks.fill(0); state.tick = 0;
+  state.phase = 'playing'; state.introTicks = 0; state.tanks = []; state.tiles.fill(Tile.Empty); state.brickMasks.fill(0); state.tick = 0;
   return state;
 }
 export function entityWorld(): GameState {
@@ -29,10 +29,12 @@ export function entityWorld(): GameState {
     direction: (['up', 'right', 'down', 'left'] as const)[index % 4], speed: 2, steelPower: false,
     ...(index === 4 ? { impactTicks: 5 } : {}),
   }));
-  state.effects = [24, 16, 8].map((remainingTicks, index) => ({ kind: 'explosion' as const,
-    x: 48 + index * 48, y: 156, remainingTicks }));
-  state.effects.push({ kind: 'explosion', explosionVariant: 'base', x: 104, y: 200, remainingTicks: 8 });
-  state.effects.push({ kind: 'points', x: 48, y: 136, remainingTicks: 40, value: 400 });
+  [0x73, 0x43, 0x23].forEach((deathTimer, index) => Object.assign(state.tanks[index + 2], {
+    x: 40 + index * 48, y: 148, spawnTicks: 0, shieldTicks: 0, deathTimer,
+  }));
+  Object.assign(state.tanks[5], { kind: 'armor', x: 40, y: 128, deathTimer: 0x16, deathPoints: 400, carryingPowerUp: false });
+  state.baseAlive = false; state.baseExplosionTicks = 12;
+  state.effects = [{ x: 168, y: 184, remainingTicks: 40, value: 500 }];
   state.powerUp = { kind: 'star', x: 160, y: 176 };
   state.players[0].lives = 3; state.players[1].lives = 8; state.spawned = 10;
   return state;
@@ -57,11 +59,14 @@ export function renderFixtures(): RenderFixture[] {
   for (const tick of [0, 16]) result.push({ name: `entities-${tick}`, apply(scene) {
     scene.state = { ...entityWorld(), tick }; scene.presentation = { kind: 'game' };
   } });
-  result.push({ name: 'locked-hud', apply(scene) {
-    scene.state = entityWorld(); scene.hudState = { ...structuredClone(scene.state), stage: 31, spawned: 19 };
-    scene.hudState.players[0].lives = 0;
-    scene.presentation = { kind: 'game', lossBannerProgress: 0.6, paused: true };
+  result.push({ name: 'loss-battlefield', apply(scene) {
+    const state = entityWorld(); state.lossBannerTicks = 102; scene.state = state;
+    scene.presentation = { kind: 'game', paused: true };
   } });
+  for (const bonusPlayer of [0,1] as const) result.push({name:`bonus-${bonusPlayer}`,apply(scene){
+    const state=emptyWorld('coop');state.phase='won';state.players[bonusPlayer].score=21000;
+    scene.presentation={kind:'score',state,highScore:20000,elapsedMs:6000,bonusPlayer};
+  }});
   result.push({ name: 'editor', apply(scene) {
     scene.draft = entityWorld().tiles; scene.presentation = { kind: 'editor', cursor: { x: 4, y: 12 } };
   } });

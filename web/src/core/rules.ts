@@ -2,10 +2,14 @@ import { GRID_SIZE, normalizeStage } from './constants';
 import type { EnemyKind, GameMode, PowerUpKind } from './types';
 
 // Gameplay timing and movement cadence use fixed simulation ticks.
-export const INTRO_TICKS = 120;
+// C1D7/CC27/CCB2/C859: map, attributes, curtain and final setup.
+export const INTRO_MAP_TICKS = 13;
+const INTRO_ATTRIBUTE_TICKS = 64;
+export const INTRO_OPEN_TICKS = 16;
+export const INTRO_SETUP_TICKS = 3;
+export const INTRO_TICKS = INTRO_MAP_TICKS + INTRO_ATTRIBUTE_TICKS + INTRO_OPEN_TICKS + INTRO_SETUP_TICKS;
 export const OUTRO_TICKS = 128;
 export const SPAWN_TICKS = 28;
-export const RESPAWN_TICKS = 48;
 export const SPAWN_SHIELD_TICKS = 3 * 64;
 export const HELMET_TICKS = 10 * 64;
 export const FREEZE_TICKS = 10 * 64;

@@ -26,7 +26,7 @@ export function createAppTestAdapter(access: TestAccess) {
     step: (count = 1, inputs: PlayerInput[] = [{ ...EMPTY_INPUT }, { ...EMPTY_INPUT }]): void => {
       const engine = access.engine(); if (!engine) return;
       for (let i = 0; i < Math.min(10000, Math.max(0, count)); i++) {
-        engine.step(inputs); access.render.observeStep(engine.state);
+        engine.step(inputs);
       }
       if (access.inGame() && ['won', 'lost'].includes(engine.state.phase)) access.finish();
       else access.present();

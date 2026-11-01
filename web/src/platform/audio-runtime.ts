@@ -1,7 +1,7 @@
 import type { AudioMessage, AudioReply } from './audio-protocol';
 import workletURL from './apu-worklet.ts?worker&url';
 
-export type AudioRuntimeState = 'uninitialized' | 'loading' | 'ready' | 'retryable' | 'unsupported' | 'disposed';
+type AudioRuntimeState = 'uninitialized' | 'loading' | 'ready' | 'retryable' | 'unsupported' | 'disposed';
 export interface AudioRuntimeHooks {
   ready(): void;
   resumed(): void;

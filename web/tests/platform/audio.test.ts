@@ -49,7 +49,7 @@ describe('semantic game audio and recovery', () => {
   });
   it('shares score count timing, deduplicates counts, and discards paused counts on resume', async () => {
     const { audio, node } = await enabled(); const state = fixture(); state.phase = 'lost'; state.players[0].kills = [2, 0, 0, 0];
-    const count1 = SCORE_TIMING.leadMs + SCORE_TIMING.countMs;
+    const count1 = SCORE_TIMING.leadMs;
     audio.updateScore(state, count1); audio.commitFrame();
     audio.updateScore(state, count1); audio.commitFrame();
     expect(cues(node)).toEqual([19, 20]);
@@ -67,12 +67,13 @@ describe('semantic game audio and recovery', () => {
     audio.stopScene(); audio.startPresentation('hiscore'); audio.commitFrame();
     expect(cues(node).slice(-3)).toEqual([21, 22, 23]);
   });
-  it('only cues the cooperative 1000-point award for a winning unequal tally', async () => {
+  it('plays a bonus only from the authoritative award event, never from tally inference', async () => {
     const { audio, node } = await enabled(); const state = new GameEngine(getLevel(1), { stage: 1, mode: 'coop' }).state;
     state.players[0].kills = [1, 0, 0, 0]; state.phase = 'lost';
     audio.updateScore(state, 6000); audio.commitFrame(); expect(cues(node)).not.toContain(27);
     audio.stopScene(); state.phase = 'won'; audio.updateScore(state, 6000); audio.commitFrame();
-    audio.updateScore(state, 7000); audio.commitFrame(); expect(cues(node).filter(id => id === 27)).toHaveLength(1);
+    audio.updateScore(state, 7000); audio.commitFrame(); expect(cues(node).filter(id => id === 27)).toHaveLength(0);
+    audio.play([{type:'score-bonus',playerIndex:0}]); audio.commitFrame(); expect(cues(node).filter(id => id === 27)).toHaveLength(1);
   });
   it('switches engines only on semantic changes and never retriggers an already started intro', async () => {
     const { audio, node } = await enabled(); const state = fixture(); state.phase = 'intro';
@@ -82,6 +83,12 @@ describe('semantic game audio and recovery', () => {
     expect(cues(node).slice(3)).toEqual([CUE.enemyEngine]);
     state.tanks[0].moving = true; state.tick++; audio.syncState(state); audio.commitFrame();
     expect(cues(node).at(-1)).toBe(CUE.playerEngine);
+  });
+  it('does not read movement or ice cues from a tank retained for its death animation', async () => {
+    const { audio, node } = await enabled(), state = fixture();
+    Object.assign(state.tanks[0], { deathTimer: 0x73, moving: true, slideTicks: 20 });
+    audio.syncState(state); audio.commitFrame();
+    expect(cues(node)).toEqual([CUE.enemyEngine]);
   });
   it.each(['manual', 'focus'] as const)('uses explicit %s control and gates only focus recovery without resuming the context', async reason => {
     const { audio, context, node } = await enabled(); audio.setPaused(true, reason);

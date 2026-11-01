@@ -1,26 +1,36 @@
-import type { CoreContext } from './context';
 import { randomInt } from './random';
 import { FORTIFY_TICKS, FREEZE_TICKS, HELMET_TICKS, POWER_UP_TABLE, timerDuration } from './rules';
 import { addScore } from './scoring';
 import { setFortress } from './terrain';
-import { Tile, type Tank } from './types';
+import { type CoreContext, Tile, type GameState, type Tank } from './types';
+
+function pickupRange(tank: Tank, x: number, y: number): boolean {
+  return tank.team === 'player' && tank.spawnTicks === 0 && tank.deathTimer === 0 && Math.abs(tank.x - x) < 12 && Math.abs(tank.y - y) < 12;
+}
+
+/** The original bonus and its pickup points share one display slot. */
+export function clearPowerUp(state: GameState): void {
+  state.powerUp = null;
+  state.effects = state.effects.filter(effect => effect.value !== 500);
+}
 
 export function dropPowerUp(context: CoreContext): void {
   const state = context.state;
-  let x = 24;
-  let y = 24;
-  // Choose one of four positions per axis. Retry positions
-  // already under a player; brick/water/forest tiles do not block placement.
+  let x = 24, y = 24, free = false;
+  const occupied = (x: number, y: number) => state.tanks.some(tank => pickupRange(tank, x, y));
   for (let attempt = 0; attempt < 32; attempt++) {
-    x = 24 + randomInt(state, 4) * 48;
-    y = 24 + randomInt(state, 4) * 48;
-    if (!state.tanks.some(tank => tank.team === 'player' &&
-      Math.abs(tank.x - x) < 12 && Math.abs(tank.y - y) < 12)) break;
+    x = 24 + randomInt(state, 4) * 48; y = 24 + randomInt(state, 4) * 48;
+    if (!occupied(x, y)) { free = true; break; }
   }
-  // The item remains until collected or replaced by another bonus tank.
-  state.powerUp = {
-    kind: POWER_UP_TABLE[randomInt(state, POWER_UP_TABLE.length)]!, x, y,
-  };
+  if (!free) {
+    search: for (let yy = 24; yy <= 168; yy += 48) for (let xx = 24; xx <= 168; xx += 48) {
+      if (!occupied(xx, yy)) { x = xx; y = yy; free = true; break search; }
+    }
+    if (!free) throw new Error('No free bonus position');
+  }
+  clearPowerUp(state);
+  // Uncollected items persist; a carrier birth or a later drop can replace them.
+  state.powerUp = { kind: POWER_UP_TABLE[randomInt(state, POWER_UP_TABLE.length)]!, x, y };
   context.events.push({ type: 'powerup', action: 'appear', kind: state.powerUp.kind, playerIndex: null });
 }
 
@@ -31,12 +41,12 @@ export function collectPowerUp(context: CoreContext,
   if (!powerUp) return;
   // E972 checks player two before player one, independently of tank insertion order.
   const playerTank = [1, 0].map(index => state.tanks.find(tank => tank.team === 'player' &&
-    tank.playerIndex === index && tank.spawnTicks === 0 &&
-    Math.abs(tank.x - powerUp.x) < 12 && Math.abs(tank.y - powerUp.y) < 12)).find(Boolean);
+    tank.playerIndex === index && pickupRange(tank, powerUp.x, powerUp.y))).find(Boolean);
   if (!playerTank || playerTank.playerIndex === null) return;
   const player = state.players[playerTank.playerIndex]!;
-  state.powerUp = null;
+  clearPowerUp(state);
   addScore(context, player.index, 500);
+  state.effects.push({ x: powerUp.x + 8, y: powerUp.y + 8, remainingTicks: 50, value: 500 });
   context.events.push({ type: 'powerup', action: 'pickup', kind: powerUp.kind, playerIndex: player.index });
   switch (powerUp.kind) {
     case 'helmet': playerTank.shieldTicks = timerDuration(HELMET_TICKS, state.tick); break;
@@ -57,7 +67,7 @@ export function collectPowerUp(context: CoreContext,
       // Grenades remove active enemies without kill-score credit. The
       // 500 points for picking up the item still belong to the collector.
       for (const tank of [...state.tanks]) {
-        if (tank.team === 'enemy' && tank.spawnTicks === 0) destroyEnemy(tank, null);
+        if (tank.team === 'enemy' && tank.spawnTicks === 0 && tank.deathTimer === 0) destroyEnemy(tank, null);
       }
       break;
     case 'tank':
