@@ -763,7 +763,7 @@ public class TvMenuFlowTest {
             if (condition.getAsBoolean()) return;
             SystemClock.sleep(20);
         } while (SystemClock.uptimeMillis() < deadline);
-        fail(message + " (timeout " + TIMEOUT_MS + " ms)");
+        throw DeviceTestDiagnostics.timeout(message, TIMEOUT_MS, null);
     }
 
     private static void awaitUi(String message, BooleanSupplier condition) {
@@ -790,7 +790,7 @@ public class TvMenuFlowTest {
             throw new AssertionError("Engine task failed", cause);
         } catch (TimeoutException failure) {
             task.cancel(false);
-            throw new AssertionError("Engine task timed out; engine must be running", failure);
+            throw DeviceTestDiagnostics.timeout("Engine task timed out; engine must be running", TIMEOUT_MS, failure);
         }
     }
 
@@ -802,7 +802,7 @@ public class TvMenuFlowTest {
             if (matched[0]) return;
             SystemClock.sleep(20);
         } while (SystemClock.uptimeMillis() < deadline);
-        fail(message + " (timeout " + TIMEOUT_MS + " ms)");
+        throw DeviceTestDiagnostics.timeout(message, TIMEOUT_MS, null);
     }
 
     private static long audioWorkers() {

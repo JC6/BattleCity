@@ -74,21 +74,80 @@ class AcceptanceResultsTest(unittest.TestCase):
     def signature_result(self, outputs):
         with mock.patch.dict(results.os.environ, {"ANDROID_HOME": "", "ANDROID_SDK_ROOT": ""}), \
              mock.patch.object(results.shutil, "which", return_value="fixture-apksigner"), \
-             mock.patch.object(results.subprocess, "run", side_effect=outputs):
-            return results.verify_apks(self.build)
+             mock.patch.object(results.subprocess, "run", side_effect=[CompletedProcess([], 0, "fixture-version\n", "")] + outputs) as run:
+            result = results.verify_apks(self.build)
+            self.assertEqual(["fixture-apksigner", "version"], run.call_args_list[0].args[0])
+            self.assertEqual(3, run.call_count, "Both APKs must be checked even after the first failure")
+            return result
+
+    @staticmethod
+    def signed(certificate="ab" * 32):
+        return CompletedProcess([], 0, f"Signer #1 certificate SHA-256 digest: {certificate}\n", "")
 
     def test_both_apk_signatures_require_the_same_certificate(self):
-        signed = lambda certificate: CompletedProcess([], 0, f"Signer #1 certificate SHA-256 digest: {certificate}", "")
-        summary, errors = self.signature_result([signed("aabb"), signed("aabb")])
+        summary, errors = self.signature_result([self.signed(), self.signed()])
         self.assertFalse(errors)
-        self.assertIn("aabb", summary)
-        self.assertTrue(self.signature_result([signed("aabb"), signed("ccdd")])[1])
+        self.assertIn("ab" * 32, summary)
+        self.assertTrue(self.signature_result([self.signed(), self.signed("cd" * 32)])[1])
+        self.assertFalse(self.signature_result([self.signed("AB" * 32), self.signed()])[1])
 
     def test_invalid_or_missing_signer_cannot_report_signatures_passed(self):
-        self.assertTrue(self.signature_result([CompletedProcess([], 1, "", "invalid")])[1])
+        self.assertTrue(self.signature_result([CompletedProcess([], 1, "", "invalid"), self.signed()])[1])
         with mock.patch.dict(results.os.environ, {"ANDROID_HOME": "", "ANDROID_SDK_ROOT": ""}), \
              mock.patch.object(results.shutil, "which", return_value=None):
             self.assertTrue(results.verify_apks(self.build)[1])
+
+    def test_signature_failures_preserve_both_commands_and_all_output(self):
+        invalid = CompletedProcess([], 7, "fixture stdout", "fixture verification error")
+        summary, errors = self.signature_result([invalid, CompletedProcess([], 9, "second stdout", "second error")])
+        self.assertIn("**FAILED**", summary)
+        self.assertEqual(2, len(errors))
+        diagnostics = self.build / "diagnostics/apk-signatures"
+        tool = (diagnostics / "tool.txt").read_text()
+        self.assertIn("fixture-apksigner", tool)
+        self.assertIn("fixture-version", tool)
+        self.assertIn("Version exit code: 0", tool)
+        first = (diagnostics / "BattleCity-debug.apk.txt").read_text()
+        self.assertIn("Exit code: 7", first)
+        self.assertIn("fixture stdout", first)
+        self.assertIn("fixture verification error", first)
+        second = (diagnostics / "BattleCity-debug-androidTest.apk.txt").read_text()
+        self.assertIn("Exit code: 9", second)
+        self.assertIn("second stdout", second)
+        self.assertIn("second error", second)
+        for error in errors:
+            self.assertIn("diagnostics/apk-signatures/", error)
+
+    def test_missing_or_malformed_certificate_fails_even_with_successful_exit(self):
+        for certificate in ("", "aabb", "a" * 65, "z" * 64):
+            with self.subTest(certificate=certificate):
+                self.assertTrue(self.signature_result([self.signed(certificate), self.signed()])[1])
+
+    def test_unstartable_signer_still_records_both_apk_attempts(self):
+        summary, errors = self.signature_result([OSError("fixture launch error"), OSError("second launch error")])
+        self.assertIn("**NOT VERIFIED**", summary)
+        self.assertEqual(2, len(errors))
+        diagnostics = self.build / "diagnostics/apk-signatures"
+        self.assertIn("fixture launch error", (diagnostics / "BattleCity-debug.apk.txt").read_text())
+        self.assertIn("second launch error", (diagnostics / "BattleCity-debug-androidTest.apk.txt").read_text())
+
+    def test_signer_path_and_version_failure_are_recorded_without_skipping_verification(self):
+        sdk = self.build / "sdk"
+        for version in ("36.0.0", "37.0.0"):
+            tool = sdk / "build-tools" / version / "apksigner"
+            tool.parent.mkdir(parents=True)
+            tool.touch()
+        expected = str(sdk / "build-tools/37.0.0/apksigner")
+        with mock.patch.dict(results.os.environ, {"ANDROID_HOME": str(sdk)}), \
+             mock.patch.object(results.subprocess, "run", side_effect=[
+                 CompletedProcess([], 1, "", "fixture version error"), self.signed(), self.signed()
+             ]) as run:
+            self.assertFalse(results.verify_apks(self.build)[1])
+            self.assertTrue(all(call.args[0][0] == expected for call in run.call_args_list))
+        tool_log = (self.build / "diagnostics/apk-signatures/tool.txt").read_text()
+        self.assertIn(expected, tool_log)
+        self.assertIn("Version exit code: 1", tool_log)
+        self.assertIn("fixture version error", tool_log)
 
     def test_complete_run_reports_counts_commit_and_checksum(self):
         summary, problems = self.evaluate()

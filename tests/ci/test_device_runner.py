@@ -51,11 +51,15 @@ exit "$FAKE_EXIT"
         self.stale("build/outputs/androidTest-results/connected")
         stale = self.stale("build/outputs/androidTest-results/api-34")
         other = self.stale("build/outputs/androidTest-results/api-37.2")
+        startup = self.root / "build/diagnostics/emulator-api-34/startup-logcat.txt"
+        startup.parent.mkdir(parents=True)
+        startup.write_text("log captured before the test script started")
         run = self.run_script("34")
         self.assertEqual(0, run.returncode, run.stderr)
         self.assertFalse(stale.exists())
         self.assertTrue(other.exists())
         self.assertTrue((stale.parent / "TEST-new.xml").exists())
+        self.assertEqual("log captured before the test script started", startup.read_text())
 
     def test_failed_test_command_preserves_failure_and_diagnostics(self):
         self.env.update(FAKE_API="37", FAKE_MINOR="2", FAKE_EXIT="7")

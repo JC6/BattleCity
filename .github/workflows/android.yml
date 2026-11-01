@@ -28,8 +28,22 @@ jobs:
           distribution: temurin
           java-version: '17.0.21+9'
       - uses: android-actions/setup-android@v4.0.4
+        with:
+          cmdline-tools-version: '15859902'
       - uses: gradle/actions/setup-gradle@v6.4.0
-      - run: sdkmanager 'platforms;android-37.2'
+      - name: Use the installed Android command-line tools
+        run: |
+          installed_tools=$(dirname "$(dirname "$(command -v sdkmanager)")")
+          latest_tools="$ANDROID_HOME/cmdline-tools/latest"
+          # emulator-runner prepends latest/bin, which may contain older runner-image tools.
+          if [[ "$(readlink -f "$latest_tools")" != "$(readlink -f "$installed_tools")" ]]; then
+            if [[ -e "$latest_tools" || -L "$latest_tools" ]]; then
+              mv "$latest_tools" "$RUNNER_TEMP/android-cmdline-tools-preinstalled"
+            fi
+            ln -s "$installed_tools" "$latest_tools"
+          fi
+          "$latest_tools/bin/sdkmanager" --version
+          "$latest_tools/bin/sdkmanager" 'platforms;android-37.2'
       - name: Check acceptance report validation
         run: python3 -m unittest discover -s tests/ci -v
       - name: Build, unit tests and lint
@@ -51,6 +65,8 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_2
+          pre-emulator-launch-script: mkdir -p build/diagnostics/emulator-api-34
+          emulator-options: -no-window -gpu software -no-snapshot -noaudio -no-boot-anim -logcat-output ${{ github.workspace }}/build/diagnostics/emulator-api-34/startup-logcat.txt
           script: bash tools/run-android-device-tests.sh 34
       - name: API 37.2 framework smoke tests
         if: ${{ !cancelled() && steps.checks.outcome == 'success' && steps.acceleration.outcome == 'success' }}
@@ -61,6 +77,8 @@ jobs:
           target: google_apis_ps16k
           arch: x86_64
           profile: pixel_2
+          pre-emulator-launch-script: mkdir -p build/diagnostics/emulator-api-37.2
+          emulator-options: -no-window -gpu software -no-snapshot -noaudio -no-boot-anim -logcat-output ${{ github.workspace }}/build/diagnostics/emulator-api-37.2/startup-logcat.txt
           script: bash tools/run-android-device-tests.sh 37.2
       - name: Verify and summarize acceptance
         if: always()

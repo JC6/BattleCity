@@ -108,21 +108,46 @@ def evaluate(build_dir, build_status, device_statuses, commit, local=False):
 
 
 def verify_apks(build_dir):
+    diagnostics = build_dir / "diagnostics/apk-signatures"
+    diagnostics.mkdir(parents=True, exist_ok=True)
     sdk = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
     candidates = list((Path(sdk) / "build-tools").glob("*/apksigner")) if sdk else []
     signer = max(candidates, key=lambda path: tuple(int(n) for n in re.findall(r"\d+", path.parent.name))) if candidates else shutil.which("apksigner")
-    if not signer: return "APK signatures: **NOT VERIFIED**", ["apksigner was not found"]
+    if not signer:
+        (diagnostics / "tool.txt").write_text("apksigner was not found\n", encoding="utf-8")
+        return "APK signatures: **NOT VERIFIED**", ["apksigner was not found; see diagnostics/apk-signatures/tool.txt"]
+    try:
+        version = subprocess.run([str(signer), "version"], capture_output=True, text=True)
+        tool_details = (f"Tool: {signer}\nVersion exit code: {version.returncode}\n"
+                        f"stdout:\n{version.stdout}\nstderr:\n{version.stderr}\n")
+    except OSError as failure:
+        tool_details = f"Tool: {signer}\nVersion could not be read: {failure}\n"
+    (diagnostics / "tool.txt").write_text(tool_details, encoding="utf-8")
+    problems = []
     certificates = []
+    could_not_start = False
     for relative in ("debug/BattleCity-debug.apk", "androidTest/debug/BattleCity-debug-androidTest.apk"):
+        apk = build_dir / "outputs/apk" / relative
+        log = diagnostics / f"{apk.name}.txt"
+        details = f"Tool: {signer}\nAPK: {apk}\n"
         try:
-            run = subprocess.run([str(signer), "verify", "--print-certs", str(build_dir / "outputs/apk" / relative)],
+            run = subprocess.run([str(signer), "verify", "--print-certs", str(apk)],
                                  capture_output=True, text=True)
-        except OSError:
-            return "APK signatures: **NOT VERIFIED**", ["apksigner could not be started"]
-        match = re.search(r"Signer #1 certificate SHA-256 digest: ([0-9a-f]+)", run.stdout)
+        except OSError as failure:
+            log.write_text(details + f"Could not start apksigner: {failure}\n", encoding="utf-8")
+            problems.append(f"apksigner could not be started for {relative}; see {log.relative_to(build_dir)}")
+            could_not_start = True
+            continue
+        log.write_text(details + f"Exit code: {run.returncode}\nstdout:\n{run.stdout}\nstderr:\n{run.stderr}\n", encoding="utf-8")
+        match = re.search(r"^Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]{64})\r?$", run.stdout, re.MULTILINE)
         if run.returncode or not match:
-            return "APK signatures: **FAILED**", [f"Signature verification failed: {relative}"]
-        certificates.append(match[1])
+            reason = f"exit code {run.returncode}" if run.returncode else "certificate SHA-256 digest is missing or invalid"
+            problems.append(f"Signature verification failed: {relative} ({reason}); see {log.relative_to(build_dir)}")
+            continue
+        certificates.append(match[1].lower())
+    if problems:
+        status = "NOT VERIFIED" if could_not_start else "FAILED"
+        return f"APK signatures: **{status}**; tool: `{signer}`", problems
     if certificates[0] != certificates[1]:
         return "APK signatures: **FAILED**", ["Application and instrumentation APK certificates differ"]
     return f"Both APK signatures verified; certificate SHA-256: `{certificates[0]}`", []

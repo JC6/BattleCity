@@ -27,6 +27,7 @@ import org.jiangc.bc.game.BattleSession;
 import org.jiangc.bc.audio.GameAudio;
 import org.jiangc.bc.game.Game;
 import org.jiangc.bc.game.GameState;
+import org.jiangc.bc.game.TitleSession;
 import org.jiangc.bc.input.InputHub;
 import org.jiangc.bc.input.InputHub.Button;
 import org.junit.After;
@@ -100,7 +101,7 @@ public class TvLifecycleTest {
             if (condition.getAsBoolean()) return;
             SystemClock.sleep(20);
         } while (SystemClock.uptimeMillis() < deadline);
-        fail(message + " (timeout " + TIMEOUT_MS + " ms)");
+        throw DeviceTestDiagnostics.timeout(message, TIMEOUT_MS, null);
     }
 
     private static <A extends Activity> void awaitActivity(
@@ -137,7 +138,7 @@ public class TvLifecycleTest {
             throw new AssertionError("Engine task failed", cause);
         } catch (TimeoutException failure) {
             pending.get().cancel(false);
-            throw new AssertionError("Engine task timed out; engine must be running", failure);
+            throw DeviceTestDiagnostics.timeout("Engine task timed out; engine must be running", TIMEOUT_MS, failure);
         }
     }
 
@@ -150,7 +151,7 @@ public class TvLifecycleTest {
             if (matched[0]) return;
             SystemClock.sleep(20);
         } while (SystemClock.uptimeMillis() < deadline);
-        fail(message + " (timeout " + TIMEOUT_MS + " ms)");
+        throw DeviceTestDiagnostics.timeout(message, TIMEOUT_MS, null);
     }
 
     private static void awaitStarted(ActivityScenario<Level1Activity> scenario) throws Exception {awaitStarted(scenario,101);}
@@ -475,15 +476,26 @@ public class TvLifecycleTest {
                 .filter(thread -> thread.isAlive() && thread.getName().equals("BattleCity audio")).count();
     }
 
-    @Test public void titleDoesNotAdvanceWhileStopped() {
+    @Test public void titleDoesNotAdvanceWhileStopped() throws Exception {
         try (ActivityScenario<MainMenuActivity> scenario = ActivityScenario.launch(MainMenuActivity.class)) {
-            awaitActivity(scenario, "Title must load", activity ->
-                    activity.hasWindowFocus() && activity.getEngine().getScene() != null);
+            awaitReady(scenario);
+            AtomicReference<TitleSession> title = new AtomicReference<>();
+            int[] initial = {0};
+            onEngine(scenario, activity -> {
+                title.set(activity.title());
+                initial[0] = title.get().elapsed;
+            });
+            awaitEngine(scenario, "Title must advance after launch", a -> a.title().elapsed != initial[0]);
             scenario.moveToState(Lifecycle.State.CREATED);
+            int stopped = title.get().elapsed;
             // Backgrounded title must not navigate or run its attract mode.
             SystemClock.sleep(2300);
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             assertEquals(Lifecycle.State.CREATED, scenario.getState());
+            assertEquals("Stopped title must retain its logical frame", stopped, title.get().elapsed);
+            scenario.moveToState(Lifecycle.State.RESUMED);
+            awaitReady(scenario);
+            awaitEngine(scenario, "Title must advance after resume", a -> a.title().elapsed != stopped);
         }
     }
 
