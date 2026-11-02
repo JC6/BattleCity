@@ -267,7 +267,7 @@ V2 Signer: certificate MD5 digest: 4efa2d677cea1f1aff0d97c3353d7047
         self.write_report(results.GROUPS[1][1], count, wrapped=True)
         summary, problems = self.evaluate()
         self.assertEqual([], problems)
-        self.assertIn(f"| API 34 device | {count} | 0 | 0 | 0 |", summary)
+        self.assertIn(f"| API 34 TV device | {count} | 0 | 0 | 0 |", summary)
 
 
 if __name__ == "__main__":

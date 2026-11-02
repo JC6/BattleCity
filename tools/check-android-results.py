@@ -13,8 +13,8 @@ import xml.etree.ElementTree as ET
 
 GROUPS = (
     ("JVM", "test-results/testDebugUnitTest", 163),
-    ("API 34 device", "outputs/androidTest-results/api-34", 43),
-    ("API 37.2 device", "outputs/androidTest-results/api-37.2", 43),
+    ("API 34 TV device", "outputs/androidTest-results/api-34", 43),
+    ("API 37.2 phone / 16 KB device", "outputs/androidTest-results/api-37.2", 43),
 )
 
 
@@ -59,8 +59,8 @@ def evaluate(build_dir, build_status, device_statuses, commit, local=False):
         "Data: **shared source-generated game data**; no external pack is required.",
         "These checks validate the adaptation and Android framework, not a complete pixel-exact original-game match.", "",
         f"Build / unit tests / lint: **{build_status}**",
-        f"API 34 emulator test command: **{device_statuses.get('34', 'not run')}**",
-        f"API 37.2 emulator test command: **{device_statuses.get('37.2', 'not run')}**", "",
+        f"API 34 Android TV / x86 test command: **{device_statuses.get('34', 'not run')}**",
+        f"API 37.2 phone / x86_64 / 16 KB test command: **{device_statuses.get('37.2', 'not run')}**", "",
         "| Suite | Tests | Failures | Errors | Skipped |",
         "|---|---:|---:|---:|---:|",
     ]

@@ -16,13 +16,18 @@ mkdir -p "$results" "$reports" "$diagnostics"
 
 collect_results() {
   status=$?
+  local copy_status
   trap - EXIT
   adb logcat -d -v threadtime > "$diagnostics/device-logcat.txt" 2>&1 || true
   if [[ -d build/outputs/androidTest-results/connected ]]; then
-    cp -a build/outputs/androidTest-results/connected/. "$results/" || status=1
+    cp -a build/outputs/androidTest-results/connected/. "$results/" || {
+      copy_status=$?; if [[ "$status" == 0 ]]; then status=$copy_status; fi
+    }
   fi
   if [[ -d build/reports/androidTests/connected ]]; then
-    cp -a build/reports/androidTests/connected/. "$reports/" || status=1
+    cp -a build/reports/androidTests/connected/. "$reports/" || {
+      copy_status=$?; if [[ "$status" == 0 ]]; then status=$copy_status; fi
+    }
   fi
   if [[ "$status" != 0 ]]; then
     adb shell dumpsys window windows > "$diagnostics/window-state.txt" 2>&1 || true
@@ -71,6 +76,50 @@ preflight() {
   printf 'Verified API %s\n' "$version"
 }
 
+read_device_value() {
+  local status
+  if device_value=$(adb "$@" 2>&1); then status=0; else status=$?; fi
+  printf 'adb'
+  printf ' %s' "$@"
+  printf ' (exit %s):\n%s\n' "$status" "$device_value"
+  if [[ "$status" != 0 ]]; then return "$status"; fi
+  device_value=${device_value//$'\r'/}
+}
+
+verify_environment() {
+  local expected_abi feature leanback=false
+  if [[ "$version" == 34 ]]; then expected_abi=x86; else expected_abi=x86_64; fi
+  read_device_value shell getprop ro.product.cpu.abi || return "$?"
+  if [[ "$device_value" != "$expected_abi" ]]; then
+    printf 'Expected ABI %s, found <%s>\n' "$expected_abi" "$device_value" >&2
+    return 1
+  fi
+  read_device_value shell pm list features || return "$?"
+  while IFS= read -r feature; do
+    case "$feature" in
+      feature:android.software.leanback|feature:android.software.leanback=*) leanback=true ;;
+    esac
+  done <<< "$device_value"
+  if [[ "$version" == 34 ]]; then
+    if [[ "$leanback" != true ]]; then
+      echo 'API 34 TV image requires android.software.leanback' >&2
+      return 1
+    fi
+    echo 'Verified Android TV API 34, ABI x86, Leanback feature'
+  else
+    if [[ "$leanback" == true ]]; then
+      echo 'API 37.2 phone image must not advertise Leanback' >&2
+      return 1
+    fi
+    read_device_value shell getconf PAGE_SIZE || return "$?"
+    if [[ "$device_value" != 16384 ]]; then
+      printf 'Expected 16 KB pages (16384), found <%s>\n' "$device_value" >&2
+      return 1
+    fi
+    echo 'Verified phone API 37.2, ABI x86_64, 16 KB pages'
+  fi
+}
+
 prepare_display() {
   local phase value status
   local -a adb_args
@@ -109,6 +158,7 @@ prepare_display() {
 }
 
 preflight 2>&1 | tee "$diagnostics/preflight.txt"
+verify_environment 2>&1 | tee -a "$diagnostics/preflight.txt"
 engine_diagnostics=${BATTLECITY_ENGINE_DIAGNOSTICS:-false}
 case "$engine_diagnostics" in
   true|false) ;;
@@ -116,6 +166,8 @@ case "$engine_diagnostics" in
 esac
 printf 'Engine diagnostics requested: %s\n' "$engine_diagnostics" | tee -a "$diagnostics/preflight.txt"
 adb logcat -c
-prepare_display 2>&1 | tee -a "$diagnostics/preflight.txt"
+if [[ "$version" == 37.2 ]]; then
+  prepare_display 2>&1 | tee -a "$diagnostics/preflight.txt"
+fi
 bash ./gradlew connectedDebugAndroidTest --stacktrace \
   "-Pandroid.testInstrumentationRunnerArguments.battlecityEngineDiagnostics=$engine_diagnostics"

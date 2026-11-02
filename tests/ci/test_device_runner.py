@@ -24,6 +24,11 @@ class DeviceRunnerTest(unittest.TestCase):
         adb.write_text("""#!/usr/bin/env bash
 test "$ANDROID_SERIAL" = emulator-5554 || exit 98
 printf 'adb %s\\n' "$*" >> "$COMMAND_LOG"
+if [[ "$*" == "${FAKE_ENV_FAIL_COMMAND:-none}" ]]; then
+  echo 'fixture environment stdout'
+  echo 'fixture environment stderr' >&2
+  exit "$FAKE_ADB_EXIT"
+fi
 if [[ "${3:-}" == "$FAKE_FAIL_PROPERTY" ]]; then
   echo 'fixture property read failed' >&2
   exit "$FAKE_ADB_EXIT"
@@ -39,6 +44,13 @@ case "$*" in
   'shell getprop ro.build.version.sdk') printf '%s%s\\n' "$FAKE_API" "$FAKE_CR" ;;
   'shell getprop ro.build.version.sdk_full') printf '%s%s\\n' "$FAKE_FULL" "$FAKE_CR" ;;
   'shell getprop ro.build.version.sdk_minor') printf '%s%s\\n' "$FAKE_MINOR" "$FAKE_CR" ;;
+  'shell getprop ro.product.cpu.abi')
+    if [[ "$FAKE_API" == 34 ]]; then abi=x86; else abi=x86_64; fi
+    printf '%s%s\\n' "${FAKE_ABI-$abi}" "$FAKE_CR" ;;
+  'shell pm list features')
+    if [[ "$FAKE_API" == 34 ]]; then features=feature:android.software.leanback; else features=feature:android.software.activities; fi
+    printf '%s%s\\n' "${FAKE_FEATURES-$features}" "$FAKE_CR" ;;
+  'shell getconf PAGE_SIZE') printf '%s%s\\n' "${FAKE_PAGE_SIZE-16384}" "$FAKE_CR" ;;
   'shell settings --user current get secure immersive_mode_confirmations')
     if [[ -f "$SETTING_STATE" ]]; then
       setting_failure after
@@ -65,7 +77,9 @@ esac
         (self.root / "gradlew").write_text("""#!/usr/bin/env bash
 set -eu
 test "$ANDROID_SERIAL" = emulator-5554
-test "$FAKE_SETTING_INITIAL" = confirmed || test "$(cat "$SETTING_STATE")" = confirmed
+if [[ "$FAKE_API" != 34 ]]; then
+  test "$FAKE_SETTING_INITIAL" = confirmed || test "$(cat "$SETTING_STATE")" = confirmed
+fi
 echo gradle >> "$COMMAND_LOG"
 printf '%s\\n' "$@" > "$GRADLE_ARGUMENTS"
 test ! -f build/outputs/androidTest-results/connected/TEST-stale.xml
@@ -118,6 +132,96 @@ exit "$FAKE_EXIT"
     def run_script(self, version):
         return subprocess.run(["bash", str(SCRIPT), version], cwd=self.root, env=self.env,
                               text=True, capture_output=True, timeout=10)
+
+    def use_phone(self):
+        self.env.update(FAKE_API="37", FAKE_FULL="37.2")
+
+    def test_tv_requires_leanback_and_leaves_phone_settings_untouched(self):
+        self.env["FAKE_SETTINGS_FAIL_PHASE"] = "write"
+        run = self.run_script("34")
+        self.assertEqual(0, run.returncode, run.stderr)
+        commands = self.commands.read_text()
+        self.assertIn("adb shell pm list features", commands)
+        self.assertNotIn("shell settings", commands)
+        self.assertFalse(self.setting.exists())
+        self.assertIn("Verified Android TV API 34, ABI x86, Leanback feature",
+                      (self.root / "build/diagnostics/api-34/preflight.txt").read_text())
+
+    def test_wrong_abi_cannot_run_tests_or_reuse_old_reports(self):
+        for version, abi in (("34", "x86_64"), ("34", "armeabi-v7a"),
+                             ("37.2", "x86"), ("37.2", "arm64-v8a")):
+            with self.subTest(version=version, abi=abi):
+                stale = self.stale(f"build/outputs/androidTest-results/api-{version}")
+                self.env.update(FAKE_API=version.split(".")[0], FAKE_FULL=version, FAKE_ABI=abi)
+                self.assertEqual(1, self.run_script(version).returncode)
+                self.assertFalse(stale.exists())
+                self.assertNotIn("gradle", self.commands.read_text().splitlines())
+                log = (self.root / f"build/diagnostics/api-{version}/preflight.txt").read_text()
+                self.assertIn("Expected ABI", log)
+                self.assertIn("Runner exit status: 1", log)
+
+    def test_phone_and_tv_images_cannot_replace_each_other(self):
+        for version, features in (("34", ""), ("34", "feature:android.software.leanback_only"),
+                                  ("34", "feature:android.software.activities"),
+                                  ("37.2", "feature:android.software.leanback")):
+            with self.subTest(version=version, features=features):
+                stale = self.stale(f"build/outputs/androidTest-results/api-{version}")
+                self.env.update(FAKE_API=version.split(".")[0], FAKE_FULL=version,
+                                FAKE_FEATURES=features)
+                self.assertEqual(1, self.run_script(version).returncode)
+                self.assertFalse(stale.exists())
+                self.assertNotIn("gradle", self.commands.read_text().splitlines())
+                log = (self.root / f"build/diagnostics/api-{version}/preflight.txt").read_text()
+                self.assertIn("Leanback" if version == "37.2" else "leanback", log)
+
+    def test_tv_accepts_a_versioned_leanback_feature(self):
+        self.env.update(FAKE_FEATURES="feature:android.software.activities\r\nfeature:android.software.leanback=1\r")
+        run = self.run_script("34")
+        self.assertEqual(0, run.returncode, run.stderr)
+
+    def test_phone_requires_real_16_kb_pages(self):
+        self.use_phone()
+        for page_size in ("4096", "65536", "", "garbage"):
+            with self.subTest(page_size=page_size):
+                stale = self.stale("build/outputs/androidTest-results/api-37.2")
+                self.env["FAKE_PAGE_SIZE"] = page_size
+                self.assertEqual(1, self.run_script("37.2").returncode)
+                self.assertFalse(stale.exists())
+                self.assertNotIn("gradle", self.commands.read_text().splitlines())
+                log = (self.root / "build/diagnostics/api-37.2/preflight.txt").read_text()
+                self.assertIn("Expected 16 KB pages (16384)", log)
+
+    def test_environment_read_failures_preserve_output_and_original_status(self):
+        for version, command in (("34", "shell getprop ro.product.cpu.abi"),
+                                 ("34", "shell pm list features"),
+                                 ("37.2", "shell getprop ro.product.cpu.abi"),
+                                 ("37.2", "shell pm list features"),
+                                 ("37.2", "shell getconf PAGE_SIZE")):
+            with self.subTest(version=version, command=command):
+                stale = self.stale(f"build/outputs/androidTest-results/api-{version}")
+                self.env.update(FAKE_API=version.split(".")[0], FAKE_FULL=version,
+                                FAKE_ENV_FAIL_COMMAND=command)
+                self.assertEqual(17, self.run_script(version).returncode)
+                self.assertFalse(stale.exists())
+                self.assertNotIn("gradle", self.commands.read_text().splitlines())
+                diagnostic = self.root / f"build/diagnostics/api-{version}"
+                log = (diagnostic / "preflight.txt").read_text()
+                for expected in (f"adb {command} (exit 17)", "fixture environment stdout",
+                                 "fixture environment stderr", "Runner exit status: 17"):
+                    self.assertIn(expected, log)
+                self.assertTrue((diagnostic / "device-logcat.txt").exists())
+                self.assertTrue((diagnostic / "window-state.txt").exists())
+
+    def test_result_copy_failure_does_not_replace_the_original_test_failure(self):
+        copy = self.root / "bin/cp"
+        copy.write_text("#!/usr/bin/env bash\nexit 23\n")
+        copy.chmod(0o755)
+        for test_status, expected in (("7", 7), ("0", 23)):
+            with self.subTest(test_status=test_status):
+                self.env["FAKE_EXIT"] = test_status
+                self.assertEqual(expected, self.run_script("34").returncode)
+                log = (self.root / "build/diagnostics/api-34/preflight.txt").read_text()
+                self.assertIn(f"Runner exit status: {expected}", log)
 
     def test_success_replaces_stale_results_and_preserves_other_platform(self):
         self.stale("build/outputs/androidTest-results/connected")
@@ -202,58 +306,58 @@ exit "$FAKE_EXIT"
                 self.assertEqual([], list(stale.parent.glob("TEST-*.xml")))
                 self.assertIn("Expected", (self.root / "build/diagnostics/api-37.2/preflight.txt").read_text())
 
-    def test_display_preparation_is_verified_before_gradle_on_both_platforms(self):
+    def test_display_preparation_is_verified_before_gradle_on_phone(self):
+        self.use_phone()
         get = "adb shell settings --user current get secure immersive_mode_confirmations"
         put = "adb shell settings --user current put secure immersive_mode_confirmations confirmed"
-        for version in ("34", "37.2"):
-            for initial in ("null", "", "unexpected"):
-                with self.subTest(version=version, initial=initial):
-                    self.setting.unlink(missing_ok=True)
-                    self.commands.unlink(missing_ok=True)
-                    self.env.update(FAKE_API=version.split(".")[0],
-                                    FAKE_FULL="37.2" if version == "37.2" else "",
-                                    FAKE_SETTING_INITIAL=initial)
-                    run = self.run_script(version)
-                    self.assertEqual(0, run.returncode, run.stderr)
-                    self.assertEqual("confirmed", self.setting.read_text())
-                    commands = self.commands.read_text().splitlines()
-                    self.assertEqual([get, put, get], [c for c in commands if " shell settings " in c])
-                    self.assertLess(commands.index("adb logcat -c"), commands.index(get))
-                    self.assertLess(commands.index(put) + 1, commands.index("gradle"))
-                    self.assertEqual(get, commands[commands.index("gradle") - 1])
-                    log = (self.root / f"build/diagnostics/api-{version}/preflight.txt").read_text()
-                    self.assertIn(f"{get} (exit 0):\n{initial}\n", log)
-                    self.assertIn("Verified immersive mode tutorial confirmation", log)
-                    self.assertIn("Runner exit status: 0", log)
+        for initial in ("null", "", "unexpected"):
+            with self.subTest(initial=initial):
+                self.setting.unlink(missing_ok=True)
+                self.commands.unlink(missing_ok=True)
+                self.env["FAKE_SETTING_INITIAL"] = initial
+                run = self.run_script("37.2")
+                self.assertEqual(0, run.returncode, run.stderr)
+                self.assertEqual("confirmed", self.setting.read_text())
+                commands = self.commands.read_text().splitlines()
+                self.assertEqual([get, put, get], [c for c in commands if " shell settings " in c])
+                self.assertLess(commands.index("adb logcat -c"), commands.index(get))
+                self.assertLess(commands.index(put) + 1, commands.index("gradle"))
+                self.assertEqual(get, commands[commands.index("gradle") - 1])
+                log = (self.root / "build/diagnostics/api-37.2/preflight.txt").read_text()
+                self.assertIn(f"{get} (exit 0):\n{initial}\n", log)
+                self.assertIn("Verified immersive mode tutorial confirmation", log)
+                self.assertIn("Runner exit status: 0", log)
 
     def test_display_confirmation_is_idempotent_and_skips_an_unnecessary_write(self):
+        self.use_phone()
         for initial in ("confirmed", "null"):
             with self.subTest(initial=initial):
                 self.setting.unlink(missing_ok=True)
                 self.commands.unlink(missing_ok=True)
                 self.env["FAKE_SETTING_INITIAL"] = initial
                 for _ in range(2):
-                    run = self.run_script("34")
+                    run = self.run_script("37.2")
                     self.assertEqual(0, run.returncode, run.stderr)
                 commands = self.commands.read_text().splitlines()
                 writes = [c for c in commands if " put secure immersive_mode_confirmations " in c]
                 self.assertEqual(0 if initial == "confirmed" else 1, len(writes))
                 self.assertEqual(2, commands.count("gradle"))
-                log = (self.root / "build/diagnostics/api-34/preflight.txt").read_text()
+                log = (self.root / "build/diagnostics/api-37.2/preflight.txt").read_text()
                 self.assertIn("Immersive mode tutorial is already confirmed", log)
 
     def test_settings_command_failure_stops_tests_and_preserves_diagnostics(self):
+        self.use_phone()
         for phase in ("before", "write", "after"):
             with self.subTest(phase=phase):
                 self.setting.unlink(missing_ok=True)
                 self.commands.unlink(missing_ok=True)
-                stale = self.stale("build/outputs/androidTest-results/api-34")
+                stale = self.stale("build/outputs/androidTest-results/api-37.2")
                 self.stale("build/outputs/androidTest-results/connected")
                 self.env["FAKE_SETTINGS_FAIL_PHASE"] = phase
-                self.assertEqual(23, self.run_script("34").returncode)
+                self.assertEqual(23, self.run_script("37.2").returncode)
                 self.assertEqual([], list(stale.parent.glob("TEST-*.xml")))
                 self.assertNotIn("gradle", self.commands.read_text().splitlines())
-                diagnostic = self.root / "build/diagnostics/api-34"
+                diagnostic = self.root / "build/diagnostics/api-37.2"
                 log = (diagnostic / "preflight.txt").read_text()
                 self.assertIn(f"Display preparation {phase}:", log)
                 self.assertIn("(exit 23):", log)
@@ -265,27 +369,29 @@ exit "$FAKE_EXIT"
                 self.assertIn("mCurrentFocus=Window{fixture.focus}", (diagnostic / "window-state.txt").read_text())
 
     def test_successful_settings_write_requires_a_matching_readback(self):
+        self.use_phone()
         for readback in ("null", "", "unconfirmed"):
             with self.subTest(readback=readback):
                 self.setting.unlink(missing_ok=True)
                 self.commands.unlink(missing_ok=True)
-                stale = self.stale("build/outputs/androidTest-results/api-34")
+                stale = self.stale("build/outputs/androidTest-results/api-37.2")
                 self.env["FAKE_SETTING_READBACK"] = readback
-                self.assertEqual(1, self.run_script("34").returncode)
+                self.assertEqual(1, self.run_script("37.2").returncode)
                 self.assertEqual([], list(stale.parent.glob("TEST-*.xml")))
                 self.assertNotIn("gradle", self.commands.read_text().splitlines())
-                log = (self.root / "build/diagnostics/api-34/preflight.txt").read_text()
+                log = (self.root / "build/diagnostics/api-37.2/preflight.txt").read_text()
                 self.assertIn(f"Expected immersive_mode_confirmations=<confirmed>, found <{readback}>", log)
                 self.assertIn("Runner exit status: 1", log)
 
     def test_window_dump_failure_does_not_mask_preparation_or_test_failure(self):
+        self.use_phone()
         for fault, expected in (("preparation", 23), ("gradle", 7)):
             with self.subTest(fault=fault):
                 self.setting.unlink(missing_ok=True)
                 self.env.update(FAKE_WINDOW_EXIT="19", FAKE_EXIT="7" if fault == "gradle" else "0",
                                 FAKE_SETTINGS_FAIL_PHASE="write" if fault == "preparation" else "none")
-                self.assertEqual(expected, self.run_script("34").returncode)
-                diagnostic = self.root / "build/diagnostics/api-34"
+                self.assertEqual(expected, self.run_script("37.2").returncode)
+                diagnostic = self.root / "build/diagnostics/api-37.2"
                 self.assertIn(f"Runner exit status: {expected}", (diagnostic / "preflight.txt").read_text())
                 self.assertIn("fixture window dump failed", (diagnostic / "window-state.txt").read_text())
                 self.assertIn("simulated emulator log", (diagnostic / "device-logcat.txt").read_text())
@@ -300,7 +406,7 @@ class KvmPreparationTest(unittest.TestCase):
         self.node = self.root / "kvm"
         self.node.symlink_to("/dev/null")
         step = WORKFLOW.read_text().split("      - name: Enable emulator acceleration\n", 1)[1]
-        step = step.split("      - name: API 34 framework smoke tests\n", 1)[0]
+        step = step.split("      - name: API 34 TV framework smoke tests\n", 1)[0]
         self.script = textwrap.dedent(step.split("        run: |\n", 1)[1]).replace("/dev/kvm", str(self.node))
         binary = self.root / "bin"
         binary.mkdir()
