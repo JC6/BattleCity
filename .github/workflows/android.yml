@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      engine_diagnostics:
+        description: Collect engine and activity lifecycle diagnostics
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -18,6 +23,8 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      BATTLECITY_ENGINE_DIAGNOSTICS: ${{ github.event_name == 'workflow_dispatch' && inputs.engine_diagnostics || false }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v6

@@ -57,6 +57,8 @@ BUILD_STATUS=success python3 tools/check-android-results.py --local
 
 报告位于 `build/reports/android-acceptance.md`，自动验收见 [Android CI](.github/workflows/android.yml)。
 
+日常构建和 CI 默认关闭引擎诊断；设备测试超时仍会保留线程栈。需要详细生命周期、引擎启停调用栈和帧计数时，手动运行 Android CI 并勾选 `engine_diagnostics`。在模拟器内运行测试脚本时也可设置 `BATTLECITY_ENGINE_DIAGNOSTICS=true`；测试在 Activity 启动前读取参数，清理结束后复位开关，非可调试构建始终关闭诊断。
+
 Web 在 Linux / WSL 的 `web` 目录执行：
 
 ```sh

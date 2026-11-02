@@ -36,7 +36,8 @@ public abstract class TvGameActivity extends BaseGameActivity implements Control
     private final OnBackInvokedCallback backCallback = this::onBackRequested;
 
     @Override protected void onCreate(Bundle state) {
-        lifecycleDiagnostics = (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        lifecycleDiagnostics = TvEngine.diagnosticsRequestedForTests()
+                && (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
         super.onCreate(state);
         getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                 OnBackInvokedDispatcher.PRIORITY_DEFAULT, backCallback);
@@ -181,7 +182,7 @@ public abstract class TvGameActivity extends BaseGameActivity implements Control
     private void traceLifecycle(String event) {
         if (!lifecycleDiagnostics || !(mEngine instanceof TvEngine engine)) return;
         engine.recordActivityState(event + " foreground=" + foreground
-                + " windowFocus=" + hasWindowFocus() + " engineFocus=" + mHasWindowFocused
+                + " windowFocus=" + hasWindowFocus()
                 + " sceneLoaded=" + (mEngine.getScene() != null)
                 + " finishing=" + isFinishing() + " destroyed=" + isDestroyed()
                 + " surface=" + (mRenderSurfaceView == null ? "absent"

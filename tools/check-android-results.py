@@ -13,8 +13,8 @@ import xml.etree.ElementTree as ET
 
 GROUPS = (
     ("JVM", "test-results/testDebugUnitTest", 163),
-    ("API 34 device", "outputs/androidTest-results/api-34", 41),
-    ("API 37.2 device", "outputs/androidTest-results/api-37.2", 41),
+    ("API 34 device", "outputs/androidTest-results/api-34", 43),
+    ("API 37.2 device", "outputs/androidTest-results/api-37.2", 43),
 )
 
 

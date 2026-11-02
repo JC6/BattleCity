@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.app.ActivityManager;
 import android.content.Intent;
 import android.graphics.Insets;
+import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import android.view.KeyEvent;
 import android.view.View;
@@ -15,6 +16,8 @@ import androidx.test.core.app.ActivityScenario;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.EnumSet;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
@@ -48,7 +51,7 @@ public class TvLifecycleTest {
 
     private TestControllers devices;
     @Before public void beforeTest() {
-        DeviceTestDiagnostics.reset();
+        DeviceTestDiagnostics.begin();
         clearSyntheticControllers();
         InstrumentationRegistry.getInstrumentation().runOnMainSync(()->{
             BattleCityApplication app=ApplicationProvider.getApplicationContext();devices=new TestControllers(app);
@@ -59,10 +62,13 @@ public class TvLifecycleTest {
 
     @After public void afterTest() {
         // Every ActivityScenario is closed by try-with-resources, including on assertion failure.
-        clearSyntheticControllers();
-        InstrumentationRegistry.getInstrumentation().runOnMainSync(()->devices.close());
-        await("Audio worker must exit after activity destruction", () -> audioWorkers() == 0);
-        DeviceTestDiagnostics.reset();
+        try {
+            clearSyntheticControllers();
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(()->devices.close());
+            await("Audio worker must exit after activity destruction", () -> audioWorkers() == 0);
+        } finally {
+            DeviceTestDiagnostics.end();
+        }
     }
 
     private static void clearSyntheticControllers() {
@@ -522,6 +528,57 @@ public class TvLifecycleTest {
     private static long audioWorkers() {
         return Thread.getAllStackTraces().keySet().stream()
                 .filter(thread -> thread.isAlive() && thread.getName().equals("BattleCity audio")).count();
+    }
+
+    @Test public void normalLifecycleDoesNotCollectDiagnostics() throws Exception {
+        checkDiagnosticLifecycle(false);
+    }
+
+    @Test public void optedInLifecycleCollectsDiagnostics() throws Exception {
+        checkDiagnosticLifecycle(true);
+    }
+
+    private void checkDiagnosticLifecycle(boolean enabled) throws Exception {
+        TvEngine.requestDiagnosticsForTests(enabled);
+        try (ActivityScenario<MainMenuActivity> scenario = ActivityScenario.launch(MainMenuActivity.class)) {
+            awaitReady(scenario);
+            AtomicReference<TvEngine> engine = new AtomicReference<>();
+            scenario.onActivity(activity -> engine.set((TvEngine) activity.getEngine()));
+            var saved = background(scenario);
+            int stopped = ((TitleSession) saved.model()).elapsed;
+            restore(scenario, saved);
+            awaitEngine(scenario, "Title must advance after resume with either diagnostic setting",
+                    activity -> activity.title().elapsed != stopped);
+            if (enabled) {
+                await("Diagnostic mode must observe a completed frame", () ->
+                        lifecycleLogs(engine.get()).contains("first draw completed"));
+                String snapshot = engine.get().diagnosticSnapshot();
+                assertTrue(snapshot, snapshot.contains("Engine.start caller"));
+                assertTrue(snapshot, snapshot.contains("Engine.stop caller"));
+                assertTrue(snapshot, snapshot.contains("renderThread=GLThread"));
+                assertTrue(snapshot, snapshot.contains("updateThread=UpdateThread"));
+                String logs = lifecycleLogs(engine.get());
+                assertTrue(logs, logs.contains("onPause"));
+                assertTrue(logs, logs.contains("onResume"));
+            } else {
+                assertTrue(engine.get().diagnosticSnapshot().contains("disabled (not collected)"));
+                assertEquals("Normal lifecycle must not emit diagnostic logs", "", lifecycleLogs(engine.get()));
+            }
+        }
+    }
+
+    private static String lifecycleLogs(TvEngine engine) {
+        String identity = "engine@" + Integer.toHexString(System.identityHashCode(engine));
+        String command = "logcat -d -v brief --pid=" + android.os.Process.myPid()
+                + " -s BattleCityLifecycle:D *:S";
+        try (var input = new ParcelFileDescriptor.AutoCloseInputStream(
+                InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand(command))) {
+            return new String(input.readAllBytes(), StandardCharsets.UTF_8).lines()
+                    .filter(line -> line.contains(identity))
+                    .collect(java.util.stream.Collectors.joining("\n"));
+        } catch (IOException failure) {
+            throw new AssertionError("Could not read lifecycle diagnostic logs", failure);
+        }
     }
 
     @Test public void titleDoesNotAdvanceWhileStopped() throws Exception {

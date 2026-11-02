@@ -57,7 +57,7 @@ public class TvMenuFlowTest {
     };
 
     @Before public void beforeTest() {
-        DeviceTestDiagnostics.reset();
+        DeviceTestDiagnostics.begin();
         app = ApplicationProvider.getApplicationContext();
         app.memory().clearConstruction();
         clearSyntheticControllers();
@@ -79,11 +79,14 @@ public class TvMenuFlowTest {
             awaitUi("All launched activities must be destroyed", () ->
                     activities.stream().allMatch(Activity::isDestroyed));
         } finally {
-            ui(() -> app.unregisterActivityLifecycleCallbacks(callbacks));
-            clearSyntheticControllers();
-            ui(()->devices.close());
-            await("Audio workers must exit even after a failed assertion", () -> audioWorkers() == 0);
-            DeviceTestDiagnostics.reset();
+            try {
+                ui(() -> app.unregisterActivityLifecycleCallbacks(callbacks));
+                clearSyntheticControllers();
+                ui(()->devices.close());
+                await("Audio workers must exit even after a failed assertion", () -> audioWorkers() == 0);
+            } finally {
+                DeviceTestDiagnostics.end();
+            }
         }
     }
 

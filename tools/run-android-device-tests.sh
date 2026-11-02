@@ -109,6 +109,13 @@ prepare_display() {
 }
 
 preflight 2>&1 | tee "$diagnostics/preflight.txt"
+engine_diagnostics=${BATTLECITY_ENGINE_DIAGNOSTICS:-false}
+case "$engine_diagnostics" in
+  true|false) ;;
+  *) echo 'BATTLECITY_ENGINE_DIAGNOSTICS must be true or false' | tee -a "$diagnostics/preflight.txt" >&2; exit 2 ;;
+esac
+printf 'Engine diagnostics requested: %s\n' "$engine_diagnostics" | tee -a "$diagnostics/preflight.txt"
 adb logcat -c
 prepare_display 2>&1 | tee -a "$diagnostics/preflight.txt"
-bash ./gradlew connectedDebugAndroidTest --stacktrace
+bash ./gradlew connectedDebugAndroidTest --stacktrace \
+  "-Pandroid.testInstrumentationRunnerArguments.battlecityEngineDiagnostics=$engine_diagnostics"

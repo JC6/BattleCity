@@ -8,6 +8,7 @@ import org.anddev.andengine.engine.options.EngineOptions;
 
 /** Freezes model updates while allowing the foreground pause overlay to animate. */
 final class TvEngine extends Engine {
+    private static volatile boolean diagnosticsRequestedForTests;
     private volatile boolean explicitlyPaused;
     private final boolean diagnostics;
     private final String identity;
@@ -23,6 +24,14 @@ final class TvEngine extends Engine {
         super(options);
         this.diagnostics = diagnostics;
         identity = owner + " engine@" + Integer.toHexString(System.identityHashCode(this));
+    }
+
+    static void requestDiagnosticsForTests(boolean requested) {
+        diagnosticsRequestedForTests = requested;
+    }
+
+    static boolean diagnosticsRequestedForTests() {
+        return diagnosticsRequestedForTests;
     }
 
     synchronized void setExplicitlyPaused(boolean paused) {
@@ -113,6 +122,7 @@ final class TvEngine extends Engine {
 
     /** Read cached diagnostics without waiting for the UI thread or the engine monitor. */
     String diagnosticSnapshot() {
+        if (!diagnostics) return identity + " diagnostics=disabled (not collected)\n";
         return identity + " diagnostics=" + diagnostics + "\n" + activityState
                 + "\nrunning=" + diagnosticRunning + " explicitlyPaused=" + explicitlyPaused
                 + " starts=" + starts

@@ -67,17 +67,20 @@ set -eu
 test "$ANDROID_SERIAL" = emulator-5554
 test "$FAKE_SETTING_INITIAL" = confirmed || test "$(cat "$SETTING_STATE")" = confirmed
 echo gradle >> "$COMMAND_LOG"
+printf '%s\\n' "$@" > "$GRADLE_ARGUMENTS"
 test ! -f build/outputs/androidTest-results/connected/TEST-stale.xml
 mkdir -p build/outputs/androidTest-results/connected
 echo '<testsuite tests="1"><testcase name="fresh"/></testsuite>' > build/outputs/androidTest-results/connected/TEST-new.xml
 exit "$FAKE_EXIT"
 """)
         self.commands = self.root / "commands.txt"
+        self.arguments = self.root / "gradle-arguments.txt"
         self.setting = self.root / "immersive-setting.txt"
         self.env = dict(os.environ, PATH=str(binary) + os.pathsep + os.environ["PATH"],
                         EMULATOR_PORT="5554", FAKE_API="34", FAKE_MINOR="0", FAKE_FULL="",
                         FAKE_FAIL_PROPERTY="none", FAKE_ADB_EXIT="17", FAKE_CR="", FAKE_EXIT="0",
                         COMMAND_LOG=str(self.commands), SETTING_STATE=str(self.setting),
+                        GRADLE_ARGUMENTS=str(self.arguments),
                         FAKE_SETTING_INITIAL="null", FAKE_SETTING_READBACK="confirmed",
                         FAKE_SETTINGS_FAIL_PHASE="none", FAKE_SETTINGS_EXIT="23", FAKE_WINDOW_EXIT="0")
 
@@ -86,6 +89,31 @@ exit "$FAKE_EXIT"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("stale report")
         return path
+
+    def test_diagnostics_argument_defaults_off_and_can_be_enabled(self):
+        for requested in (None, "true", "false"):
+            with self.subTest(requested=requested):
+                self.env.pop("BATTLECITY_ENGINE_DIAGNOSTICS", None)
+                if requested is not None:
+                    self.env["BATTLECITY_ENGINE_DIAGNOSTICS"] = requested
+                run = self.run_script("34")
+                self.assertEqual(0, run.returncode, run.stdout + run.stderr)
+                value = requested or "false"
+                self.assertIn(
+                    "-Pandroid.testInstrumentationRunnerArguments.battlecityEngineDiagnostics=" + value,
+                    self.arguments.read_text().splitlines())
+                self.assertIn("Engine diagnostics requested: " + value,
+                              (self.root / "build/diagnostics/api-34/preflight.txt").read_text())
+
+    def test_invalid_diagnostics_setting_fails_without_running_gradle(self):
+        self.env["BATTLECITY_ENGINE_DIAGNOSTICS"] = "yes"
+        run = self.run_script("34")
+        self.assertEqual(2, run.returncode)
+        self.assertNotIn("gradle", self.commands.read_text().splitlines())
+        diagnostic = self.root / "build/diagnostics/api-34"
+        self.assertIn("must be true or false", (diagnostic / "preflight.txt").read_text())
+        self.assertIn("Runner exit status: 2", (diagnostic / "preflight.txt").read_text())
+        self.assertTrue((diagnostic / "window-state.txt").exists())
 
     def run_script(self, version):
         return subprocess.run(["bash", str(SCRIPT), version], cwd=self.root, env=self.env,

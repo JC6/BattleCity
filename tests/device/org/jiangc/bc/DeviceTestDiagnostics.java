@@ -2,6 +2,7 @@ package org.jiangc.bc;
 
 import android.os.SystemClock;
 import android.util.Log;
+import androidx.test.platform.app.InstrumentationRegistry;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Map;
@@ -12,7 +13,20 @@ final class DeviceTestDiagnostics {
 
     private DeviceTestDiagnostics() { }
 
-    static void reset() { observedEngine = null; }
+    static void begin() {
+        end();
+        String requested = InstrumentationRegistry.getArguments()
+                .getString("battlecityEngineDiagnostics", "false");
+        if (!requested.equals("true") && !requested.equals("false")) {
+            throw new IllegalArgumentException("battlecityEngineDiagnostics must be true or false");
+        }
+        TvEngine.requestDiagnosticsForTests(Boolean.parseBoolean(requested));
+    }
+
+    static void end() {
+        observedEngine = null;
+        TvEngine.requestDiagnosticsForTests(false);
+    }
 
     /** Called on the UI thread while a test is already inspecting its target activity. */
     static void observe(TvGameActivity activity) {
