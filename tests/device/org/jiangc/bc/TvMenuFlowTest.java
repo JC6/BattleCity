@@ -379,8 +379,11 @@ public class TvMenuFlowTest {
         ui(()->{TestControllers.scan(menu,101,0x13a);TestControllers.scan(menu,101,0x13a);});pairStart(menu,202);
         ConstructionActivity editor=child(ConstructionActivity.class,null);awaitUi("Pair must own the editor",editor::editing);
         ui(()->TestControllers.scan(editor,101,0x223));awaitEngine(editor,"Left dpad must move cursor",()->editor.construction().x()==1);
-        ui(()->{TestControllers.scan(editor,202,0x130);TestControllers.scan(editor,202,0x130);});
-        awaitEngine(editor,"Right button must paint and cycle",()->editor.construction().code()==1);
+        ui(()->TestControllers.scan(editor,202,0x131));
+        awaitEngine(editor,"First right A must paint the current block",()->
+                editor.construction().code()==0 && editor.construction().tiles()[3]==1);
+        ui(()->TestControllers.scan(editor,202,0x131));
+        awaitEngine(editor,"Second right A must cycle forward",()->editor.construction().code()==1);
         ui(()->{devices.disconnect(202);assertTrue(((TvEngine)editor.getEngine()).isExplicitlyPaused());devices.joycon(404,descriptorPrefix+202,false);});
         leftAxes(editor,101,0,0);pairStart(editor,404);
         ui(()->{assertFalse(editor.isFinishing());assertFalse(((TvEngine)editor.getEngine()).isExplicitlyPaused());});
