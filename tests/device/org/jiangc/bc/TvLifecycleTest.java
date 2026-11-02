@@ -1,6 +1,8 @@
 package org.jiangc.bc;
 
+import android.accessibilityservice.AccessibilityService;
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.Intent;
 import android.graphics.Insets;
 import android.os.SystemClock;
@@ -125,6 +127,47 @@ public class TvLifecycleTest {
         });
     }
 
+    private record Backgrounded<A extends TvGameActivity>(
+            A activity, ActivityManager.AppTask task, Object model) { }
+
+    private static Object screenModel(TvGameActivity activity) {
+        if (activity instanceof Level1Activity battle) return battle.session();
+        if (activity instanceof ConstructionActivity editor) return editor.construction();
+        if (activity instanceof MainMenuActivity menu) return menu.title();
+        throw new AssertionError("Unexpected activity " + activity.getClass());
+    }
+
+    private static <A extends TvGameActivity> Backgrounded<A> background(ActivityScenario<A> scenario) {
+        AtomicReference<Backgrounded<A>> saved = new AtomicReference<>();
+        scenario.onActivity(activity -> {
+            DeviceTestDiagnostics.observe(activity);
+            ActivityManager manager = activity.getSystemService(ActivityManager.class);
+            ActivityManager.AppTask task = manager.getAppTasks().stream()
+                    .filter(candidate -> candidate.getTaskInfo().taskId == activity.getTaskId())
+                    .findFirst().orElseThrow(() -> new AssertionError("Original app task must exist"));
+            saved.set(new Backgrounded<>(activity, task, screenModel(activity)));
+        });
+        // Exercise a real background transition without AndroidX's shared EmptyActivity,
+        // whose delayed finish broadcast can race with a later moveToState(CREATED).
+        assertTrue("HOME must be available", InstrumentationRegistry.getInstrumentation()
+                .getUiAutomation().performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME));
+        await("HOME must stop the original activity", () -> scenario.getState() == Lifecycle.State.CREATED);
+        awaitActivity(scenario, "Background window must lose focus", activity ->
+                !activity.foreground && !activity.hasWindowFocus());
+        return saved.get();
+    }
+
+    private static <A extends TvGameActivity> void restore(
+            ActivityScenario<A> scenario, Backgrounded<A> saved) {
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(saved.task()::moveToFront);
+        await("Original task must resume", () -> scenario.getState() == Lifecycle.State.RESUMED);
+        awaitReady(scenario);
+        scenario.onActivity(activity -> {
+            assertSame("Returning must retain the activity", saved.activity(), activity);
+            assertSame("Returning must retain the screen model", saved.model(), screenModel(activity));
+        });
+    }
+
     private static <A extends TvGameActivity> void onEngine(ActivityScenario<A> scenario,
             Consumer<A> action) throws Exception {
         AtomicReference<FutureTask<Void>> pending = new AtomicReference<>();
@@ -213,7 +256,7 @@ public class TvLifecycleTest {
             scenario.onActivity(a->{a.onControllerDisconnected(a.controllers().hub.player(101));assertFalse(((TvEngine)a.getEngine()).isExplicitlyPaused());a.onWindowFocusChanged(false);a.onWindowFocusChanged(true);});
             stable(scenario);
             scenario.onActivity(a->{TestControllers.press(a,101,Button.START);assertTrue(((TvEngine)a.getEngine()).isExplicitlyPaused());TestControllers.press(a,202,Button.START);assertFalse(((TvEngine)a.getEngine()).isExplicitlyPaused());});
-            scenario.moveToState(Lifecycle.State.CREATED);scenario.moveToState(Lifecycle.State.RESUMED);awaitReady(scenario);stable(scenario);
+            var saved=background(scenario);restore(scenario,saved);stable(scenario);
         }
     }
     @Test public void coopDisconnectRequiresAllControllersAndManualResume()throws Exception{
@@ -429,7 +472,7 @@ public class TvLifecycleTest {
                 activity.controllers().hub.key(101,KeyEvent.KEYCODE_DPAD_RIGHT,Button.RIGHT,true,false);
                 activity.onInputChanged();activity.onWindowFocusChanged(false);
             });
-            scenario.moveToState(Lifecycle.State.CREATED);scenario.moveToState(Lifecycle.State.RESUMED);awaitReady(scenario);
+            var saved=background(scenario);restore(scenario,saved);
             scenario.onActivity(activity->{
                 connect(activity,303,101);activity.onInputChanged();assertTrue(((TvEngine)activity.getEngine()).isExplicitlyPaused());
                 activity.onButtons(303,EnumSet.of(Button.START),true);assertFalse(activity.isFinishing());
@@ -491,15 +534,14 @@ public class TvLifecycleTest {
                 initial[0] = title.get().elapsed;
             });
             awaitEngine(scenario, "Title must advance after launch", a -> a.title().elapsed != initial[0]);
-            scenario.moveToState(Lifecycle.State.CREATED);
+            var saved = background(scenario);
             int stopped = title.get().elapsed;
             // Backgrounded title must not navigate or run its attract mode.
             SystemClock.sleep(2300);
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             assertEquals(Lifecycle.State.CREATED, scenario.getState());
             assertEquals("Stopped title must retain its logical frame", stopped, title.get().elapsed);
-            scenario.moveToState(Lifecycle.State.RESUMED);
-            awaitReady(scenario);
+            restore(scenario, saved);
             awaitEngine(scenario, "Title must advance after resume", a -> a.title().elapsed != stopped);
         }
     }
@@ -569,12 +611,10 @@ public class TvLifecycleTest {
                 assertTrue("Foreground audio must acquire focus", player.acquireFocus());
                 player.pause(true, false);
             });
-            scenario.moveToState(Lifecycle.State.CREATED);
-            awaitActivity(scenario, "Background window must lose focus", a -> !a.hasWindowFocus());
+            var saved = background(scenario);
             InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
                     assertFalse("Background audio must reject focus", audio.get().acquireFocus()));
-            scenario.moveToState(Lifecycle.State.RESUMED);
-            awaitActivity(scenario, "Window must regain focus", Activity::hasWindowFocus);
+            restore(scenario, saved);
             scenario.onActivity(a -> {
                 assertTrue("Foreground retry must remain possible", audio.get().acquireFocus());
                 audio.get().close();

@@ -160,11 +160,13 @@ public class TvMenuFlowTest {
         int high = app.memory().highScore();
         remote(menu, KeyEvent.KEYCODE_DPAD_DOWN);
         remote(menu, KeyEvent.KEYCODE_DPAD_CENTER);
-        awaitUi("Missing controllers must show a title notice",()->menu.hint.getText().toString().contains("两只"));
+        awaitUi("Missing controllers must show a title notice",()->menu.hint.getVisibility()==android.view.View.VISIBLE
+                && menu.hint.getText().toString().equals(menu.getString(R.string.need_two_controllers)));
         ui(()->assertEquals(1,activities.size()));
         awaitUi("Title must accept the next confirmation",menu::acceptingInput);
         connect(101);remote(menu,KeyEvent.KEYCODE_DPAD_CENTER);
-        awaitUi("One controller must show a notice",()->menu.hint.getText().toString().contains("两只"));
+        awaitUi("One controller must show a notice",()->menu.hint.getVisibility()==android.view.View.VISIBLE
+                && menu.hint.getText().toString().equals(menu.getString(R.string.need_two_controllers)));
         ui(()->assertEquals(1,activities.size()));
         awaitUi("Title must accept the next confirmation",menu::acceptingInput);
         connect(202);remote(menu,KeyEvent.KEYCODE_DPAD_CENTER);
@@ -373,7 +375,7 @@ public class TvMenuFlowTest {
         pairStart(battle,202);awaitEngine(battle,"Second plus must start after resuming selection",()->battle.session()!=null);
     }
     @Test public void pairEditsWithBothHalvesAndReconnectsPaused()throws Exception{
-        MainMenuActivity menu=launchMenu();connectPair();
+        MainMenuActivity menu=launchMenu();connectPair();joinMenuPair();
         ui(()->{TestControllers.scan(menu,101,0x13a);TestControllers.scan(menu,101,0x13a);});pairStart(menu,202);
         ConstructionActivity editor=child(ConstructionActivity.class,null);awaitUi("Pair must own the editor",editor::editing);
         ui(()->TestControllers.scan(editor,101,0x223));awaitEngine(editor,"Left dpad must move cursor",()->editor.construction().x()==1);
@@ -382,7 +384,7 @@ public class TvMenuFlowTest {
         ui(()->{devices.disconnect(202);assertTrue(((TvEngine)editor.getEngine()).isExplicitlyPaused());devices.joycon(404,descriptorPrefix+202,false);});
         leftAxes(editor,101,0,0);pairStart(editor,404);
         ui(()->{assertFalse(editor.isFinishing());assertFalse(((TvEngine)editor.getEngine()).isExplicitlyPaused());});
-        pairStart(editor,404);awaitUi("Next plus must save and return",editor::isDestroyed);awaitReady(menu);
+        pairStart(editor,404);awaitUi("Next plus must save and return",editor::isDestroyed);awaitReturnedMenu(menu);
         ui(()->assertNotNull(app.memory().customTiles()));
     }
     @Test public void remainingSecondControllerCanStartFromTitleAfterPairDisconnects()throws Exception{
@@ -458,6 +460,7 @@ public class TvMenuFlowTest {
         awaitUi("Missing left half must be visible without a successful key",()->menu.hint.getVisibility()==android.view.View.VISIBLE&&menu.hint.getText().toString().contains("缺左"));
         ui(()->devices.numberedJoycon(101,descriptorPrefix+101,true));
         awaitUi("Completing the pair must clear its notice",()->menu.hint.getVisibility()==android.view.View.GONE);
+        joinMenuPair();
         ui(()->TestControllers.numberedPress(menu,101,9));awaitEngine(menu,"Numbered minus must select coop",()->menu.title().selected==1);
     }
     @Test public void matchingSensorNodeDoesNotBecomeAnExtraLeftHalf()throws Exception{
@@ -486,6 +489,7 @@ public class TvMenuFlowTest {
     @Test public void titleSourceChangeDiscardsQueuedOldMenuActions()throws Exception{
         MainMenuActivity menu=launchMenu();
         ui(()->{devices.numberedJoycon(101,descriptorPrefix+101,true);devices.numberedJoycon(202,descriptorPrefix+202,false);});
+        joinMenuPair();
         onEngine(menu,()->ui(()->{
             TestControllers.numberedPress(menu,101,9);
             devices.joycon(101,descriptorPrefix+101,true);
@@ -533,7 +537,7 @@ public class TvMenuFlowTest {
         wirePress(editor,kind,left,right,Button.RIGHT);
         awaitEngine(editor,"Direction must move the editor cursor",()->editor.construction().x()==1);
         wirePress(editor,kind,left,right,Button.START);
-        awaitUi("Plus must save and return",editor::isDestroyed);awaitReady(menu);
+        awaitUi("Plus must save and return",editor::isDestroyed);awaitReturnedMenu(menu);
         wirePress(menu,kind,left,right,Button.SELECT);
         awaitEngine(menu,"Minus after construction must select single player",()->menu.title().selected==0);
         wirePress(menu,kind,left,right,Button.START);
@@ -555,7 +559,7 @@ public class TvMenuFlowTest {
         ui(()->assertTrue(((TvEngine)battle.getEngine()).isExplicitlyPaused()));
         wirePress(battle,kind,left,right,Button.START);
         ui(()->assertFalse(((TvEngine)battle.getEngine()).isExplicitlyPaused()));
-        ui(battle::finish);awaitUi("Battle must finish",battle::isDestroyed);awaitReady(menu);
+        ui(battle::finish);awaitUi("Battle must finish",battle::isDestroyed);awaitReturnedMenu(menu);
         ui(menu::onBackRequested);
         awaitUi("Exit dialog must reopen",()->menu.currentDialog()!=null&&menu.currentDialog().isShowing());
         dialogPress(menu,kind,left,right,Button.RIGHT);
@@ -577,6 +581,9 @@ public class TvMenuFlowTest {
         TestControllers.numberedKey(target,id,number,down);
     }
     private void connectPair(){ui(()->{devices.joycon(101,descriptorPrefix+101,true);devices.joycon(202,descriptorPrefix+202,false);});}
+    // Like connect(id), arrange an assigned menu controller. Other tests exercise
+    // joining through real START events; discovery alone must not join this pair.
+    private void joinMenuPair(){ui(()->assertEquals("Complete pair must be assigned to 1P",0,app.controllers().hub.join(202)));}
     private static void pairStart(TvGameActivity activity,int rightId){ui(()->TestControllers.scan(activity,rightId,0x13b));}
     private static void leftAxes(android.view.Window.Callback target,int id,float x,float y){ui(()->TestControllers.rawAxes(target,id,new int[]{0,1},new float[]{x,y}));}
     private static void arena(Level1Activity battle,AtomicBoolean first,AtomicBoolean second)throws Exception{
@@ -659,8 +666,7 @@ public class TvMenuFlowTest {
 
     private void returned(MainMenuActivity menu, Activity child, int high, int first, int second) throws Exception {
         awaitUi("Child activity must finish", child::isDestroyed);
-        awaitReady(menu);
-        awaitEngine(menu,"Completed game must scroll back into the menu",()->menu.title().screen==TitleSession.MENU);
+        awaitReturnedMenu(menu);
         ui(() -> {
             assertSame("The original menu must resume", menu, resumed);
             assertEquals("Returning must not create another menu", 1,
@@ -670,10 +676,22 @@ public class TvMenuFlowTest {
         });
         awaitEngine(menu, "Visible menu records must refresh", () -> {
             String row=menu.displayedRow(24);
-            return row.substring(4,10).strip().equals(""+(first%1000000)) && row.substring(14,20).strip().equals(""+(high%1000000))
-                && (!app.memory().lastCoop() || row.substring(23,29).strip().equals(""+(second%1000000)));
+            return row.substring(4,10).strip().equals(menuScore(first)) && row.substring(14,20).strip().equals(menuScore(high))
+                && (!app.memory().lastCoop() || row.substring(23,29).strip().equals(menuScore(second)));
         });
         await("Returning to the menu must release audio", () -> audioWorkers() == 0);
+    }
+
+    private static String menuScore(int value) {
+        int displayed = value % 1_000_000;
+        return displayed == 0 ? "00" : Integer.toString(displayed);
+    }
+
+    private void awaitReturnedMenu(MainMenuActivity menu) throws Exception {
+        awaitReady(menu);
+        // Window focus can return before the queued engine reset is executed.
+        awaitEngine(menu, "Returned menu must accept input and render its selection", () ->
+                menu.acceptingInput() && menu.displayedMenuSelection() == menu.title().selected);
     }
 
     private static void start(Level1Activity battle) throws Exception {
