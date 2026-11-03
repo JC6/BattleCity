@@ -417,6 +417,56 @@ public class TvMenuFlowTest {
             InstrumentationRegistry.getInstrumentation().setInTouchMode(touchMode[0]);
         }
     }
+    private static final class CountingSprite extends org.anddev.andengine.entity.sprite.Sprite {
+        int sizeUpdates;
+        CountingSprite(org.anddev.andengine.entity.sprite.Sprite original) {
+            super(0, 0, original.getTextureRegion());
+            setSize(original.getWidth(), original.getHeight());
+            sizeUpdates = 0;
+        }
+        @Override public void setSize(float width, float height) {
+            sizeUpdates++;
+            super.setSize(width, height);
+        }
+    }
+
+    @Test @SuppressWarnings("unchecked")
+    public void repeatedSpriteSizesDoNotRewriteGeometry() throws Exception {
+        MainMenuActivity menu = launchMenu();
+        onEngine(menu, () -> {
+            try {
+                BattleRenderer renderer = new BattleRenderer(menu, menu.getEngine());
+                // An isolated scene exercises the pool without replacing the visible GL scene.
+                renderer.attach(new org.anddev.andengine.entity.scene.Scene(1));
+                var displayField = BattleRenderer.class.getDeclaredField("display");
+                displayField.setAccessible(true);
+                Object display = displayField.get(renderer);
+                var canvas = (org.jiangc.bc.presentation.GameRenderer.Canvas) display;
+                canvas.begin();canvas.draw("glyph:A", 0, 0, 8, 8, 0xffffff);canvas.end();
+                var spritesField = display.getClass().getDeclaredField("sprites");
+                spritesField.setAccessible(true);
+                var pool = (java.util.List<org.anddev.andengine.entity.sprite.Sprite>) spritesField.get(display);
+                CountingSprite counted = new CountingSprite(pool.get(0));
+                pool.set(0, counted);
+                for (int repeat = 0; repeat < 3; repeat++) {
+                    canvas.begin();canvas.draw(repeat % 2 == 0 ? "glyph:A" : "glyph:B", 16, 24, 8, 8, 0xff0000);canvas.end();
+                }
+                assertEquals("Texture, color and position changes must not rewrite equal dimensions", 0, counted.sizeUpdates);
+                canvas.begin();canvas.draw("glyph:A", 0, 0, 16, 8, 0xffffff);canvas.end();
+                assertEquals(1, counted.sizeUpdates);assertEquals(16f, counted.getWidth(), 0f);
+                canvas.begin();canvas.draw("glyph:B", 0, 0, 16, 16, 0x00ff00);canvas.end();
+                assertEquals(2, counted.sizeUpdates);assertEquals(16f, counted.getHeight(), 0f);
+                canvas.begin();canvas.draw("glyph:A", 0, 0, 8, 8, 0xffffff);canvas.end();
+                assertEquals(3, counted.sizeUpdates);
+                canvas.begin();canvas.end();
+                canvas.begin();canvas.draw("glyph:B", 8, 8, 8, 8, 0x0000ff);canvas.end();
+                assertEquals("A hidden pooled sprite must retain its dimensions", 3, counted.sizeUpdates);
+            } catch (ReflectiveOperationException | java.io.IOException failure) {
+                throw new AssertionError(failure);
+            }
+        });
+    }
+
     @Test public void actualGlAdapterMatchesSoftwareAcrossSpriteSizesAndPausedScreens()throws Exception{
         MainMenuActivity menu=launchMenu();AtomicReference<BattleRenderer> display=new AtomicReference<>();
         AtomicReference<org.anddev.andengine.entity.scene.Scene> previous=new AtomicReference<>();

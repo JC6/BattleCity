@@ -61,7 +61,7 @@ BUILD_STATUS=success python3 tools/check-android-results.py --local
 
 报告位于 `build/reports/android-acceptance.md`，自动验收见 [Android CI](.github/workflows/android.yml)。
 
-Android CI 使用两条设备通道，每条要求至少 44 项用例通过，失败、错误和跳过均为零：API 34 Android TV（`android-tv`、`x86`、`tv_1080p`）覆盖最低支持版本的电视环境；API 37.2 手机（`google_apis_ps16k`、`x86_64`、`pixel_2`）覆盖新系统和 16 KB 页大小。脚本预检实际 API、ABI、Leanback 特征和手机页大小，保留独立报告；手机通道会预先确认系统全屏引导。
+Android CI 使用两条设备通道，每条要求至少 45 项用例通过，失败、错误和跳过均为零：API 34 Android TV（`android-tv`、`x86`、`tv_1080p`）覆盖最低支持版本的电视环境；API 37.2 手机（`google_apis_ps16k`、`x86_64`、`pixel_2`）覆盖新系统和 16 KB 页大小。脚本预检实际 API、ABI、Leanback 特征和手机页大小，保留独立报告；手机通道会预先确认系统全屏引导。
 
 当前应用及 AndEngine JAR 不含原生 `.so`，保持单 APK 且不限制 ABI；ARMv7 电视仍需满足 API 34 最低系统要求。x86 模拟器回归不代表已完成 ARM 电视的真机验证。
 

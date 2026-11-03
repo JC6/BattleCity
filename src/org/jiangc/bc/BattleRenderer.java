@@ -47,7 +47,9 @@ final class BattleRenderer extends GameRenderer {
             Frame f=frames.get(key);if(f==null)throw new IllegalArgumentException("Missing atlas frame: "+key);Sprite sprite;
             if(used==sprites.size()){sprite=new Sprite(0,0,new TextureRegion(texture,f.x(),f.y(),f.width(),f.height()));sprites.add(sprite);keys.add(key);scene.getLastChild().attachChild(sprite);}
             else {sprite=sprites.get(used);if(!keys.get(used).equals(key)){TextureRegion region=sprite.getTextureRegion();region.setWidth(f.width());region.setHeight(f.height());region.setTexturePosition(f.x(),f.y());keys.set(used,key);}}
-            sprite.setVisible(true);sprite.setPosition(x,y);sprite.setSize(width,height);sprite.setColor((color>>16&255)/255f,(color>>8&255)/255f,(color&255)/255f);used++;
+            sprite.setVisible(true);sprite.setPosition(x,y);
+            if(sprite.getWidth()!=width || sprite.getHeight()!=height)sprite.setSize(width,height);
+            sprite.setColor((color>>16&255)/255f,(color>>8&255)/255f,(color&255)/255f);used++;
         }
         public void end(){for(int i=used;i<sprites.size();i++)sprites.get(i).setVisible(false);}
     }
