@@ -28,13 +28,16 @@ import org.jiangc.bc.input.InputHub;
 import org.jiangc.bc.input.InputHub.Button;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TestName;
 import org.junit.runner.RunWith;
 import static org.junit.Assert.*;
 
 /** Real menu navigation and Android event dispatch with synthetic device discovery. */
 @RunWith(AndroidJUnit4.class)
 public class TvMenuFlowTest {
+    @Rule public final TestName testName = new TestName();
     private static final long TIMEOUT_MS = 10_000;
     private static final String DEVICE_PREFIX = "test-controller-";
     private final String descriptorPrefix = DEVICE_PREFIX + UUID.randomUUID() + "-";
@@ -57,16 +60,18 @@ public class TvMenuFlowTest {
     };
 
     @Before public void beforeTest() {
-        DeviceTestDiagnostics.begin();
+        DeviceTestDiagnostics.begin(getClass().getName() + "#" + testName.getMethodName());
         app = ApplicationProvider.getApplicationContext();
         app.memory().clearConstruction();
         clearSyntheticControllers();
         ui(()->devices=new TestControllers(app));
         await("Previous audio worker must exit", () -> audioWorkers() == 0);
         ui(() -> app.registerActivityLifecycleCallbacks(callbacks));
+        DeviceTestDiagnostics.phase("test body");
     }
 
     @After public void afterTest() {
+        DeviceTestDiagnostics.phase("teardown");
         try {
             // Closing only the root scenario does not guarantee that its children are destroyed.
             ui(() -> {

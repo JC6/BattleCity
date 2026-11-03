@@ -39,13 +39,16 @@ import org.jiangc.bc.input.InputHub;
 import org.jiangc.bc.input.InputHub.Button;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TestName;
 import org.junit.runner.RunWith;
 import static org.junit.Assert.*;
 
 /** Framework tests. Synthetic registry devices do not prove Bluetooth mappings. */
 @RunWith(AndroidJUnit4.class)
 public class TvLifecycleTest {
+    @Rule public final TestName testName = new TestName();
     private static final long TIMEOUT_MS = 10_000;
     private static final String DEVICE_PREFIX = "test-controller-";
     // Disconnected slots retain descriptors. A fresh prefix prevents automatic joins across tests.
@@ -53,16 +56,18 @@ public class TvLifecycleTest {
 
     private TestControllers devices;
     @Before public void beforeTest() {
-        DeviceTestDiagnostics.begin();
+        DeviceTestDiagnostics.begin(getClass().getName() + "#" + testName.getMethodName());
         clearSyntheticControllers();
         InstrumentationRegistry.getInstrumentation().runOnMainSync(()->{
             BattleCityApplication app=ApplicationProvider.getApplicationContext();devices=new TestControllers(app);
             devices.connect(101,descriptorPrefix+101);devices.connect(202,descriptorPrefix+202);
         });
         await("Previous audio worker must exit", () -> audioWorkers() == 0);
+        DeviceTestDiagnostics.phase("test body");
     }
 
     @After public void afterTest() {
+        DeviceTestDiagnostics.phase("teardown");
         // Every ActivityScenario is closed by try-with-resources, including on assertion failure.
         try {
             clearSyntheticControllers();
@@ -146,6 +151,7 @@ public class TvLifecycleTest {
     }
 
     private static <A extends TvGameActivity> Backgrounded<A> background(ActivityScenario<A> scenario) {
+        DeviceTestDiagnostics.phase("background: inspect original task");
         AtomicReference<Backgrounded<A>> saved = new AtomicReference<>();
         scenario.onActivity(activity -> {
             DeviceTestDiagnostics.observe(activity);
@@ -157,9 +163,12 @@ public class TvLifecycleTest {
         });
         // Exercise a real background transition without AndroidX's shared EmptyActivity,
         // whose delayed finish broadcast can race with a later moveToState(CREATED).
+        DeviceTestDiagnostics.phase("background: HOME action");
         assertTrue("HOME must be available", InstrumentationRegistry.getInstrumentation()
                 .getUiAutomation().performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME));
+        DeviceTestDiagnostics.phase("background: await activity stopped");
         await("HOME must stop the original activity", () -> scenario.getState() == Lifecycle.State.CREATED);
+        DeviceTestDiagnostics.phase("background: inspect focus loss");
         awaitActivity(scenario, "Background window must lose focus", activity ->
                 !activity.foreground && !activity.hasWindowFocus());
         return saved.get();
@@ -167,8 +176,11 @@ public class TvLifecycleTest {
 
     private static <A extends TvGameActivity> void restore(
             ActivityScenario<A> scenario, Backgrounded<A> saved) {
+        DeviceTestDiagnostics.phase("restore: move original task to front");
         InstrumentationRegistry.getInstrumentation().runOnMainSync(saved.task()::moveToFront);
+        DeviceTestDiagnostics.phase("restore: await activity resumed");
         await("Original task must resume", () -> scenario.getState() == Lifecycle.State.RESUMED);
+        DeviceTestDiagnostics.phase("restore: await window ready");
         awaitReady(scenario);
         scenario.onActivity(activity -> {
             assertSame("Returning must retain the activity", saved.activity(), activity);
@@ -265,12 +277,31 @@ public class TvLifecycleTest {
     }
 
     @Test public void soloUsesBoundControllerAndLifecycleKeepsPause()throws Exception{
+        DeviceTestDiagnostics.phase("solo: launch selection");
         try(ActivityScenario<Level1Activity> scenario=launchBattle(false,202)){
             awaitReady(scenario);scenario.onActivity(a->{join(a,101);assertTrue(a.selecting());assertFalse(a.started());assertScreenAwake(a,false);});
+            DeviceTestDiagnostics.phase("solo: start bound controller battle");
             awaitStarted(scenario,202);
-            scenario.onActivity(a->{a.onControllerDisconnected(a.controllers().hub.player(101));assertFalse(((TvEngine)a.getEngine()).isExplicitlyPaused());a.onWindowFocusChanged(false);a.onWindowFocusChanged(true);});
+            DeviceTestDiagnostics.phase("solo: unrelated controller disconnect");
+            scenario.onActivity(a->{
+                a.onControllerDisconnected(a.controllers().hub.player(101));
+                assertFalse(((TvEngine)a.getEngine()).isExplicitlyPaused());
+                DeviceTestDiagnostics.phase("solo: synthetic focus loss");
+                a.onWindowFocusChanged(false);
+                DeviceTestDiagnostics.phase("solo: synthetic focus gain");
+                a.onWindowFocusChanged(true);
+            });
+            DeviceTestDiagnostics.phase("solo: verify focus pause");
             stable(scenario);
-            scenario.onActivity(a->{TestControllers.press(a,101,Button.START);assertTrue(((TvEngine)a.getEngine()).isExplicitlyPaused());assertScreenAwake(a,false);TestControllers.press(a,202,Button.START);assertFalse(((TvEngine)a.getEngine()).isExplicitlyPaused());assertScreenAwake(a,true);});
+            DeviceTestDiagnostics.phase("solo: resume controls");
+            scenario.onActivity(a->{
+                DeviceTestDiagnostics.phase("solo: other controller START");
+                TestControllers.press(a,101,Button.START);
+                assertTrue(((TvEngine)a.getEngine()).isExplicitlyPaused());assertScreenAwake(a,false);
+                DeviceTestDiagnostics.phase("solo: owner START");
+                TestControllers.press(a,202,Button.START);
+                assertFalse(((TvEngine)a.getEngine()).isExplicitlyPaused());assertScreenAwake(a,true);
+            });
             var saved=background(scenario);restore(scenario,saved);stable(scenario);
         }
     }
