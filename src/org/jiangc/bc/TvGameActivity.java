@@ -4,6 +4,9 @@ import android.graphics.Color;
 import android.app.AlertDialog;
 import android.content.pm.ApplicationInfo;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -33,6 +36,10 @@ public abstract class TvGameActivity extends BaseGameActivity implements Control
     protected volatile boolean foreground;
     private boolean dialogConfirmDown,dialogBackDown;
     private boolean lifecycleDiagnostics;
+    private boolean screenWindowFocused;
+    private ScreenAwakePolicy screenAwake = new ScreenAwakePolicy(SystemClock::uptimeMillis, 600_000);
+    private final Handler screenHandler = new Handler(Looper.getMainLooper());
+    private final Runnable screenIdleCheck = this::refreshScreenAwake;
     private final OnBackInvokedCallback backCallback = this::onBackRequested;
 
     @Override protected void onCreate(Bundle state) {
@@ -45,6 +52,7 @@ public abstract class TvGameActivity extends BaseGameActivity implements Control
     }
 
     @Override protected void onDestroy() {
+        setScreenAwakeAllowed(false);
         traceLifecycle("onDestroy before");
         getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);
         hideNotice();
@@ -57,6 +65,41 @@ public abstract class TvGameActivity extends BaseGameActivity implements Control
     protected ControllerManager controllers() {
         return ((BattleCityApplication) getApplication()).controllers();
     }
+
+    /** Called only for user-initiated play/edit transitions, never for render frames. */
+    protected final void setScreenAwakeAllowed(boolean allowed) {
+        screenAwake.setAllowed(allowed);
+        refreshScreenAwake();
+    }
+
+    private void refreshScreenAwake() {
+        boolean interactive = foreground && screenWindowFocused && !isFinishing() && !isDestroyed();
+        boolean awake = screenAwake.keepAwake(interactive,
+                interactive && controllers().hasEffectiveHeldInput());
+        int flag = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
+        if (((getWindow().getAttributes().flags & flag) != 0) != awake) {
+            if (awake) getWindow().addFlags(flag);
+            else getWindow().clearFlags(flag);
+        }
+        if (!awake) screenHandler.removeCallbacks(screenIdleCheck);
+        else if (!screenHandler.hasCallbacks(screenIdleCheck)) {
+            screenHandler.postDelayed(screenIdleCheck, screenAwake.nextCheckDelayMillis());
+        }
+    }
+
+    @Override public final void onEffectiveInput() {
+        if (!foreground || !screenWindowFocused) return;
+        screenAwake.effectiveInput();
+        refreshScreenAwake();
+    }
+
+    @Override public final void onResumeGame() {
+        onGameResumed();
+        // AndEngine reacquires SCREEN_ON here, including after asynchronous loading.
+        refreshScreenAwake();
+    }
+
+    protected void onGameResumed() { }
     protected boolean isNintendoController(int id){
         ControllerManager.Pad pad=controllers().pad(id);
         return pad!=null && pad.profile().isNintendo();
@@ -160,6 +203,7 @@ public abstract class TvGameActivity extends BaseGameActivity implements Control
         foreground = true;
         controllers().attach(this);
         super.onResume();
+        refreshScreenAwake();
         traceLifecycle("onResume after");
     }
     @Override protected void onPause() {
@@ -167,16 +211,17 @@ public abstract class TvGameActivity extends BaseGameActivity implements Control
         foreground = false;
         controllers().detach(this);
         super.onPause();
-        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        refreshScreenAwake();
         traceLifecycle("onPause after");
     }
     @Override public void onWindowFocusChanged(boolean hasFocus) {
+        screenWindowFocused = hasFocus;
         traceLifecycle("onWindowFocusChanged(" + hasFocus + ") before");
         controllers().clear();
         resetDialogInput();
         super.onWindowFocusChanged(hasFocus);
-        if (!hasFocus) getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        else GameWindow.hideSystemBars(getWindow());
+        if (hasFocus) GameWindow.hideSystemBars(getWindow());
+        refreshScreenAwake();
         traceLifecycle("onWindowFocusChanged(" + hasFocus + ") after");
     }
     private void traceLifecycle(String event) {

@@ -2,7 +2,6 @@ package org.jiangc.bc;
 
 import android.app.AlertDialog;
 import android.os.SystemClock;
-import android.view.WindowManager;
 import java.io.IOException;
 import java.util.EnumSet;
 import org.anddev.andengine.engine.handler.IUpdateHandler;
@@ -115,7 +114,7 @@ public final class Level1Activity extends TvGameActivity {
         if(selected<0){finish();return;}
         if(coop){if(controllers().hub.playerController(0)==null || controllers().hub.playerController(1)==null){finish();return;}participantSlots[0]=0;participantSlots[1]=1;}
         else participantSlots[0]=selected;
-        clearInput();selecting=true;updateHint();
+        clearInput();selecting=true;setScreenAwakeAllowed(false);updateHint();
     }
     private void start(){
         if(!online()){updateHint();return;}
@@ -126,11 +125,12 @@ public final class Level1Activity extends TvGameActivity {
             campaign=new Campaign(levels,coop,()->(int)SystemClock.elapsedRealtimeNanos(),selection.stage(),custom,memory());
             resetPresentation();transitionPending=false;
         });
-        audio.pause(false,false);updateHint();
+        audio.pause(false,false);setScreenAwakeAllowed(true);updateHint();
     }
     private void clearInput(){controllers().clear();resetDialogInput();input.clear();selectionInput.clear();}
     private void pause(boolean manual){
         if((!started && !selecting) || mEngine==null)return;
+        setScreenAwakeAllowed(false);
         tvEngine().setExplicitlyPaused(true);
         // setExplicitlyPaused has waited for any in-flight engine tick to finish.
         accumulated=0;pauseTick=0;pauseAccumulated=0;clearInput();selection.clearInput();if(audio!=null)audio.pause(true,manual && started);updateHint();
@@ -140,7 +140,7 @@ public final class Level1Activity extends TvGameActivity {
         if(!online()){updateHint();return;}
         if(started && !audio.acquireFocus()){notice(getString(R.string.audio_focus_unavailable));return;}
         hideNotice();clearInput();selection.clearInput();accumulated=0;if(started)audio.pause(false,false);tvEngine().setExplicitlyPaused(false);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);updateHint();
+        setScreenAwakeAllowed(started && !selecting);updateHint();
     }
     @Override public void onButtons(int deviceId,EnumSet<Button> pressed,boolean gamepad){
         if(gamepad)controllers().traceRoute(deviceId,participant(deviceId),dialog!=null?"dialog":
@@ -186,7 +186,7 @@ public final class Level1Activity extends TvGameActivity {
         updateHint();
     }
     @Override public void onPauseGame(){pause(false);}
-    @Override public void onResumeGame(){updateHint();}
+    @Override protected void onGameResumed(){updateHint();}
     @Override public void onWindowFocusChanged(boolean hasFocus){
         super.onWindowFocusChanged(hasFocus);
         input.clear();selectionInput.clear();if(!hasFocus)pause(false);else updateHint();

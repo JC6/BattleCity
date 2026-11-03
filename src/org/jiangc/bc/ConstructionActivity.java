@@ -1,6 +1,5 @@
 package org.jiangc.bc;
 
-import android.view.WindowManager;
 import java.io.IOException;
 import java.util.EnumSet;
 import org.anddev.andengine.engine.handler.IUpdateHandler;
@@ -50,18 +49,19 @@ public final class ConstructionActivity extends TvGameActivity {
     }
     @Override public void onLoadComplete(){loaded=true;runOnUiThread(()->{
         owner=controllers().hub.playerController(0)!=null?0:controllers().hub.playerController(1)!=null?1:-1;
-        if(owner<0){finish();return;}clearInput();editing=true;updateHint();
+        if(owner<0){finish();return;}clearInput();editing=true;setScreenAwakeAllowed(true);updateHint();
     });}
     private void clearInput(){controllers().clear();input.clear();}
     private void pause(){
         if(!editing || mEngine==null)return;
+        setScreenAwakeAllowed(false);
         engine().setExplicitlyPaused(true);accumulated=0;pauseTick=0;pauseAccumulated=0;clearInput();construction.clearInput();
         memory().saveConstruction(construction);updateHint();
     }
     private void resume(){
         if(!online()){updateHint();return;}
         clearInput();construction.clearInput();accumulated=0;engine().setExplicitlyPaused(false);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);updateHint();
+        setScreenAwakeAllowed(true);updateHint();
     }
     @Override public void onButtons(int deviceId,EnumSet<Button> pressed,boolean gamepad){
         if(!foreground || !hasWindowFocus() || !loaded || leaving)return;
@@ -83,7 +83,7 @@ public final class ConstructionActivity extends TvGameActivity {
     }
     @Override public void onControllerDisconnected(int slot){if(slot==owner)pause();updateHint();}
     @Override public void onPauseGame(){pause();}
-    @Override public void onResumeGame(){updateHint();}
+    @Override protected void onGameResumed(){updateHint();}
     @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);input.clear();if(!focus)pause();else updateHint();}
     @Override public void onBackRequested(){if(leaving || !foreground)return;leaving=true;pause();if(editing)memory().finishConstruction();clearInput();finish();}
     private void updateHint(){

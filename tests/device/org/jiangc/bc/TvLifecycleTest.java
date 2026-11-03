@@ -11,6 +11,7 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
+import android.view.WindowManager;
 import androidx.lifecycle.Lifecycle;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.core.app.ApplicationProvider;
@@ -25,6 +26,7 @@ import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -216,12 +218,19 @@ public class TvLifecycleTest {
         });
         // The original JAR runs queued tasks in reverse order. An empty marker is not a barrier.
         awaitEngine(scenario, "Battle session must be created", activity -> activity.session() != null);
+        scenario.onActivity(activity -> assertScreenAwake(activity, true));
+    }
+
+    private static void assertScreenAwake(Activity activity, boolean expected) {
+        assertEquals("Screen-on flag must follow interaction state", expected,
+                (activity.getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0);
     }
 
     private static void stable(ActivityScenario<Level1Activity> scenario) {
         int[] tick = {-1};
         scenario.onActivity(activity -> {
             assertTrue(((TvEngine)activity.getEngine()).isExplicitlyPaused());
+            assertScreenAwake(activity, false);
             synchronized (activity.getEngine()) { tick[0] = activity.session().game.state.tick; }
         });
         // This observation interval tests that a paused simulation does not advance.
@@ -257,11 +266,11 @@ public class TvLifecycleTest {
 
     @Test public void soloUsesBoundControllerAndLifecycleKeepsPause()throws Exception{
         try(ActivityScenario<Level1Activity> scenario=launchBattle(false,202)){
-            awaitReady(scenario);scenario.onActivity(a->{join(a,101);assertTrue(a.selecting());assertFalse(a.started());});
+            awaitReady(scenario);scenario.onActivity(a->{join(a,101);assertTrue(a.selecting());assertFalse(a.started());assertScreenAwake(a,false);});
             awaitStarted(scenario,202);
             scenario.onActivity(a->{a.onControllerDisconnected(a.controllers().hub.player(101));assertFalse(((TvEngine)a.getEngine()).isExplicitlyPaused());a.onWindowFocusChanged(false);a.onWindowFocusChanged(true);});
             stable(scenario);
-            scenario.onActivity(a->{TestControllers.press(a,101,Button.START);assertTrue(((TvEngine)a.getEngine()).isExplicitlyPaused());TestControllers.press(a,202,Button.START);assertFalse(((TvEngine)a.getEngine()).isExplicitlyPaused());});
+            scenario.onActivity(a->{TestControllers.press(a,101,Button.START);assertTrue(((TvEngine)a.getEngine()).isExplicitlyPaused());assertScreenAwake(a,false);TestControllers.press(a,202,Button.START);assertFalse(((TvEngine)a.getEngine()).isExplicitlyPaused());assertScreenAwake(a,true);});
             var saved=background(scenario);restore(scenario,saved);stable(scenario);
         }
     }
@@ -269,7 +278,7 @@ public class TvLifecycleTest {
         try(ActivityScenario<Level1Activity> scenario=launchBattle(true,101)){
             awaitReady(scenario);awaitStarted(scenario);
             scenario.onActivity(a->{devices.disconnect(202);TestControllers.press(a,101,Button.START);assertTrue(((TvEngine)a.getEngine()).isExplicitlyPaused());connect(a,303,202);});
-            stable(scenario);scenario.onActivity(a->{TestControllers.press(a,303,Button.START);assertFalse(((TvEngine)a.getEngine()).isExplicitlyPaused());});
+            stable(scenario);scenario.onActivity(a->{TestControllers.press(a,303,Button.START);assertFalse(((TvEngine)a.getEngine()).isExplicitlyPaused());assertScreenAwake(a,true);});
             onEngine(scenario,a->assertEquals(2,a.session().game.state.players.length));
         }
     }
@@ -460,7 +469,7 @@ public class TvLifecycleTest {
             awaitEngine(scenario,"Owner A must select stage two",a->a.selectedStage()==2);
             scenario.onActivity(a->{a.onWindowFocusChanged(false);a.onWindowFocusChanged(true);});
             SystemClock.sleep(150);
-            scenario.onActivity(a->{assertTrue(((TvEngine)a.getEngine()).isExplicitlyPaused());TestControllers.press(a,202,Button.START);assertTrue(a.selecting());assertFalse(a.started());});
+            scenario.onActivity(a->{assertTrue(((TvEngine)a.getEngine()).isExplicitlyPaused());TestControllers.press(a,202,Button.START);assertTrue(a.selecting());assertFalse(a.started());assertScreenAwake(a,false);});
             awaitStarted(scenario,202);onEngine(scenario,a->assertEquals(2,a.session().game.state.stage));
         }
     }
@@ -470,7 +479,7 @@ public class TvLifecycleTest {
         try(ActivityScenario<ConstructionActivity> scenario=launchEditor()){
             awaitReady(scenario);
             scenario.onActivity(activity->{
-                join(activity,101);assertTrue(activity.editing());
+                join(activity,101);assertTrue(activity.editing());assertScreenAwake(activity,true);
                 activity.onButtons(101,EnumSet.of(Button.A),true);
             });
             awaitEngine(scenario,"Editor A must paint a brick",activity->activity.construction().tiles()[1]==1);
@@ -481,7 +490,8 @@ public class TvLifecycleTest {
             var saved=background(scenario);restore(scenario,saved);
             scenario.onActivity(activity->{
                 connect(activity,303,101);activity.onInputChanged();assertTrue(((TvEngine)activity.getEngine()).isExplicitlyPaused());
-                activity.onButtons(303,EnumSet.of(Button.START),true);assertFalse(activity.isFinishing());
+                assertScreenAwake(activity,false);
+                activity.onButtons(303,EnumSet.of(Button.START),true);assertFalse(activity.isFinishing());assertScreenAwake(activity,true);
             });
             onEngine(scenario,activity->{
                 assertEquals(0,activity.construction().code());
@@ -528,6 +538,55 @@ public class TvLifecycleTest {
     private static long audioWorkers() {
         return Thread.getAllStackTraces().keySet().stream()
                 .filter(thread -> thread.isAlive() && thread.getName().equals("BattleCity audio")).count();
+    }
+
+    @Test public void screenIdleTimeoutTracksOnlyEffectiveInput() throws Exception {
+        AtomicLong now = new AtomicLong();
+        try (ActivityScenario<ConstructionActivity> scenario = launchEditor()) {
+            awaitReady(scenario);
+            scenario.onActivity(activity -> {
+                assertScreenAwake(activity, true);
+                try {
+                    var field = TvGameActivity.class.getDeclaredField("screenAwake");
+                    field.setAccessible(true);
+                    field.set(activity, new ScreenAwakePolicy(now::get, 1_000));
+                } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+                // Pause/resume replaces the original deadline with the short test policy.
+                activity.onWindowFocusChanged(false);
+                activity.onWindowFocusChanged(true);
+                assertScreenAwake(activity, false);
+                TestControllers.press(activity, 101, Button.START);
+                assertScreenAwake(activity, true);
+            });
+            for (int i = 0; i < 11; i++) {
+                now.addAndGet(100);
+                scenario.onActivity(activity -> TestControllers.axes(activity, 101, .1f, -.1f, 0, 0));
+            }
+            awaitActivity(scenario, "Neutral stick noise must not renew the idle deadline", activity ->
+                    (activity.getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) == 0);
+            scenario.onActivity(activity -> {
+                TestControllers.press(activity, 101, Button.A);
+                assertScreenAwake(activity, true);
+                TestControllers.key(activity, 101, Button.RIGHT, true);
+            });
+            now.addAndGet(2_000);
+            // Let the real Handler deadline run while the logical direction remains held.
+            SystemClock.sleep(1_100);
+            scenario.onActivity(activity -> {
+                assertScreenAwake(activity, true);
+                TestControllers.key(activity, 101, Button.RIGHT, false);
+            });
+            now.addAndGet(1_000);
+            awaitActivity(scenario, "Releasing the held direction must allow idle expiration", activity ->
+                    (activity.getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) == 0);
+            scenario.onActivity(activity -> {
+                TestControllers.press(activity, 101, Button.A);
+                assertScreenAwake(activity, true);
+            });
+            var saved = background(scenario);
+            restore(scenario, saved);
+            scenario.onActivity(activity -> assertScreenAwake(activity, false));
+        }
     }
 
     @Test public void normalLifecycleDoesNotCollectDiagnostics() throws Exception {
@@ -584,6 +643,7 @@ public class TvLifecycleTest {
     @Test public void titleDoesNotAdvanceWhileStopped() throws Exception {
         try (ActivityScenario<MainMenuActivity> scenario = ActivityScenario.launch(MainMenuActivity.class)) {
             awaitReady(scenario);
+            scenario.onActivity(activity -> assertScreenAwake(activity, false));
             AtomicReference<TitleSession> title = new AtomicReference<>();
             int[] initial = {0};
             onEngine(scenario, activity -> {
@@ -599,6 +659,7 @@ public class TvLifecycleTest {
             assertEquals(Lifecycle.State.CREATED, scenario.getState());
             assertEquals("Stopped title must retain its logical frame", stopped, title.get().elapsed);
             restore(scenario, saved);
+            scenario.onActivity(activity -> assertScreenAwake(activity, false));
             awaitEngine(scenario, "Title must advance after resume", a -> a.title().elapsed != stopped);
         }
     }

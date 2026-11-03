@@ -27,6 +27,7 @@ public final class ControllerManager implements InputManager.InputDeviceListener
         void onControllerDisconnected(int player);
         void onInputChanged();
         default void onInputProblem(String message) { }
+        default void onEffectiveInput() { }
     }
     public final InputHub hub = new InputHub();
     private final InputManager input;
@@ -142,6 +143,14 @@ public final class ControllerManager implements InputManager.InputDeviceListener
         refresh();changed();
     }
     private void changed() { if (listener != null) listener.onInputChanged(); }
+    private static boolean holding(InputHub.Controller controller) {
+        return controller != null && controller.ready() && !controller.held().isEmpty();
+    }
+    public boolean hasEffectiveHeldInput() {
+        for (int player = 0; player < 2; player++) if (holding(hub.playerController(player))) return true;
+        for (String source : remoteHeld) if (!remoteBlocked.contains(source)) return true;
+        return false;
+    }
     private void ensure(Pad pad){int player=register(pad);if(player>=0&&listener!=null)listener.onControllerDisconnected(player);}
     private static boolean systemKey(int code){
         return code==KeyEvent.KEYCODE_BACK||code==KeyEvent.KEYCODE_HOME||code==KeyEvent.KEYCODE_POWER||
@@ -165,13 +174,18 @@ public final class ControllerManager implements InputManager.InputDeviceListener
         boolean down = event.getAction() == KeyEvent.ACTION_DOWN;
         if (event.getAction() != KeyEvent.ACTION_UP && !down) return false;
         EnumSet<Button> pressed = EnumSet.noneOf(Button.class);
+        boolean effective = false;
         if (gamepad) {
             InputHub.Device d = hub.device(device.id());
+            InputHub.Controller before = hub.controller(d.id);
+            boolean wasHeld = button != null && before != null && before.ready() && before.held().contains(button);
             String source=event.getScanCode()>0?"scan:"+event.getScanCode():"code:"+event.getKeyCode();
             hub.key(d.id, source, button, down, event.getRepeatCount() != 0);
             if(d.takePressed().contains(Button.START)&&joinKey(device,event))hub.join(d.id);
             InputHub.Controller controller=hub.controller(d.id);
             if(controller!=null&&controller.ready())pressed=controller.takePressed();
+            effective = button != null && (wasHeld || (controller != null && controller.ready()
+                    && controller.held().contains(button)));
             int code=event.getKeyCode();
             boolean controllerKey=button!=null||code==KeyEvent.KEYCODE_UNKNOWN||
                     (code>=KeyEvent.KEYCODE_BUTTON_A&&code<=KeyEvent.KEYCODE_BUTTON_MODE)||
@@ -184,9 +198,12 @@ public final class ControllerManager implements InputManager.InputDeviceListener
                 listener.onInputProblem("收到未识别的手柄按键");
         } else {
             String source = event.getDeviceId() + ":" + event.getKeyCode();
+            boolean wasHeld = remoteHeld.contains(source) && !remoteBlocked.contains(source);
             if (!down) { remoteHeld.remove(source); remoteBlocked.remove(source); }
             else if (event.getRepeatCount() == 0 && !remoteBlocked.contains(source) && remoteHeld.add(source)) pressed.add(button);
+            effective = wasHeld || (remoteHeld.contains(source) && !remoteBlocked.contains(source));
         }
+        if (effective && listener != null) listener.onEffectiveInput();
         if (listener != null && !pressed.isEmpty()) listener.onButtons(event.getDeviceId(), pressed, gamepad);
         changed();
         return button != null;
@@ -199,6 +216,7 @@ public final class ControllerManager implements InputManager.InputDeviceListener
                     || event.isFromSource(InputDevice.SOURCE_DPAD)||event.isFromSource(InputDevice.SOURCE_KEYBOARD))))
                 || event.getActionMasked() != MotionEvent.ACTION_MOVE) return false;
         ensure(device);InputHub.Device d=hub.device(device.id());
+        boolean wasHeld = holding(hub.controller(d.id));
         EnumSet<Button> before=debugInput?d.held():null;
         Stick stick=device.stick();
         float x=stick==null?0:event.getAxisValue(stick.xAxis()),y=stick==null?0:event.getAxisValue(stick.yAxis()),
@@ -206,6 +224,7 @@ public final class ControllerManager implements InputManager.InputDeviceListener
         hub.axes(d.id,x,y,hatX,hatY,stick==null?.25f:stick.deadZone());
         d.takePressed();InputHub.Controller controller=hub.controller(d.id);
         EnumSet<Button> pressed=controller!=null&&controller.ready()?controller.takePressed():EnumSet.noneOf(Button.class);
+        if ((wasHeld || holding(controller)) && listener != null) listener.onEffectiveInput();
         if(debugInput&&(motionLogged.add(d.id)||!d.held().equals(before)))Log.d("ControllerInput","id="+d.id+
                 " source=0x"+Integer.toHexString(event.getSource())+" axes=["+x+","+y+","+hatX+","+hatY+"]"+
                 " ready="+(controller!=null&&controller.ready())+" player="+hub.player(d.id)+" held="+d.held());

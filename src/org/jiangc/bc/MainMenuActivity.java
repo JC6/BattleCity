@@ -68,7 +68,7 @@ public final class MainMenuActivity extends TvGameActivity {
         if(action==TitleSession.CONSTRUCTION)startActivity(new Intent(this,ConstructionActivity.class));
         else startActivity(new Intent(this,Level1Activity.class).putExtra("coop",action==TitleSession.COOP));
     }
-    @Override public void onResumeGame(){
+    @Override protected void onGameResumed(){
         controllers().hub.prepareMenu();
         updateControllerNotice();
         if(returning && loaded){

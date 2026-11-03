@@ -650,6 +650,8 @@ public class TvMenuFlowTest {
         AtomicReference<MainMenuActivity> menu = new AtomicReference<>();
         root.onActivity(menu::set);
         awaitReady(menu.get());
+        ui(() -> assertEquals(0, menu.get().getWindow().getAttributes().flags
+                & android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON));
         if(skipScroll){remote(menu.get(),KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE);
             awaitEngine(menu.get(),"Scroll skip must stop at the title",()->menu.get().title().screen==TitleSession.MENU);}
         return menu.get();
@@ -695,6 +697,8 @@ public class TvMenuFlowTest {
 
     private void awaitReturnedMenu(MainMenuActivity menu) throws Exception {
         awaitReady(menu);
+        ui(() -> assertEquals(0, menu.getWindow().getAttributes().flags
+                & android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON));
         // Window focus can return before the queued engine reset is executed.
         awaitEngine(menu, "Returned menu must accept input and render its selection", () ->
                 menu.acceptingInput() && menu.displayedMenuSelection() == menu.title().selected);
