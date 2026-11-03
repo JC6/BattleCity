@@ -165,9 +165,18 @@ case "$engine_diagnostics" in
   *) echo 'BATTLECITY_ENGINE_DIAGNOSTICS must be true or false' | tee -a "$diagnostics/preflight.txt" >&2; exit 2 ;;
 esac
 printf 'Engine diagnostics requested: %s\n' "$engine_diagnostics" | tee -a "$diagnostics/preflight.txt"
+tv_vbo_mode=${BATTLECITY_TV_VBO_MODE:-default}
+case "$tv_vbo_mode" in
+  default|disabled) ;;
+  *) echo 'BATTLECITY_TV_VBO_MODE must be default or disabled' | tee -a "$diagnostics/preflight.txt" >&2; exit 2 ;;
+esac
+vbo_mode=default
+if [[ "$version" == 34 ]]; then vbo_mode=$tv_vbo_mode; fi
+printf 'Render mode requested: %s\n' "$vbo_mode" | tee -a "$diagnostics/preflight.txt"
 adb logcat -c
 if [[ "$version" == 37.2 ]]; then
   prepare_display 2>&1 | tee -a "$diagnostics/preflight.txt"
 fi
 bash ./gradlew connectedDebugAndroidTest --stacktrace \
-  "-Pandroid.testInstrumentationRunnerArguments.battlecityEngineDiagnostics=$engine_diagnostics"
+  "-Pandroid.testInstrumentationRunnerArguments.battlecityEngineDiagnostics=$engine_diagnostics" \
+  "-Pandroid.testInstrumentationRunnerArguments.battlecityVboMode=$vbo_mode"

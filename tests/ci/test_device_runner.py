@@ -119,6 +119,45 @@ exit "$FAKE_EXIT"
                 self.assertIn("Engine diagnostics requested: " + value,
                               (self.root / "build/diagnostics/api-34/preflight.txt").read_text())
 
+    def test_tv_vbo_mode_defaults_and_explicit_values_reach_instrumentation(self):
+        for requested in (None, "default", "disabled"):
+            with self.subTest(requested=requested):
+                self.env.pop("BATTLECITY_TV_VBO_MODE", None)
+                if requested is not None:
+                    self.env["BATTLECITY_TV_VBO_MODE"] = requested
+                run = self.run_script("34")
+                self.assertEqual(0, run.returncode, run.stderr)
+                mode = requested or "default"
+                self.assertIn("-Pandroid.testInstrumentationRunnerArguments.battlecityVboMode=" + mode,
+                              self.arguments.read_text().splitlines())
+                self.assertIn("Render mode requested: " + mode,
+                              (self.root / "build/diagnostics/api-34/preflight.txt").read_text())
+
+    def test_phone_remains_default_during_tv_vbo_experiment(self):
+        self.use_phone()
+        self.env["BATTLECITY_TV_VBO_MODE"] = "disabled"
+        run = self.run_script("37.2")
+        self.assertEqual(0, run.returncode, run.stderr)
+        self.assertIn("-Pandroid.testInstrumentationRunnerArguments.battlecityVboMode=default",
+                      self.arguments.read_text().splitlines())
+
+    def test_invalid_tv_vbo_mode_stops_before_gradle_and_keeps_diagnostics(self):
+        self.env["BATTLECITY_TV_VBO_MODE"] = "yes"
+        run = self.run_script("34")
+        self.assertEqual(2, run.returncode)
+        self.assertNotIn("gradle", self.commands.read_text().splitlines())
+        diagnostic = self.root / "build/diagnostics/api-34"
+        self.assertIn("must be default or disabled", (diagnostic / "preflight.txt").read_text())
+        self.assertTrue((diagnostic / "window-state.txt").exists())
+
+    def test_disabled_vbo_run_preserves_instrumentation_failure(self):
+        self.env.update(BATTLECITY_TV_VBO_MODE="disabled", FAKE_EXIT="7")
+        run = self.run_script("34")
+        self.assertEqual(7, run.returncode)
+        log = (self.root / "build/diagnostics/api-34/preflight.txt").read_text()
+        self.assertIn("Render mode requested: disabled", log)
+        self.assertIn("Runner exit status: 7", log)
+
     def test_invalid_diagnostics_setting_fails_without_running_gradle(self):
         self.env["BATTLECITY_ENGINE_DIAGNOSTICS"] = "yes"
         run = self.run_script("34")

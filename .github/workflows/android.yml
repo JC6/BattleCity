@@ -11,6 +11,11 @@ on:
         description: Collect engine and activity lifecycle diagnostics
         type: boolean
         default: false
+      tv_vbo_mode:
+        description: API 34 TV VBO experiment (disabled is diagnostic only)
+        type: choice
+        default: default
+        options: [default, disabled]
 
 permissions:
   contents: read
@@ -25,6 +30,7 @@ jobs:
     timeout-minutes: 60
     env:
       BATTLECITY_ENGINE_DIAGNOSTICS: ${{ github.event_name == 'workflow_dispatch' && inputs.engine_diagnostics || false }}
+      BATTLECITY_TV_VBO_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.tv_vbo_mode || 'default' }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v6
@@ -106,7 +112,7 @@ jobs:
       - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
-          name: android-reports-${{ github.sha }}
+          name: ${{ github.event_name == 'workflow_dispatch' && format('android-reports-{0}-tv-vbo-{1}-{2}', github.sha, env.BATTLECITY_TV_VBO_MODE, github.run_id) || format('android-reports-{0}', github.sha) }}
           path: |
             build/reports/
             build/test-results/

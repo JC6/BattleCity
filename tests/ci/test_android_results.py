@@ -1,6 +1,8 @@
 """Exercise false-green failure modes of the CI artifact gate without Android dependencies."""
 
 import importlib.util
+import json
+from argparse import Namespace
 from pathlib import Path
 import tempfile
 import unittest
@@ -23,6 +25,8 @@ class AcceptanceResultsTest(unittest.TestCase):
         self.build = Path(self.temporary.name)
         for _, relative, count in results.GROUPS:
             self.write_report(relative, count)
+        for version in ("34", "37.2"):
+            self.write_render_evidence(version)
         lint = self.build / "reports/lint-results-debug.xml"
         lint.parent.mkdir(parents=True)
         lint.write_text('<issues><issue severity="Warning"/></issues>')
@@ -47,9 +51,77 @@ class AcceptanceResultsTest(unittest.TestCase):
         ET.ElementTree(root).write(path)
         return path
 
-    def evaluate(self, build_status="success", device_status="success", device_statuses=None):
+    def write_render_evidence(self, platform, mode="default", **changes):
+        record = dict(requested=mode, activeVbo=mode == "default", optionsDisabled=mode == "disabled",
+                      renderer="Fixture GL renderer", version="Fixture GL version")
+        record.update(changes)
+        path = self.build / f"outputs/androidTest-results/api-{platform}/debug/fixture" / (
+            "logcat-org.jiangc.bc.TvMenuFlowTest-actualGlAdapterMatchesSoftwareAcrossSpriteSizesAndPausedScreens.txt")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("I BattleCityRenderMode: BATTLECITY_RENDER_MODE " + json.dumps(record) + "\n")
+        return path
+
+    def evaluate(self, build_status="success", device_status="success", device_statuses=None, tv_vbo_mode="default"):
         statuses = {"34": device_status, "37.2": device_status} if device_statuses is None else device_statuses
-        return results.evaluate(self.build, build_status, statuses, "fixture-commit")
+        return results.evaluate(self.build, build_status, statuses, "fixture-commit", tv_vbo_mode=tv_vbo_mode)
+
+    def test_disabled_vbo_success_is_diagnostic_only_and_phone_is_default(self):
+        self.write_render_evidence("34", "disabled")
+        summary, problems = self.evaluate(tv_vbo_mode="disabled")
+        self.assertEqual([], problems)
+        self.assertIn(results.DIAGNOSTIC_SUCCESS, summary)
+        self.assertNotIn("**PASSED**", summary)
+        self.assertIn("| API 34 | disabled | false | Fixture GL renderer | Fixture GL version |", summary)
+        self.assertIn("| API 37.2 | default | true |", summary)
+
+    def test_missing_malformed_or_contradictory_render_evidence_fails(self):
+        path = self.write_render_evidence("34")
+        valid = path.read_text()
+        for content in (None, "I BattleCityRenderMode: BATTLECITY_RENDER_MODE {bad}\n",
+                        valid + "I BattleCityRenderMode: BATTLECITY_RENDER_MODE {}\n"):
+            with self.subTest(content=content):
+                if content is None:
+                    path.unlink()
+                else:
+                    path.write_text(content)
+                self.assertTrue(self.evaluate()[1])
+
+    def test_requested_mode_options_actual_state_and_driver_details_are_required(self):
+        for changes in ({"requested": "disabled"}, {"activeVbo": False}, {"activeVbo": "true"},
+                        {"optionsDisabled": True}, {"optionsDisabled": 0},
+                        {"renderer": ""}, {"renderer": None}, {"version": " "}):
+            with self.subTest(changes=changes):
+                self.write_render_evidence("34", **changes)
+                self.assertTrue(self.evaluate()[1])
+
+    def test_disabled_tv_cannot_accept_default_evidence_or_a_disabled_phone(self):
+        self.assertTrue(self.evaluate(tv_vbo_mode="disabled")[1])
+        self.write_render_evidence("34", "disabled")
+        self.write_render_evidence("37.2", "disabled")
+        self.assertTrue(self.evaluate(tv_vbo_mode="disabled")[1])
+
+    def test_other_logs_and_other_platform_cannot_replace_native_gl_evidence(self):
+        path = self.write_render_evidence("34")
+        other = self.build / "diagnostics/api-34/device-logcat.txt"
+        other.parent.mkdir(parents=True, exist_ok=True)
+        other.write_text(path.read_text())
+        path.unlink()
+        self.assertTrue(self.evaluate()[1])
+
+    def test_invalid_tv_mode_cannot_report_success(self):
+        self.assertTrue(self.evaluate(tv_vbo_mode="automatic")[1])
+
+    def test_signature_failure_cannot_leave_a_diagnostic_success_heading(self):
+        with mock.patch.object(results, "Path", return_value=self.build), \
+             mock.patch.object(results, "evaluate", return_value=(results.DIAGNOSTIC_SUCCESS, [])), \
+             mock.patch.object(results, "verify_apks", return_value=("Signatures failed", ["fixture failure"])), \
+             mock.patch.object(results.argparse.ArgumentParser, "parse_args", return_value=Namespace(local=False)), \
+             mock.patch.dict(results.os.environ, {"GITHUB_STEP_SUMMARY": ""}), \
+             mock.patch("builtins.print"):
+            self.assertEqual(1, results.main())
+        summary = (self.build / "reports/android-acceptance.md").read_text()
+        self.assertIn("**NOT ACCEPTED**", summary)
+        self.assertNotIn(results.DIAGNOSTIC_SUCCESS, summary)
 
     def test_local_mode_never_claims_device_acceptance(self):
         for _, relative, _ in results.GROUPS[1:]:

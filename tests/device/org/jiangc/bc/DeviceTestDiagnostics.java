@@ -26,6 +26,7 @@ final class DeviceTestDiagnostics {
         if (!requested.equals("true") && !requested.equals("false")) {
             throw new IllegalArgumentException("battlecityEngineDiagnostics must be true or false");
         }
+        TestRenderMode.begin();
         TvEngine.requestDiagnosticsForTests(Boolean.parseBoolean(requested));
         testName = name;
         testThread = Thread.currentThread();
@@ -37,6 +38,7 @@ final class DeviceTestDiagnostics {
         Watchdog previous = watchdog;
         watchdog = null;
         if (previous != null) previous.close();
+        TestRenderMode.end();
         observedEngine = null;
         testName = "not running";
         testThread = null;

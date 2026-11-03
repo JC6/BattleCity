@@ -487,6 +487,7 @@ public class TvMenuFlowTest {
             var session=new BattleSession(game);var editor=new org.jiangc.bc.game.ConstructionState();
             for(int repeat=0;repeat<2;repeat++){
                 onEngine(menu,()->display.get().title(title,memory));oracle.title(title,memory);awaitPixels(menu,"title pool",0,0,256,240,raster.pixels);
+                if(repeat==0)TestRenderMode.assertEffective(menu);
                 onEngine(menu,()->{
                     game.state.tanks.clear();game.state.bullets.clear();
                     var player=new GameState.Tank();player.playerIndex=0;player.spawnTicks=0;player.x=player.y=64;game.state.tanks.add(player);

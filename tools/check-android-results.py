@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -16,6 +17,7 @@ GROUPS = (
     ("API 34 TV device", "outputs/androidTest-results/api-34", 46),
     ("API 37.2 phone / 16 KB device", "outputs/androidTest-results/api-37.2", 46),
 )
+DIAGNOSTIC_SUCCESS = "**DIAGNOSTIC CHECKS PASSED — production acceptance pending**"
 
 
 def read_results(directory):
@@ -52,8 +54,35 @@ def read_results(directory):
     return counts, problems
 
 
-def evaluate(build_dir, build_status, device_statuses, commit, local=False):
+def read_render_evidence(directory, expected):
+    records, problems = [], []
+    marker = "BATTLECITY_RENDER_MODE "
+    for path in sorted(directory.rglob("logcat-*TvMenuFlowTest-actualGlAdapterMatchesSoftwareAcrossSpriteSizesAndPausedScreens.txt")):
+        try:
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                if marker not in line:
+                    continue
+                record = json.loads(line.split(marker, 1)[1])
+                if (not isinstance(record, dict) or record.get("requested") != expected
+                        or type(record.get("activeVbo")) is not bool
+                        or type(record.get("optionsDisabled")) is not bool
+                        or record["activeVbo"] != (expected == "default")
+                        or record["optionsDisabled"] != (expected == "disabled")
+                        or any(not isinstance(record.get(key), str) or not record[key].strip()
+                               for key in ("renderer", "version"))):
+                    raise ValueError("requested mode, engine options or actual GL state do not match")
+                records.append(record)
+        except (OSError, ValueError, TypeError) as failure:
+            problems.append(f"{path.name}: invalid render-mode evidence ({failure})")
+    if not records:
+        problems.append("render-mode evidence from the native GL pixel test is missing")
+    return records, problems
+
+
+def evaluate(build_dir, build_status, device_statuses, commit, local=False, tv_vbo_mode="default"):
     problems = []
+    if tv_vbo_mode not in ("default", "disabled"):
+        problems.append("TV VBO mode must be default or disabled")
     lines = [
         "# Android framework validation", "", f"Commit: `{commit}`", "",
         "Data: **shared source-generated game data**; no external pack is required.",
@@ -61,6 +90,7 @@ def evaluate(build_dir, build_status, device_statuses, commit, local=False):
         f"Build / unit tests / lint: **{build_status}**",
         f"API 34 Android TV / x86 test command: **{device_statuses.get('34', 'not run')}**",
         f"API 37.2 phone / x86_64 / 16 KB test command: **{device_statuses.get('37.2', 'not run')}**", "",
+        f"Requested render modes: API 34 TV **{tv_vbo_mode}**; API 37.2 phone **default**.", "",
         "| Suite | Tests | Failures | Errors | Skipped |",
         "|---|---:|---:|---:|---:|",
     ]
@@ -83,6 +113,16 @@ def evaluate(build_dir, build_status, device_statuses, commit, local=False):
 
     if local:
         lines.extend(["", "Device tests: **NOT RUN**. The instrumentation APK is compiled only; no emulator or physical device is contacted."])
+    else:
+        lines.extend(["", "| Platform | Requested mode | Active VBO | GL renderer | GL version |",
+                      "|---|---|---|---|---|"])
+        for version, mode in (("34", tv_vbo_mode), ("37.2", "default")):
+            records, errors = read_render_evidence(build_dir / f"outputs/androidTest-results/api-{version}", mode)
+            problems.extend(f"API {version}: {error}" for error in errors)
+            for record in records:
+                renderer = record["renderer"].replace("|", "\\|").replace("\n", " ")
+                gl_version = record["version"].replace("|", "\\|").replace("\n", " ")
+                lines.append(f"| API {version} | {mode} | {str(record['activeVbo']).lower()} | {renderer} | {gl_version} |")
     lint = build_dir / "reports/lint-results-debug.xml"
     try:
         issues = ET.parse(lint).getroot().findall("issue")
@@ -100,7 +140,9 @@ def evaluate(build_dir, build_status, device_statuses, commit, local=False):
             lines.extend(["", f"{label} SHA-256: `{hashlib.sha256(data).hexdigest()}`"])
         except (OSError, ValueError):
             problems.append(f"{label} is missing or empty")
-    lines.extend(["", "**NOT ACCEPTED**" if problems else ("**LOCAL CHECKS PASSED — device validation pending**" if local else "**PASSED**"), ""])
+    success = ("**LOCAL CHECKS PASSED — device validation pending**" if local else
+               DIAGNOSTIC_SUCCESS if tv_vbo_mode == "disabled" else "**PASSED**")
+    lines.extend(["", "**NOT ACCEPTED**" if problems else success, ""])
     lines.extend(f"- {problem}" for problem in problems)
     lines.extend(["", "No APK is published by this workflow. Tests use the same game resources as local builds and simulated controllers. Actual device firmware, "
                   "Bluetooth mappings, display and audio latency still require device checks.", ""])
@@ -166,11 +208,13 @@ def main():
         {"34": os.environ.get("DEVICE_API34_STATUS", "not run"),
          "37.2": os.environ.get("DEVICE_API37_STATUS", "not run")},
         os.environ.get("GITHUB_SHA", "local workspace"), local=args.local,
+        tv_vbo_mode=os.environ.get("BATTLECITY_TV_VBO_MODE", "default"),
     )
     signatures, failures = verify_apks(build_dir)
     if failures and not problems:
         summary = summary.replace("**PASSED**", "**NOT ACCEPTED**").replace(
-            "**LOCAL CHECKS PASSED — device validation pending**", "**NOT ACCEPTED**")
+            "**LOCAL CHECKS PASSED — device validation pending**", "**NOT ACCEPTED**").replace(
+            DIAGNOSTIC_SUCCESS, "**NOT ACCEPTED**")
     problems.extend(failures)
     summary += "\n" + signatures + "\n" + "".join(f"- {failure}\n" for failure in failures)
     report = build_dir / "reports/android-acceptance.md"

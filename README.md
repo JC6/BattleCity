@@ -65,6 +65,10 @@ Android CI 使用两条设备通道，每条要求至少 46 项用例通过，�
 
 当前应用及 AndEngine JAR 不含原生 `.so`，保持单 APK 且不限制 ABI；ARMv7 电视仍需满足 API 34 最低系统要求。x86 模拟器回归不代表已完成 ARM 电视的真机验证。
 
+VBO 对照实验仅作用于设备测试 APK。手动运行 Android CI 时，`tv_vbo_mode` 可选 `default`（默认策略）或 `disabled`（调用 AndEngine 的 VBO 关闭接口）；普通推送保持默认策略，API 37.2 手机通道始终作为默认策略控制组。在模拟器内也可使用 `BATTLECITY_TV_VBO_MODE=disabled bash tools/run-android-device-tests.sh 34`。每次测试进程只使用一种模式，测试回调在首帧前配置所有游戏 Activity，清理后注销；主 APK 不增加渲染开关。
+
+原生 GL 像素测试会在首帧后记录并断言实际 VBO 状态、引擎选项和 GL renderer/version，报告校验这些证据。关闭 VBO 的运行全部通过时也只标记为诊断验证通过，生产验收待定。手动运行的报告名称包含模式和运行编号；在同一提交上以独立模拟器分别运行默认组、关闭组各一次，关闭组全过后再连续复验两次。默认组未复现时对照证据不足；关闭组失败时说明该绕过未解决问题；默认组复现且关闭组三次全过时形成兼容候选，生产 ANR 仍需后续修复验证。
+
 日常构建和 CI 默认关闭引擎诊断；设备测试 APK 内的独立看门狗每 250ms 检查主线程心跳，连续 2 秒和 4 秒未响应时分别保留线程栈、测试名称及执行阶段，每次阻塞最多两份，恢复后重新计时。看门狗不获取引擎锁，清理后停止，输出随现有 logcat 诊断进入报告；测试等待超时也会保留线程栈。需要详细生命周期、引擎启停调用栈和帧计数时，手动运行 Android CI 并勾选 `engine_diagnostics`。在模拟器内运行测试脚本时也可设置 `BATTLECITY_ENGINE_DIAGNOSTICS=true`；测试在 Activity 启动前读取参数，清理结束后复位开关，非可调试构建始终关闭诊断。
 
 Web 在 Linux / WSL 的 `web` 目录执行：
