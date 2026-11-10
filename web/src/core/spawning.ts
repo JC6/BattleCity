@@ -63,7 +63,8 @@ export function updateEnemySpawning(context: CoreContext): void {
   clearSpawnTerrain(context, x, 0);
   const tank = createTank(context, 'enemy', null, state.enemyQueue[state.spawned]!, x, 0, enemySlot);
   tank.carryingPowerUp = [4, 11, 18].includes(state.spawned + 1);
-  if (tank.carryingPowerUp) { clearPowerUp(state); if (tank.kind === 'armor') tank.hp = 1; }
+  // E3F4–E402: carrying a bonus does not remove the tank's armor.
+  if (tank.carryingPowerUp) clearPowerUp(state);
   state.tanks.push(tank);
   state.spawned++;
   state.spawnTimer = spawnInterval(state.stage, state.mode);

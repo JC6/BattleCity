@@ -72,7 +72,7 @@ public class GameRenderer {
             if(t.spawnTicks>0)draw("spawn:"+Math.min(3,Math.abs(((28-t.spawnTicks)%14)-7)/2),x,y);
             else {if(t.team==0 && t.stunTicks>0 && (s.tick&8)!=0)continue;int tread=t.tread;
                 // DFD7/E003 alternate the armor palette on every frame.
-                int armorPalette=(s.tick&1)==0?t.hp:t.hp==2?4:1;
+                int armorPalette=t.carryingPowerUp?1:(s.tick&1)==0?t.hp:t.hp==2?4:1;
                 String key=t.team==0?"player:"+t.playerIndex+":"+t.stars:
                         "enemy:"+GameState.KINDS[t.kind]+":"+(t.carryingPowerUp && (s.tick&8)!=0?"flash":t.kind==3?"hp"+armorPalette:"normal");
                 draw(key+":"+GameState.DIRECTIONS[t.direction]+":"+tread,x,y);

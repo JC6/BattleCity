@@ -28,8 +28,12 @@ describe('simulation-driven tank presentation', () => {
     expect(colors[1]).toEqual(colors[2]);
     expect(colors[3].C).toBe(PALETTE.enemyDark);
     tank.carryingPowerUp = true;
-    expect(tankColors(tank, 8)).toEqual({ W: PALETTE.white, S: PALETTE.red, C: 0x440064 });
-    expect(tankColors(tank, 0).S).toBe(PALETTE.light);
+    for (const kind of ['basic','fast','power','armor'] as const) for (const hp of [4,3,2,1]) {
+      Object.assign(tank,{kind,hp});
+      for (const tick of [0,1,7,8,15,16]) expect(tankColors(tank,tick)).toEqual((tick&8)!==0
+        ? { W: PALETTE.white, S: PALETTE.red, C: 0x440064 }
+        : { W: PALETTE.white, S: PALETTE.light, C: PALETTE.enemyDark });
+    }
   });
   it('keeps each state bitmap on its native pixel grid', () => {
     const { tank } = fixture();

@@ -614,7 +614,10 @@ export function tankColors(tank: Tank, tick: number): Readonly<Record<string, nu
   if (tank.team === 'player') return tank.playerIndex === 0
     ? { Y: PALETTE.yellow, D: PALETTE.olive, H: 0xf8d878 }
     : { Y: PALETTE.playerGreen, D: PALETTE.playerGreenDark, H: 0xb8f8b8 };
-  if (tank.carryingPowerUp && (tick & 8) !== 0) return { W: PALETTE.white, S: PALETTE.red, C: 0x440064 };
+  // DFBA–DFCA: the bonus carrier alternates white/red independently of HP.
+  if (tank.carryingPowerUp) return (tick & 8) !== 0
+    ? { W: PALETTE.white, S: PALETTE.red, C: 0x440064 }
+    : { W: PALETTE.white, S: PALETTE.light, C: PALETTE.enemyDark };
   if (tank.kind === 'armor') {
     if (tank.hp >= 4) return { W: 0xb8f8b8, S: PALETTE.playerGreen, C: PALETTE.playerGreenDark };
     if (tank.hp === 3 || tank.hp === 2) return { W: 0xf8d878, S: PALETTE.yellow, C: PALETTE.olive };

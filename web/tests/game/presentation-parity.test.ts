@@ -145,6 +145,16 @@ describe('presentation parity', () => {
     }
     const tank = state.tanks[0]; Object.assign(tank,{team:'enemy',playerIndex:null,kind:'armor',hp:2});
     expect(tankFrame(tank,0,0)).toContain(':hp2:'); expect(tankFrame(tank,0,1)).toContain(':hp4:');
-    tank.carryingPowerUp=true; expect(tankFrame(tank,0,8)).toContain(':flash:');
+    tank.carryingPowerUp=true;
+    for(const kind of ['basic','fast','power','armor'] as const)for(const hp of [4,3,2,1])for(const tick of [0,1,7,8,15,16]){
+      Object.assign(tank,{kind,hp});
+      const palette=(tick&8)!==0?'flash':kind==='armor'?'hp1':'normal';
+      expect(tankFrame(tank,0,tick)).toBe(`enemy:${kind}:${palette}:up:0`);
+    }
+    Object.assign(tank,{kind:'armor',carryingPowerUp:false});
+    for(const [hp,even,odd] of [[4,4,1],[3,3,1],[2,2,4],[1,1,1]]){
+      tank.hp=hp;expect(tankFrame(tank,0,0)).toBe(`enemy:armor:hp${even}:up:0`);
+      expect(tankFrame(tank,0,1)).toBe(`enemy:armor:hp${odd}:up:0`);
+    }
   });
 });

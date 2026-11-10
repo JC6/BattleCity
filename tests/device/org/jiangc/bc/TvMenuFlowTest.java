@@ -495,6 +495,14 @@ public class TvMenuFlowTest {
                     display.get().render(session);
                 });
                 oracle.render(session);awaitPixels(menu,"tank, four bullets and HUD",0,0,256,240,raster.pixels);
+                // Bonus flashes are white/red at HP 4; subsequent damage uses the normal armor palettes.
+                for(int[] frame:new int[][]{{4,1,0},{4,1,1},{4,1,7},{4,1,8},{4,1,15},{4,1,16},
+                        {4,0,0},{4,0,1},{3,0,0},{3,0,1},{2,0,0},{2,0,1},{1,0,0},{1,0,1}}){
+                    var armor=new GameState.Tank();armor.team=1;armor.kind=3;armor.hp=frame[0];armor.carryingPowerUp=frame[1]==1;
+                    armor.spawnTicks=0;armor.x=armor.y=64;
+                    onEngine(menu,()->{game.state.tick=frame[2];game.state.tanks.clear();game.state.bullets.clear();game.state.tanks.add(armor);display.get().render(session);});
+                    oracle.render(session);awaitPixels(menu,"carrier and damaged armor palette "+java.util.Arrays.toString(frame),0,0,256,240,raster.pixels);
+                }
                 for(int death:new int[]{0x73,0x63,0x53,0x43,0x33,0x13}){
                     var tank=new GameState.Tank();tank.x=tank.y=64;tank.deathTimer=death;tank.deathPoints=400;
                     onEngine(menu,()->{game.state.tanks.clear();game.state.bullets.clear();game.state.tanks.add(tank);display.get().render(session);});

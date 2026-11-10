@@ -104,7 +104,8 @@ public final class Game {
         Tank t=new Tank(); t.id=++id; t.team=1; t.enemySlot=slot; t.kind=state.enemyQueue[state.spawned];
         t.hp=t.kind==3?4:1; t.x=new int[]{96,192,0}[state.spawned%3]; t.direction=2;
         t.carryingPowerUp=state.spawned==3 || state.spawned==10 || state.spawned==17;
-        if(t.carryingPowerUp){clearPowerUp();if(t.kind==3)t.hp=1;}
+        // E3F4–E402: carrying a bonus does not remove the tank's armor.
+        if(t.carryingPowerUp)clearPowerUp();
         clearSpawn(t.x,0); state.tanks.add(t); state.spawned++; state.spawnTimer=spawnInterval();
     }
     private void timers() {

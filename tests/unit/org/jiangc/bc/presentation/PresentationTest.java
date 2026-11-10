@@ -50,6 +50,20 @@ public class PresentationTest {
         }
     }
     private TitleSession title(GameMemory memory)throws Exception{return new TitleSession(Level.read(Files.newInputStream(org.jiangc.bc.testing.GameData.path("assets/battle/demo.txt"))),memory);}
+    @Test public void carrierFlashesIgnoreHealthUntilDamageRevealsArmorPalettes()throws Exception{
+        Surface surface=new Surface();GameRenderer renderer=new GameRenderer(surface);Game g=new Game(new int[676],new int[20],false,1);
+        g.state.phase=GameState.PLAYING;g.state.tanks.clear();BattleSession session=new BattleSession(g);
+        GameState.Tank tank=new GameState.Tank();tank.team=1;tank.spawnTicks=0;g.state.tanks.add(tank);
+        for(int kind=0;kind<4;kind++)for(int hp=1;hp<=4;hp++)for(int tick:new int[]{0,1,7,8,15,16}){
+            tank.kind=kind;tank.hp=hp;tank.carryingPowerUp=true;g.state.tick=tick;renderer.render(session);
+            String palette=(tick&8)!=0?"flash":kind==3?"hp1":"normal";
+            assertTrue(surface.commands.contains("enemy:"+GameState.KINDS[kind]+":"+palette+":up:0"));
+        }
+        tank.kind=3;tank.carryingPowerUp=false;
+        for(int[] c:new int[][]{{4,0,4},{4,1,1},{3,0,3},{3,1,1},{2,0,2},{2,1,4},{1,0,1},{1,1,1}}){
+            tank.hp=c[0];g.state.tick=c[1];renderer.render(session);assertTrue(surface.commands.contains("enemy:armor:hp"+c[2]+":up:0"));
+        }
+    }
     @Test public void stunnedPlayerAndConstructionCursorUseOriginalBlinkBits()throws Exception{
         Surface surface=new Surface();GameRenderer renderer=new GameRenderer(surface);Game g=new Game(new int[676],new int[20],false,1);g.state.phase=GameState.PLAYING;
         GameState.Tank p=g.playerTank(0);p.spawnTicks=0;p.stunTicks=200;BattleSession s=new BattleSession(g);

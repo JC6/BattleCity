@@ -3,7 +3,8 @@ import type { CoreContext } from './types';
 export function addScore(context: CoreContext, playerIndex: number, value: number): void {
   const player = context.state.players[playerIndex];
   if (!player) return;
-  player.score += value;
+  // D9BE–D9E0 discard carry beyond the seven decimal score digits.
+  player.score = (player.score + value) % 10_000_000;
   if (context.state.pendingOutcome !== 'lost' && context.state.baseAlive && player.score >= player.nextExtraLife) {
     if (player.eliminated) {
       player.eliminated = false;

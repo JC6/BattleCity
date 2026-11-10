@@ -18,7 +18,7 @@ const kinds: readonly EnemyKind[] = ['basic', 'fast', 'power', 'armor'];
 export function tankFrame(tank: Tank, tread: 0 | 1, tick: number): string {
   if (tank.team === 'player') return `player:${tank.playerIndex}:${Math.max(0, Math.min(3, tank.stars))}:${tank.direction}:${tread}`;
   const palette = tank.carryingPowerUp && (tick & 8) !== 0 ? 'flash' :
-    tank.kind === 'armor' ? `hp${(tick & 1) === 0 ? Math.max(1, Math.min(4, tank.hp)) : tank.hp === 2 ? 4 : 1}` : 'normal';
+    tank.kind === 'armor' ? `hp${tank.carryingPowerUp ? 1 : (tick & 1) === 0 ? Math.max(1, Math.min(4, tank.hp)) : tank.hp === 2 ? 4 : 1}` : 'normal';
   return `enemy:${tank.kind}:${palette}:${tank.direction}:${tread}`;
 }
 
