@@ -150,6 +150,7 @@ public class TvMenuFlowTest {
             assertArrayEquals(levels.level(2).enemies(), state.enemyQueue);
         });
         int record = oldHigh + 1000;
+        onEngine(battle, () -> DeviceTestDiagnostics.watchPresentation(battle));
         AtomicBoolean recordShown = lose(battle, record);
         awaitEngine(battle, "New record must enter HISCORE", () -> battle.session().screen == BattleSession.HISCORE);
         returned(menu, battle, record, record, 0);
@@ -248,6 +249,7 @@ public class TvMenuFlowTest {
     @Test public void startSkipsGameOverButPreservesNewRecordPresentation() throws Exception {
         MainMenuActivity menu=launchMenu();connect(101);remote(menu,KeyEvent.KEYCODE_DPAD_CENTER);Level1Activity battle=child(Level1Activity.class,null);
         start(battle);int score=app.memory().highScore()+1000;
+        onEngine(battle, () -> DeviceTestDiagnostics.watchPresentation(battle));
         AtomicBoolean record=lose(battle,score);
         ui(()->{battle.onWindowFocusChanged(false);battle.onWindowFocusChanged(true);assertTrue(((TvEngine)battle.getEngine()).isExplicitlyPaused());});
         press(battle,101,Button.START);
@@ -737,6 +739,7 @@ public class TvMenuFlowTest {
     }
 
     private void returned(MainMenuActivity menu, Activity child, int high, int first, int second) throws Exception {
+        DeviceTestDiagnostics.phase("return to original menu: await child destroyed");
         awaitUi("Child activity must finish", child::isDestroyed);
         awaitReturnedMenu(menu);
         ui(() -> {

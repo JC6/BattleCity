@@ -79,7 +79,7 @@ jobs:
             ls -l /dev/kvm || exit "$?"
             python3 -c 'import os; fd = os.open("/dev/kvm", os.O_RDWR); os.close(fd); print("KVM device opened for read/write")'
           } 2>&1 | tee build/diagnostics/kvm/setup.txt
-      - name: API 34 TV 4K framework tests
+      - name: API 34 TV 4K display / 1080p window framework tests
         id: device34
         uses: reactivecircus/android-emulator-runner@v2.38.0
         with:
@@ -90,7 +90,7 @@ jobs:
           pre-emulator-launch-script: mkdir -p build/diagnostics/emulator-api-34
           emulator-options: -no-window -gpu software -no-snapshot -noaudio -no-boot-anim -logcat-output ${{ github.workspace }}/build/diagnostics/emulator-api-34/startup-logcat.txt
           script: bash tools/run-android-device-tests.sh 34
-      - name: API 36 TV 4K framework tests
+      - name: API 36 TV 4K display / 4K window framework tests
         if: ${{ !cancelled() && steps.checks.outcome == 'success' && steps.acceleration.outcome == 'success' }}
         id: device36
         uses: reactivecircus/android-emulator-runner@v2.38.0

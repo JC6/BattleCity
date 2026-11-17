@@ -52,10 +52,12 @@ class AcceptanceResultsTest(unittest.TestCase):
         return path
 
     def write_render_evidence(self, platform, mode="default", **changes):
-        record = dict(requested=mode, activeVbo=mode == "default", optionsDisabled=mode == "disabled",
+        scale = 4 if platform == "34" else 8
+        record = dict(api=int(platform.split('.')[0]), requested=mode, activeVbo=mode == "default", optionsDisabled=mode == "disabled",
                       renderer="Fixture GL renderer", version="Fixture GL version",
-                      displayWidth=3840, displayHeight=2160, windowWidth=3840, windowHeight=2160,
-                      surfaceWidth=2048, surfaceHeight=1920, scale=8)
+                      displayWidth=3840, displayHeight=2160,
+                      windowWidth=1920 if platform == "34" else 3840, windowHeight=1080 if platform == "34" else 2160,
+                      surfaceWidth=256 * scale, surfaceHeight=240 * scale, scale=scale)
         record.update(changes)
         path = self.build / f"outputs/androidTest-results/api-{platform}/debug/fixture" / (
             "logcat-org.jiangc.bc.TvMenuFlowTest-actualGlAdapterMatchesSoftwareAcrossSpriteSizesAndPausedScreens.txt")
@@ -91,6 +93,7 @@ class AcceptanceResultsTest(unittest.TestCase):
 
     def test_requested_mode_options_actual_state_and_driver_details_are_required(self):
         for changes in ({"requested": "disabled"}, {"activeVbo": False}, {"activeVbo": "true"},
+                        {"api": 36}, {"api": "34"}, {"api": True}, {"api": None},
                         {"optionsDisabled": True}, {"optionsDisabled": 0},
                         {"renderer": ""}, {"renderer": None}, {"version": " "}):
             with self.subTest(changes=changes):
@@ -127,10 +130,21 @@ class AcceptanceResultsTest(unittest.TestCase):
             with self.subTest(changes=changes):
                 self.write_render_evidence("34", **changes)
                 self.assertTrue(self.evaluate()[1])
-        self.write_render_evidence("34", surfaceWidth=1792, surfaceHeight=1680, scale=7)
+        self.write_render_evidence("34", surfaceWidth=768, surfaceHeight=720, scale=3)
         summary, problems = self.evaluate()
         self.assertFalse(problems)
-        self.assertIn("3840x2160 | 3840x2160 | 1792x1680 | 7 |", summary)
+        self.assertIn("3840x2160 | 1920x1080 | 768x720 | 3 |", summary)
+
+    def test_each_channel_requires_its_own_official_window_dimensions(self):
+        for platform, width, height in (("34", 3840, 2160), ("36", 1920, 1080)):
+            with self.subTest(platform=platform):
+                self.write_render_evidence(platform, windowWidth=width, windowHeight=height)
+                self.assertTrue(self.evaluate()[1])
+                self.write_render_evidence(platform)
+        summary, problems = self.evaluate()
+        self.assertFalse(problems)
+        self.assertIn("4K display / 1080p window", summary)
+        self.assertIn("4K display / 4K window", summary)
 
     def test_other_logs_and_other_platform_cannot_replace_native_gl_evidence(self):
         path = self.write_render_evidence("34")
@@ -139,6 +153,105 @@ class AcceptanceResultsTest(unittest.TestCase):
         other.write_text(path.read_text())
         path.unlink()
         self.assertTrue(self.evaluate()[1])
+
+    def case_log(self, api, case, text):
+        path = self.build / f"outputs/androidTest-results/api-{api}/debug/fixture/logcat-org.jiangc.bc.TvLifecycleTest-{case}.txt"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+        return path
+
+    @staticmethod
+    def progress_record(case, **changes):
+        record = dict(test="org.jiangc.bc.TvLifecycleTest#" + case, activity="Level1Activity@fixture",
+                      uptimeMillis=10_000, phase="record return", event="timeout",
+                      engine=dict(sampleUptimeMillis=9_000, ageMillis=1_000, frames=80, screen="HISCORE",
+                                  elapsed=400, explicitlyPaused=False, running=True,
+                                  lastAdvanceUptimeMillis=9_000, frameSeconds=.05),
+                      ui=dict(sampleUptimeMillis=6_000, ageMillis=4_000, foreground=True, focused=True,
+                              finishing=False, destroyed=False))
+        record.update(changes)
+        return record
+
+    def test_assertion_snapshot_is_preferred_to_later_teardown_and_does_not_hide_failure(self):
+        case = results.PRESENTATION_CASES[0]
+        first = self.progress_record(case)
+        later = self.progress_record(case, uptimeMillis=11_000, event="sample", phase="teardown")
+        later["engine"].update(screen="DONE", elapsed=0)
+        self.case_log("36", case, "\n".join("BATTLECITY_PRESENTATION_PROGRESS " + json.dumps(r) for r in (first, later)))
+        path = self.write_report(results.GROUPS[2][1], 46, "failure")
+        root = ET.parse(path)
+        root.getroot().find("testcase").set("name", case)
+        root.write(path)
+        summary, problems = self.evaluate()
+        self.assertTrue(problems)
+        self.assertIn("**NOT ACCEPTED**", summary)
+        self.assertIn(f"API 36 / {case} | FAILURE", summary)
+        self.assertIn("HISCORE elapsed=400, updates=80", summary)
+        self.assertIn("engine sample age=1000ms", summary)
+        self.assertIn("UI sample age=4000ms", summary)
+        self.assertNotIn("phase=teardown", summary)
+        self.assertIn("cause unconfirmed", summary)
+
+    def test_missing_invalid_or_wrong_case_progress_stays_informational(self):
+        case = results.PRESENTATION_CASES[0]
+        invalid_engine = self.progress_record(case)
+        invalid_engine["engine"]["frames"] = True
+        invalid_ui = self.progress_record(case)
+        invalid_ui["ui"]["focused"] = "true"
+        for content in ("", "{bad", json.dumps(invalid_engine), json.dumps(invalid_ui),
+                        json.dumps(self.progress_record("anotherCase"))):
+            with self.subTest(content=content):
+                self.case_log("34", case, "BATTLECITY_PRESENTATION_PROGRESS " + content)
+                summary, problems = self.evaluate()
+                self.assertFalse(problems)
+                self.assertIn("Evidence insufficient", summary)
+                self.assertIn("cause unconfirmed", summary)
+
+    def test_missing_engine_or_ui_samples_are_reported_without_assuming_a_cause(self):
+        case = results.PRESENTATION_CASES[1]
+        self.case_log("34", case, "BATTLECITY_PRESENTATION_PROGRESS " + json.dumps(
+            self.progress_record(case, engine=None, ui=None)))
+        summary, problems = self.evaluate()
+        self.assertFalse(problems)
+        self.assertIn("engine sample unavailable", summary)
+        self.assertIn("UI sample unavailable", summary)
+
+    def test_vbo_waits_are_grouped_by_test_and_sample_and_keep_passing_outcomes(self):
+        case = "soloUsesBoundControllerAndLifecycleKeepsPause"
+        path = self.write_report(results.GROUPS[2][1], 46)
+        root = ET.parse(path)
+        root.getroot().find("testcase").set("name", case)
+        root.write(path)
+        lines = []
+        for number, waiting in ((1, 2_100), (2, 4_100)):
+            prefix = f"watchdog test=org.jiangc.bc.TvLifecycleTest#{case} sample={number} heartbeat=8 stallSample={number} | "
+            lines += [prefix + f"phase=background waitingMillis={waiting}",
+                      prefix + "at com.google.android.gles_jni.GLImpl.glGenBuffers(Native Method)",
+                      prefix + "at org.anddev.andengine.opengl.view.GLSurfaceView$GLThread.requestExitAndWait(GLSurfaceView.java:718)"]
+        self.case_log("36", case, "\n".join(lines + lines))
+        summary, problems = self.evaluate()
+        self.assertFalse(problems)
+        self.assertIn(f"API 36 / {case} | PASS | 2 | 4100", summary)
+        self.assertIn("VBO stability remains pending", summary)
+
+    def test_stacks_from_different_samples_or_tests_cannot_form_a_vbo_wait(self):
+        case = "fixture"
+        prefix = "watchdog test=Fixture#fixture sample=1 heartbeat=1 stallSample=1 | "
+        self.case_log("34", case, "\n".join((prefix + "waitingMillis=4100",
+            prefix + "at com.google.android.gles_jni.GLImpl.glGenBuffers(Native Method)",
+            prefix.replace("sample=1", "sample=2") + "at GLSurfaceView$GLThread.requestExitAndWait(GLSurfaceView.java:718)",
+            prefix.replace("heartbeat=1", "heartbeat=2") + "at GLSurfaceView$GLThread.requestExitAndWait(GLSurfaceView.java:718)",
+            prefix.replace("Fixture#fixture", "Fixture#other") + "at GLSurfaceView$GLThread.requestExitAndWait(GLSurfaceView.java:718)")))
+        self.assertEqual({}, results.read_vbo_stalls(self.build / "outputs/androidTest-results/api-34"))
+
+    def test_diagnostic_outcomes_preserve_skipped_and_duplicate_failures(self):
+        directory = self.build / results.GROUPS[2][1]
+        (directory / 'TEST-a.xml').write_text('<testsuite><testcase name="record"><failure/></testcase>'
+                                            '<testcase name="notStarted" status="notrun"/></testsuite>')
+        (directory / 'TEST-z.xml').write_text('<testsuite><testcase name="record"/></testsuite>')
+        outcomes = results.case_outcomes(directory)
+        self.assertEqual("FAILURE", outcomes["record"])
+        self.assertEqual("SKIPPED", outcomes["notStarted"])
 
     def test_invalid_tv_mode_cannot_report_success(self):
         self.assertTrue(self.evaluate(tv_vbo_mode="automatic")[1])
@@ -348,7 +461,7 @@ V2 Signer: certificate MD5 digest: 4efa2d677cea1f1aff0d97c3353d7047
         summary, problems = self.evaluate(device_statuses={"34": "success", "37.2": "success"})
         self.assertTrue(problems)
         self.assertIn("API 36 device tests did not succeed (not run)", summary)
-        self.assertIn("API 36 TV / 4K device: JUnit XML reports are missing", summary)
+        self.assertIn("API 36 TV / 4K display / 4K window: JUnit XML reports are missing", summary)
         self.assertNotIn("API 37.2", summary)
 
     def test_suite_level_runner_error_is_not_ignored(self):
@@ -381,7 +494,7 @@ V2 Signer: certificate MD5 digest: 4efa2d677cea1f1aff0d97c3353d7047
         self.write_report(results.GROUPS[1][1], count, wrapped=True)
         summary, problems = self.evaluate()
         self.assertEqual([], problems)
-        self.assertIn(f"| API 34 TV / 4K device | {count} | 0 | 0 | 0 |", summary)
+        self.assertIn(f"| API 34 TV / 4K display / 1080p window | {count} | 0 | 0 | 0 |", summary)
 
 
 if __name__ == "__main__":

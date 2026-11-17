@@ -35,7 +35,14 @@ case "$*" in
     if [[ "$FAKE_API" == 34 ]]; then abi=x86; else abi=x86_64; fi
     printf '%s%s\\n' "${FAKE_ABI-$abi}" "$FAKE_CR" ;;
   'shell pm list features') printf '%s%s\\n' "${FAKE_FEATURES-feature:android.software.leanback}" "$FAKE_CR" ;;
-  'shell wm size') printf '%s%s\\n' "$FAKE_DISPLAY" "$FAKE_CR" ;;
+  'shell wm size')
+    display='Physical size: 3840x2160'
+    if [[ "$FAKE_API" == 34 ]]; then display+=$'\\nOverride size: 1920x1080'; fi
+    printf '%s%s\\n' "${FAKE_DISPLAY-$display}" "$FAKE_CR" ;;
+  'shell wm density') echo 'Physical density: 640' ;;
+  'shell cmd overlay lookup android android:integer/config_maxUiWidth')
+    if [[ "$FAKE_API" == 34 ]]; then echo 1920; else echo 3840; fi ;;
+  'shell dumpsys window displays') echo 'fixture window display state' ;;
   'shell dumpsys display')
     echo 'fixture display state'
     exit "$FAKE_DISPLAY_DUMP_EXIT" ;;
@@ -65,7 +72,7 @@ exit "$FAKE_EXIT"
         self.env = dict(os.environ, PATH=str(binary) + os.pathsep + os.environ["PATH"],
                         EMULATOR_PORT="5554", FAKE_API="34", FAKE_CR="", FAKE_EXIT="0",
                         FAKE_ENV_FAIL_COMMAND="none", FAKE_ADB_EXIT="17", FAKE_WINDOW_EXIT="0",
-                        FAKE_DISPLAY_DUMP_EXIT="0", FAKE_DISPLAY="Physical size: 3840x2160",
+                        FAKE_DISPLAY_DUMP_EXIT="0",
                         COMMAND_LOG=str(self.commands), GRADLE_ARGUMENTS=str(self.arguments))
         for name in ("BATTLECITY_ENGINE_DIAGNOSTICS", "BATTLECITY_TV_VBO_MODE"):
             self.env.pop(name, None)
@@ -89,12 +96,21 @@ exit "$FAKE_EXIT"
                 commands = self.commands.read_text()
                 self.assertIn("adb shell wm size", commands)
                 self.assertNotIn("shell settings", commands)
+                self.assertNotIn("adb shell wm size ", commands)
+                self.assertNotIn("adb shell wm density ", commands)
+                self.assertNotIn("adb root", commands)
                 self.assertNotIn("PAGE_SIZE", commands)
                 self.assertNotIn("sdk_full", commands)
                 self.assertNotIn("sdk_minor", commands)
                 log = (self.root / f"build/diagnostics/api-{version}/preflight.txt").read_text()
                 self.assertIn(f"Verified Android TV API {version}", log)
                 self.assertIn("4K display 3840x2160", log)
+                expected = "1920x1080" if version == "34" else "3840x2160"
+                self.assertIn(f"effective display {expected}", log)
+                configuration = (self.root / f"build/diagnostics/api-{version}/display-configuration.txt").read_text()
+                self.assertIn("Physical density: 640", configuration)
+                self.assertIn("config_maxUiWidth", configuration)
+                self.assertIn("fixture window display state", configuration)
 
     def test_diagnostics_and_vbo_arguments_reach_both_tv_channels(self):
         for version in ("34", "36"):
@@ -170,14 +186,16 @@ exit "$FAKE_EXIT"
         self.assertEqual(0, run.returncode, run.stdout + run.stderr)
         self.assertIn(b"36\r\n", (self.root / "build/diagnostics/api-36/preflight.txt").read_bytes())
 
-    def test_non_4k_missing_malformed_or_overridden_display_is_rejected(self):
+    def test_wrong_missing_malformed_or_cross_channel_display_is_rejected(self):
         cases = ("Physical size: 1920x1080", "Physical size: 2160x3840", "Override size: 3840x2160", "",
-                 "Physical size: 3840x2160\nOverride size: 1920x1080", "Physical size: unknown",
+                 "Physical size: unknown",
                  "Physical size: 3840x2160\nOverride size: unknown",
                  "Physical size: 3840x2160\nPhysical size: 3840x2160",
                  "Physical size: 3840x2160\nOverride size: 3840x2160\nOverride size: 3840x2160")
         for version in ("34", "36"):
-            for display in cases:
+            wrong_window = "3840x2160" if version == "34" else "1920x1080"
+            for display in (*cases, "Physical size: 3840x2160\nOverride size: " + wrong_window,
+                            *(('Physical size: 3840x2160',) if version == "34" else ())):
                 with self.subTest(version=version, display=display):
                     self.env.update(FAKE_API=version, FAKE_DISPLAY=display)
                     old = self.stale(f"build/outputs/androidTest-results/api-{version}")
@@ -185,9 +203,21 @@ exit "$FAKE_EXIT"
                     self.assertFalse(old.exists())
                     self.assertFalse(self.arguments.exists())
 
-    def test_matching_4k_override_is_accepted(self):
+    def test_matching_4k_override_is_accepted_only_on_api36(self):
+        self.env["FAKE_API"] = "36"
         self.env["FAKE_DISPLAY"] = "Physical size: 3840x2160\nOverride size: 3840x2160"
-        self.assertEqual(0, self.run_script("34").returncode)
+        self.assertEqual(0, self.run_script("36").returncode)
+
+    def test_auxiliary_display_query_failures_do_not_change_runner_status(self):
+        for command in ("shell wm density", "shell cmd overlay lookup android android:integer/config_maxUiWidth",
+                        "shell dumpsys window displays"):
+            for status in ("0", "7"):
+                with self.subTest(command=command, status=status):
+                    self.env.update(FAKE_ENV_FAIL_COMMAND=command, FAKE_EXIT=status)
+                    self.assertEqual(int(status), self.run_script("34").returncode)
+                    configuration = (self.root / "build/diagnostics/api-34/display-configuration.txt").read_text()
+                    self.assertIn("exit 17", configuration)
+                    self.assertIn("fixture environment stderr", configuration)
 
     def test_environment_query_failures_preserve_output_and_exit_status(self):
         for version in ("34", "36"):
@@ -265,7 +295,7 @@ class KvmPreparationTest(unittest.TestCase):
         self.node = self.root / "kvm"
         self.node.symlink_to("/dev/null")
         step = WORKFLOW.read_text().split("      - name: Enable emulator acceleration\n", 1)[1]
-        step = step.split("      - name: API 34 TV 4K framework tests\n", 1)[0]
+        step = step.split("      - name: API 34 TV ", 1)[0]
         self.script = textwrap.dedent(step.split("        run: |\n", 1)[1]).replace("/dev/kvm", str(self.node))
         binary = self.root / "bin"
         binary.mkdir()

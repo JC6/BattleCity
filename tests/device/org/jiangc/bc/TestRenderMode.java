@@ -3,6 +3,7 @@ package org.jiangc.bc;
 import android.app.Activity;
 import android.app.Application;
 import android.os.Bundle;
+import android.os.Build;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
@@ -95,6 +96,7 @@ final class TestRenderMode {
         Geometry dimensions = geometry.get();
         int scale = dimensions.surfaceWidth() / 256;
         String evidence = new JSONObject().put("requested", mode).put("activeVbo", state.activeVbo())
+                .put("api", Build.VERSION.SDK_INT)
                 .put("optionsDisabled", state.optionsDisabled()).put("renderer", state.renderer())
                 .put("version", state.version())
                 .put("displayWidth", dimensions.displayWidth()).put("displayHeight", dimensions.displayHeight())
@@ -110,8 +112,10 @@ final class TestRenderMode {
                 mode.equals("default"), state.activeVbo());
         assertEquals("The display mode must be 4K", 3840, dimensions.displayWidth());
         assertEquals("The display mode must be 4K", 2160, dimensions.displayHeight());
-        assertEquals("The application window must render at 4K", 3840, dimensions.windowWidth());
-        assertEquals("The application window must render at 4K", 2160, dimensions.windowHeight());
+        int api = Build.VERSION.SDK_INT;
+        assertTrue("Only the API 34 and 36 TV channels are supported", api == 34 || api == 36);
+        assertEquals("The window must match the official TV channel", api == 34 ? 1920 : 3840, dimensions.windowWidth());
+        assertEquals("The window must match the official TV channel", api == 34 ? 1080 : 2160, dimensions.windowHeight());
         assertTrue("The game surface must have a positive integer scale", scale > 0);
         assertEquals(256 * scale, dimensions.surfaceWidth());
         assertEquals(240 * scale, dimensions.surfaceHeight());

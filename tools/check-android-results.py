@@ -14,8 +14,14 @@ import xml.etree.ElementTree as ET
 
 GROUPS = (
     ("JVM", "test-results/testDebugUnitTest", 173),
-    ("API 34 TV / 4K device", "outputs/androidTest-results/api-34", 46),
-    ("API 36 TV / 4K device", "outputs/androidTest-results/api-36", 46),
+    ("API 34 TV / 4K display / 1080p window", "outputs/androidTest-results/api-34", 46),
+    ("API 36 TV / 4K display / 4K window", "outputs/androidTest-results/api-36", 46),
+)
+WINDOWS = {"34": (1920, 1080), "36": (3840, 2160)}
+PRESENTATION_CASES = (
+    "highScoreDisconnectFreezesPresentationAndFinishesOnce",
+    "constructionSelectedStageAndRecordReturnToOriginalMenu",
+    "startSkipsGameOverButPreservesNewRecordPresentation",
 )
 DIAGNOSTIC_SUCCESS = "**DIAGNOSTIC CHECKS PASSED — production acceptance pending**"
 
@@ -54,7 +60,7 @@ def read_results(directory):
     return counts, problems
 
 
-def read_render_evidence(directory, expected):
+def read_render_evidence(directory, expected, api):
     records, problems = [], []
     marker = "BATTLECITY_RENDER_MODE "
     for path in sorted(directory.rglob("logcat-*TvMenuFlowTest-actualGlAdapterMatchesSoftwareAcrossSpriteSizesAndPausedScreens.txt")):
@@ -63,20 +69,21 @@ def read_render_evidence(directory, expected):
                 if marker not in line:
                     continue
                 record = json.loads(line.split(marker, 1)[1])
-                if (not isinstance(record, dict) or record.get("requested") != expected
+                if (not isinstance(record, dict) or type(record.get("api")) is not int
+                        or record["api"] != int(api) or record.get("requested") != expected
                         or type(record.get("activeVbo")) is not bool
                         or type(record.get("optionsDisabled")) is not bool
                         or record["activeVbo"] != (expected == "default")
                         or record["optionsDisabled"] != (expected == "disabled")
                         or any(not isinstance(record.get(key), str) or not record[key].strip()
                                for key in ("renderer", "version"))):
-                    raise ValueError("requested mode, engine options or actual GL state do not match")
+                    raise ValueError("API, requested mode, engine options or actual GL state do not match")
                 dimensions = ("displayWidth", "displayHeight", "windowWidth", "windowHeight",
                               "surfaceWidth", "surfaceHeight", "scale")
                 if any(type(record.get(key)) is not int for key in dimensions):
-                    raise ValueError("4K display, window, surface and integer scale evidence is required")
-                if (record["displayWidth"], record["displayHeight"], record["windowWidth"], record["windowHeight"]) != (3840, 2160, 3840, 2160):
-                    raise ValueError("the actual display and application window must both be 3840x2160")
+                    raise ValueError("display, window, surface and integer scale evidence is required")
+                if (record["displayWidth"], record["displayHeight"], record["windowWidth"], record["windowHeight"]) != (3840, 2160, *WINDOWS[api]):
+                    raise ValueError(f"API {api} requires a 3840x2160 display and a {WINDOWS[api][0]}x{WINDOWS[api][1]} window")
                 scale = record["scale"]
                 if (scale < 1 or record["surfaceWidth"] != 256 * scale or record["surfaceHeight"] != 240 * scale
                         or record["surfaceWidth"] > record["windowWidth"] or record["surfaceHeight"] > record["windowHeight"]):
@@ -89,6 +96,133 @@ def read_render_evidence(directory, expected):
     return records, problems
 
 
+def case_outcomes(directory):
+    outcomes = {}
+    rank = {"PASS": 0, "SKIPPED": 1, "FAILURE": 2, "ERROR": 3}
+    for path in sorted(directory.rglob("TEST-*.xml")):
+        try:
+            for case in ET.parse(path).getroot().iter("testcase"):
+                outcome = next((tag.upper() for tag in ("error", "failure", "skipped")
+                    if case.find(tag) is not None), "SKIPPED" if case.get("status") in ("skipped", "notrun") else "PASS")
+                name = case.get("name")
+                if rank[outcome] >= rank[outcomes.get(name, "PASS")]:
+                    outcomes[name] = outcome
+        except (OSError, ET.ParseError):
+            continue  # The acceptance gate reports invalid JUnit independently.
+    return outcomes
+
+
+def read_case_progress(directory, case):
+    records, notes = [], []
+    marker = "BATTLECITY_PRESENTATION_PROGRESS "
+    for path in sorted(directory.rglob(f"logcat-*-{case}.txt")):
+        try:
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                if marker not in line:
+                    continue
+                try:
+                    record = json.loads(line.split(marker, 1)[1])
+                    if (not isinstance(record, dict) or not isinstance(record.get("test"), str)
+                            or not record["test"].endswith("#" + case)
+                            or any(not isinstance(record.get(key), str) or not record[key] for key in ("activity", "phase"))
+                            or record.get("event") not in ("sample", "timeout", "watchdog")
+                            or type(record.get("uptimeMillis")) is not int or record["uptimeMillis"] < 0):
+                        raise ValueError("invalid progress identity or time")
+                    for part, numbers, flags in (
+                        ("engine", ("frames", "elapsed", "lastAdvanceUptimeMillis"), ("explicitlyPaused", "running")),
+                        ("ui", (), ("foreground", "focused", "finishing", "destroyed")),
+                    ):
+                        sample = record.get(part)
+                        if sample is None:
+                            continue
+                        if (not isinstance(sample, dict)
+                                or any(type(sample.get(key)) is not int or sample[key] < 0
+                                       for key in ("sampleUptimeMillis", "ageMillis", *numbers))
+                                or sample["sampleUptimeMillis"] > record["uptimeMillis"]
+                                or any(type(sample.get(key)) is not bool for key in flags)
+                                or (part == "engine" and sample.get("screen") not in
+                                    ("BATTLE", "SCORE", "GAME_OVER", "HISCORE", "DONE"))):
+                            raise ValueError(f"invalid {part} snapshot")
+                    records.append(record)
+                except (ValueError, TypeError) as failure:
+                    notes.append(f"Invalid progress evidence: {failure}")
+        except OSError as failure:
+            notes.append(f"Could not read progress evidence: {failure}")
+    return records, notes
+
+
+def read_vbo_stalls(directory):
+    samples = {}
+    pattern = re.compile(r"watchdog test=(\S+) sample=(\d+) heartbeat=(\d+) stallSample=\d+")
+    for path in sorted(directory.rglob("logcat-*.txt")):
+        try:
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                match = pattern.search(line)
+                if not match:
+                    continue
+                sample = samples.setdefault(match.groups(), dict(wait=0, allocation=False, exit=False))
+                waiting = re.search(r"\bwaitingMillis=(\d+)\b", line)
+                if waiting:
+                    sample["wait"] = max(sample["wait"], int(waiting[1]))
+                sample["allocation"] |= "GLImpl.glGenBuffers(" in line
+                sample["exit"] |= "GLThread.requestExitAndWait(" in line
+        except OSError:
+            continue
+    stalls = {}
+    for (test, _, _), sample in samples.items():
+        if not sample["allocation"] or not sample["exit"] or sample["wait"] < 2_000:
+            continue
+        case = test.rsplit("#", 1)[-1]
+        count, waiting = stalls.get(case, (0, 0))
+        stalls[case] = count + 1, max(waiting, sample["wait"])
+    return stalls
+
+
+def diagnostic_summary(build_dir):
+    lines = ["", "Presentation progress (diagnostic only; the 10-second assertions are unchanged):", "",
+             "| Platform / case | JUnit outcome | Latest progress |",
+             "|---|---|---|"]
+    vbo = []
+    for api in WINDOWS:
+        directory = build_dir / f"outputs/androidTest-results/api-{api}"
+        outcomes = case_outcomes(directory)
+        for case in PRESENTATION_CASES:
+            records, notes = read_case_progress(directory, case)
+            # Prefer the assertion-time snapshot over teardown observations after a failure.
+            candidates = [record for record in records if record["event"] == "timeout"] or records
+            if not candidates:
+                detail = "Evidence insufficient: no valid progress snapshots; cause unconfirmed"
+            else:
+                last = max(candidates, key=lambda record: record["uptimeMillis"])
+                e, u = last.get("engine"), last.get("ui")
+                detail = f"{last['event']}; phase={last['phase']}"
+                if e is None:
+                    detail += "; engine sample unavailable"
+                else:
+                    detail += (f"; {e['screen']} elapsed={e['elapsed']}, updates={e['frames']}, "
+                               f"paused={str(e['explicitlyPaused']).lower()}, running={str(e['running']).lower()}, "
+                               f"engine sample age={e['ageMillis']}ms, last advance uptime={e['lastAdvanceUptimeMillis']}ms")
+                if u is None:
+                    detail += "; UI sample unavailable"
+                else:
+                    detail += "; " + ", ".join(f"{key}={str(u[key]).lower()}" for key in
+                                                ("foreground", "focused", "finishing", "destroyed"))
+                    detail += f", UI sample age={u['ageMillis']}ms"
+                detail += "; cause unconfirmed"
+            if notes:
+                detail += "; " + "; ".join(sorted(set(notes)))
+            detail = detail.replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+            lines.append(f"| API {api} / {case} | {outcomes.get(case, 'not recorded')} | {detail} |")
+        for case, (count, waiting) in sorted(read_vbo_stalls(directory).items()):
+            vbo.append(f"| API {api} / {case} | {outcomes.get(case, 'not recorded')} | {count} | {waiting} |")
+    lines.extend(["", "VBO lifecycle wait observations (separate from presentation timeouts):", "",
+                  "| Platform / case | JUnit outcome | Matching stack samples | Longest sampled wait ms |",
+                  "|---|---|---:|---:|", *vbo])
+    lines.extend(["", "VBO stability remains pending comparison of independent default/disabled runs. "
+                  "A passing JUnit outcome can coexist with a long GL lifecycle wait; observations do not establish a system ANR."])
+    return lines
+
+
 def evaluate(build_dir, build_status, device_statuses, commit, local=False, tv_vbo_mode="default"):
     problems = []
     if tv_vbo_mode not in ("default", "disabled"):
@@ -98,8 +232,8 @@ def evaluate(build_dir, build_status, device_statuses, commit, local=False, tv_v
         "Data: **shared source-generated game data**; no external pack is required.",
         "These checks validate the adaptation and Android framework, not a complete pixel-exact original-game match.", "",
         f"Build / unit tests / lint: **{build_status}**",
-        f"API 34 Android TV / x86 / 4K test command: **{device_statuses.get('34', 'not run')}**",
-        f"API 36 Android TV / x86_64 / 4K test command: **{device_statuses.get('36', 'not run')}**", "",
+        f"API 34 Android TV / x86 / 4K display / 1080p window test command: **{device_statuses.get('34', 'not run')}**",
+        f"API 36 Android TV / x86_64 / 4K display / 4K window test command: **{device_statuses.get('36', 'not run')}**", "",
         f"Requested render mode for both TV channels: **{tv_vbo_mode}**.", "",
         "| Suite | Tests | Failures | Errors | Skipped |",
         "|---|---:|---:|---:|---:|",
@@ -127,7 +261,7 @@ def evaluate(build_dir, build_status, device_statuses, commit, local=False, tv_v
         lines.extend(["", "| Platform | Requested mode | Active VBO | GL renderer | GL version | Display px | Window px | Surface px | Scale |",
                       "|---|---|---|---|---|---|---|---|---|"])
         for version, mode in (("34", tv_vbo_mode), ("36", tv_vbo_mode)):
-            records, errors = read_render_evidence(build_dir / f"outputs/androidTest-results/api-{version}", mode)
+            records, errors = read_render_evidence(build_dir / f"outputs/androidTest-results/api-{version}", mode, version)
             problems.extend(f"API {version}: {error}" for error in errors)
             for record in records:
                 renderer = record["renderer"].replace("|", "\\|").replace("\n", " ")
@@ -135,6 +269,7 @@ def evaluate(build_dir, build_status, device_statuses, commit, local=False, tv_v
                 dimensions = [f"{record[prefix + 'Width']}x{record[prefix + 'Height']}" for prefix in ("display", "window", "surface")]
                 lines.append(f"| API {version} | {mode} | {str(record['activeVbo']).lower()} | {renderer} | {gl_version} | "
                              + " | ".join(dimensions) + f" | {record['scale']} |")
+        lines.extend(diagnostic_summary(build_dir))
     lint = build_dir / "reports/lint-results-debug.xml"
     try:
         issues = ET.parse(lint).getroot().findall("issue")

@@ -20,6 +20,11 @@ collect_results() {
   trap - EXIT
   adb logcat -d -v threadtime > "$diagnostics/device-logcat.txt" 2>&1 || true
   adb shell dumpsys display > "$diagnostics/display-state.txt" 2>&1 || true
+  {
+    read_device_value shell wm density || true
+    read_device_value shell cmd overlay lookup android android:integer/config_maxUiWidth || true
+    read_device_value shell dumpsys window displays || true
+  } > "$diagnostics/display-configuration.txt" 2>&1
   if [[ -d build/outputs/androidTest-results/connected ]]; then
     cp -a build/outputs/androidTest-results/connected/. "$results/" || {
       copy_status=$?; if [[ "$status" == 0 ]]; then status=$copy_status; fi
@@ -90,11 +95,13 @@ verify_environment() {
       return 1
     fi
   done <<< "$device_value"
-  if [[ "$physical_count" != 1 || "$override_count" -gt 1 || "$physical" != 3840x2160 || "${override:-$physical}" != 3840x2160 ]]; then
-    printf 'Expected physical and effective 4K display 3840x2160, found physical=<%s>, override=<%s>\n' "$physical" "$override" >&2
+  local expected_effective=3840x2160
+  if [[ "$version" == 34 ]]; then expected_effective=1920x1080; fi
+  if [[ "$physical_count" != 1 || "$override_count" -gt 1 || "$physical" != 3840x2160 || "${override:-$physical}" != "$expected_effective" ]]; then
+    printf 'Expected 4K physical display 3840x2160 and effective display %s, found physical=<%s>, override=<%s>\n' "$expected_effective" "$physical" "$override" >&2
     return 1
   fi
-  printf 'Verified Android TV API %s, ABI %s, Leanback feature, 4K display 3840x2160\n' "$version" "$expected_abi"
+  printf 'Verified Android TV API %s, ABI %s, Leanback feature, 4K display 3840x2160, effective display %s\n' "$version" "$expected_abi" "$expected_effective"
 }
 
 preflight 2>&1 | tee "$diagnostics/preflight.txt"

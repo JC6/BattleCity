@@ -14,6 +14,7 @@ import java.util.function.Consumer;
 final class DeviceTestDiagnostics {
     private static volatile TvEngine observedEngine;
     private static volatile Watchdog watchdog;
+    private static volatile TestPresentationProgress presentation;
     private static String testName = "not running";
     private static Thread testThread;
 
@@ -38,6 +39,9 @@ final class DeviceTestDiagnostics {
         Watchdog previous = watchdog;
         watchdog = null;
         if (previous != null) previous.close();
+        TestPresentationProgress progress = presentation;
+        presentation = null;
+        if (progress != null) progress.close();
         TestRenderMode.end();
         observedEngine = null;
         testName = "not running";
@@ -48,6 +52,17 @@ final class DeviceTestDiagnostics {
     static void phase(String phase) {
         Watchdog current = watchdog;
         if (current != null) current.phase(phase);
+    }
+
+    static String currentPhase() {
+        Watchdog current = watchdog;
+        return current == null ? "not running" : current.phase;
+    }
+
+    /** Called on the engine thread before a test begins observing a record presentation. */
+    static void watchPresentation(Level1Activity activity) {
+        if (presentation != null) throw new IllegalStateException("One presentation observer per test");
+        presentation = TestPresentationProgress.attach(testName, activity);
     }
 
     /** Called on the UI thread while a test is already inspecting its target activity. */
@@ -63,16 +78,18 @@ final class DeviceTestDiagnostics {
                 .append(" phase=").append(current == null ? "not running" : current.phase)
                 .append("\nPID ").append(android.os.Process.myPid())
                 .append(", uptime ").append(SystemClock.uptimeMillis()).append(" ms\n");
-        appendThreads(details, testThread);
+        appendThreads(details, testThread, "timeout");
         String output = details.toString();
         log(output);
         return new AssertionError(output, cause);
     }
 
-    private static void appendThreads(StringBuilder details, Thread instrumentationThread) {
+    private static void appendThreads(StringBuilder details, Thread instrumentationThread, String event) {
         // Do not call the UI thread or acquire the engine lock: either may be the stalled thread.
         TvEngine engine = observedEngine;
         if (engine != null) details.append(engine.diagnosticSnapshot());
+        TestPresentationProgress progress = presentation;
+        if (progress != null) details.append(progress.snapshot(event)).append('\n');
         var threads = new ArrayList<>(Thread.getAllStackTraces().entrySet());
         threads.sort(Comparator.comparing(entry -> entry.getKey().getName()));
         for (Map.Entry<Thread, StackTraceElement[]> entry : threads) {
@@ -186,7 +203,7 @@ final class DeviceTestDiagnostics {
                     .append(" waitingMillis=").append(sample.waiting())
                     .append(" lastAcknowledgedUptime=").append(sample.lastAcknowledged()).append('\n');
             // Neither stack collection nor logging holds the heartbeat lock used by the UI thread.
-            appendThreads(details, instrumentationThread);
+            appendThreads(details, instrumentationThread, "watchdog");
             synchronized (outputLock) {
                 synchronized (stateLock) {
                     if (closed || !pending || heartbeatId != sample.heartbeatId()) return;

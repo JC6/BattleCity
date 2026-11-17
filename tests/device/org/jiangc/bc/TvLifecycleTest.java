@@ -545,6 +545,7 @@ public class TvLifecycleTest {
             awaitReady(scenario);
             scenario.onActivity(activity->{join(activity,101);});awaitStarted(scenario);
             onEngine(scenario,activity->{
+                DeviceTestDiagnostics.watchPresentation(activity);
                 BattleSession session=activity.session();session.game.state.players[0].score=record;session.game.state.phase=GameState.LOST;
                 session.screen=BattleSession.SCORE;session.elapsed=session.scoreCompletion()-1;
             });
@@ -561,6 +562,7 @@ public class TvLifecycleTest {
                 activity.onButtons(303,EnumSet.of(Button.START),true);assertFalse(activity.isFinishing());
             });
             onEngine(scenario,activity->assertEquals(BattleSession.HISCORE,activity.session().screen));
+            DeviceTestDiagnostics.phase("record presentation: await automatic return after reconnect");
             await("New record must return automatically",()->scenario.getState()==Lifecycle.State.DESTROYED);
             assertEquals(record,app.memory().highScore());assertArrayEquals(new int[]{record,0},app.memory().lastScores());
         }

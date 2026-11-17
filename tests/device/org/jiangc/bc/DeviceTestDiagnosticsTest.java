@@ -9,6 +9,8 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicLong;
+import org.json.JSONObject;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import static org.junit.Assert.*;
@@ -17,6 +19,7 @@ import static org.junit.Assert.*;
 @RunWith(AndroidJUnit4.class)
 public class DeviceTestDiagnosticsTest {
     @Test public void watchdogSamplesBlockedUiRecoversAndStopsWithoutResidualCallbacks() throws Exception {
+        presentationSnapshotsRemainReadableWhileUiIsBlocked();
         var samples = new LinkedBlockingQueue<String>();
         var sampler = new AtomicReference<Thread>();
         Thread testThread = Thread.currentThread();
@@ -72,6 +75,61 @@ public class DeviceTestDiagnosticsTest {
                     watchdog.acknowledgedHeartbeats());
         } finally {
             watchdog.close();
+        }
+    }
+
+    private static void presentationSnapshotsRemainReadableWhileUiIsBlocked() throws Exception {
+        var output = new LinkedBlockingQueue<String>();
+        var uiCalls = new AtomicLong();
+        try (var progress = new TestPresentationProgress("progress self-test", "fixture", () -> {
+            uiCalls.incrementAndGet();
+            return new TestPresentationProgress.UiSample(SystemClock.uptimeMillis(), true, true, false, false);
+        }, output::add, 25, 100)) {
+            long now = SystemClock.uptimeMillis();
+            progress.record(new TestPresentationProgress.EngineSample(now - 200, 1, "HISCORE", 10,
+                    false, true, now - 200, .02));
+            long deadline = now + 1_000;
+            while (new JSONObject(progress.snapshot().substring(TestPresentationProgress.MARKER.length())).isNull("ui")) {
+                assertTrue("The UI observer must publish its first sample", SystemClock.uptimeMillis() < deadline);
+                SystemClock.sleep(10);
+            }
+            try (MainBlock block = new MainBlock()) {
+                block.awaitEntered();
+                long calls = uiCalls.get();
+                output.clear();
+                now = SystemClock.uptimeMillis();
+                progress.record(new TestPresentationProgress.EngineSample(now, 2, "HISCORE", 11,
+                        false, true, now, .02));
+                JSONObject snapshot;
+                long logDeadline = SystemClock.uptimeMillis() + 1_000;
+                do {
+                    String line = output.poll(Math.max(1, logDeadline - SystemClock.uptimeMillis()), TimeUnit.MILLISECONDS);
+                    assertNotNull("A blocked UI must not block progress logging", line);
+                    snapshot = new JSONObject(line.substring(TestPresentationProgress.MARKER.length()));
+                } while (snapshot.getJSONObject("engine").getLong("frames") != 2
+                        && SystemClock.uptimeMillis() < logDeadline);
+                assertEquals(2, snapshot.getJSONObject("engine").getLong("frames"));
+                assertEquals(11, snapshot.getJSONObject("engine").getInt("elapsed"));
+                SystemClock.sleep(150);
+                snapshot = new JSONObject(progress.snapshot().substring(TestPresentationProgress.MARKER.length()));
+                assertTrue("Cached UI samples must expose their age", snapshot.getJSONObject("ui").getLong("ageMillis") >= 150);
+                assertTrue("Cached engine samples must expose their age", snapshot.getJSONObject("engine").getLong("ageMillis") >= 150);
+                assertEquals("Reading a snapshot must not query the blocked UI", calls, uiCalls.get());
+                progress.close();
+                assertFalse("Progress worker must stop", progress.isAlive());
+                assertFalse("Stop must remove the UI observer", progress.uiSamplePending());
+                output.clear();
+                progress.record(new TestPresentationProgress.EngineSample(now, 3, "DONE", 0,
+                        false, false, now, .02));
+                assertEquals("Stop must discard late engine samples", 2,
+                        new JSONObject(progress.snapshot().substring(TestPresentationProgress.MARKER.length()))
+                                .getJSONObject("engine").getLong("frames"));
+                SystemClock.sleep(150);
+                assertTrue("Stop must suppress later logs", output.isEmpty());
+            }
+            long calls = uiCalls.get();
+            SystemClock.sleep(100);
+            assertEquals("No UI sampling may survive cleanup", calls, uiCalls.get());
         }
     }
 
