@@ -60,12 +60,22 @@ final class TestRenderMode {
     }
 
     private record State(boolean activeVbo, boolean optionsDisabled, String renderer, String version) { }
+    private record Geometry(int displayWidth, int displayHeight, int windowWidth, int windowHeight,
+                            int surfaceWidth, int surfaceHeight) { }
 
     /** Call only after PixelCopy has observed a rendered frame for this surface. */
     static void assertEffective(TvGameActivity activity) throws Exception {
         var surface = new AtomicReference<RenderSurfaceView>();
-        InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
-                surface.set(findSurface(activity.findViewById(android.R.id.content))));
+        var geometry = new AtomicReference<Geometry>();
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            View content = activity.findViewById(android.R.id.content);
+            surface.set(findSurface(content));
+            assertNotNull("A rendered surface must exist", surface.get());
+            var mode = content.getDisplay().getMode();
+            var buffer = surface.get().getHolder().getSurfaceFrame();
+            geometry.set(new Geometry(mode.getPhysicalWidth(), mode.getPhysicalHeight(),
+                    content.getWidth(), content.getHeight(), buffer.width(), buffer.height()));
+        });
         assertNotNull("A rendered surface must exist", surface.get());
         var query = new FutureTask<>(() -> {
             EGL10 egl = (EGL10) EGLContext.getEGL();
@@ -82,9 +92,15 @@ final class TestRenderMode {
             throw DeviceTestDiagnostics.timeout("GL render-mode query timed out", 10_000, failure);
         }
         String mode = requested;
+        Geometry dimensions = geometry.get();
+        int scale = dimensions.surfaceWidth() / 256;
         String evidence = new JSONObject().put("requested", mode).put("activeVbo", state.activeVbo())
                 .put("optionsDisabled", state.optionsDisabled()).put("renderer", state.renderer())
-                .put("version", state.version()).toString();
+                .put("version", state.version())
+                .put("displayWidth", dimensions.displayWidth()).put("displayHeight", dimensions.displayHeight())
+                .put("windowWidth", dimensions.windowWidth()).put("windowHeight", dimensions.windowHeight())
+                .put("surfaceWidth", dimensions.surfaceWidth()).put("surfaceHeight", dimensions.surfaceHeight())
+                .put("scale", scale).toString();
         Log.i("BattleCityRenderMode", "BATTLECITY_RENDER_MODE " + evidence);
         assertNotNull("GL renderer must be available", state.renderer());
         assertNotNull("GL version must be available", state.version());
@@ -92,6 +108,15 @@ final class TestRenderMode {
         assertEquals("Engine options must match the requested test mode", mode.equals("disabled"), state.optionsDisabled());
         assertEquals("The CI baseline must use VBO; the disabled experiment must bypass it",
                 mode.equals("default"), state.activeVbo());
+        assertEquals("The display mode must be 4K", 3840, dimensions.displayWidth());
+        assertEquals("The display mode must be 4K", 2160, dimensions.displayHeight());
+        assertEquals("The application window must render at 4K", 3840, dimensions.windowWidth());
+        assertEquals("The application window must render at 4K", 2160, dimensions.windowHeight());
+        assertTrue("The game surface must have a positive integer scale", scale > 0);
+        assertEquals(256 * scale, dimensions.surfaceWidth());
+        assertEquals(240 * scale, dimensions.surfaceHeight());
+        assertTrue("The game surface must fit the window", dimensions.surfaceWidth() <= dimensions.windowWidth()
+                && dimensions.surfaceHeight() <= dimensions.windowHeight());
     }
 
     private static RenderSurfaceView findSurface(View view) {

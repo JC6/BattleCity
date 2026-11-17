@@ -14,8 +14,8 @@ import xml.etree.ElementTree as ET
 
 GROUPS = (
     ("JVM", "test-results/testDebugUnitTest", 173),
-    ("API 34 TV device", "outputs/androidTest-results/api-34", 46),
-    ("API 37.2 phone / 16 KB device", "outputs/androidTest-results/api-37.2", 46),
+    ("API 34 TV / 4K device", "outputs/androidTest-results/api-34", 46),
+    ("API 36 TV / 4K device", "outputs/androidTest-results/api-36", 46),
 )
 DIAGNOSTIC_SUCCESS = "**DIAGNOSTIC CHECKS PASSED — production acceptance pending**"
 
@@ -71,6 +71,16 @@ def read_render_evidence(directory, expected):
                         or any(not isinstance(record.get(key), str) or not record[key].strip()
                                for key in ("renderer", "version"))):
                     raise ValueError("requested mode, engine options or actual GL state do not match")
+                dimensions = ("displayWidth", "displayHeight", "windowWidth", "windowHeight",
+                              "surfaceWidth", "surfaceHeight", "scale")
+                if any(type(record.get(key)) is not int for key in dimensions):
+                    raise ValueError("4K display, window, surface and integer scale evidence is required")
+                if (record["displayWidth"], record["displayHeight"], record["windowWidth"], record["windowHeight"]) != (3840, 2160, 3840, 2160):
+                    raise ValueError("the actual display and application window must both be 3840x2160")
+                scale = record["scale"]
+                if (scale < 1 or record["surfaceWidth"] != 256 * scale or record["surfaceHeight"] != 240 * scale
+                        or record["surfaceWidth"] > record["windowWidth"] or record["surfaceHeight"] > record["windowHeight"]):
+                    raise ValueError("the surface must fit the window at an integer 256x240 scale")
                 records.append(record)
         except (OSError, ValueError, TypeError) as failure:
             problems.append(f"{path.name}: invalid render-mode evidence ({failure})")
@@ -84,19 +94,19 @@ def evaluate(build_dir, build_status, device_statuses, commit, local=False, tv_v
     if tv_vbo_mode not in ("default", "disabled"):
         problems.append("TV VBO mode must be default or disabled")
     lines = [
-        "# Android framework validation", "", f"Commit: `{commit}`", "",
+        "# Android TV framework validation", "", f"Commit: `{commit}`", "",
         "Data: **shared source-generated game data**; no external pack is required.",
         "These checks validate the adaptation and Android framework, not a complete pixel-exact original-game match.", "",
         f"Build / unit tests / lint: **{build_status}**",
-        f"API 34 Android TV / x86 test command: **{device_statuses.get('34', 'not run')}**",
-        f"API 37.2 phone / x86_64 / 16 KB test command: **{device_statuses.get('37.2', 'not run')}**", "",
-        f"Requested render modes: API 34 TV **{tv_vbo_mode}**; API 37.2 phone **default**.", "",
+        f"API 34 Android TV / x86 / 4K test command: **{device_statuses.get('34', 'not run')}**",
+        f"API 36 Android TV / x86_64 / 4K test command: **{device_statuses.get('36', 'not run')}**", "",
+        f"Requested render mode for both TV channels: **{tv_vbo_mode}**.", "",
         "| Suite | Tests | Failures | Errors | Skipped |",
         "|---|---:|---:|---:|---:|",
     ]
     statuses = [("Build checks", build_status)] + ([] if local else [
         (f"API {version} device tests", device_statuses.get(version, "not run"))
-        for version in ("34", "37.2")
+        for version in ("34", "36")
     ])
     for label, status in statuses:
         if status != "success":
@@ -114,15 +124,17 @@ def evaluate(build_dir, build_status, device_statuses, commit, local=False, tv_v
     if local:
         lines.extend(["", "Device tests: **NOT RUN**. The instrumentation APK is compiled only; no emulator or physical device is contacted."])
     else:
-        lines.extend(["", "| Platform | Requested mode | Active VBO | GL renderer | GL version |",
-                      "|---|---|---|---|---|"])
-        for version, mode in (("34", tv_vbo_mode), ("37.2", "default")):
+        lines.extend(["", "| Platform | Requested mode | Active VBO | GL renderer | GL version | Display px | Window px | Surface px | Scale |",
+                      "|---|---|---|---|---|---|---|---|---|"])
+        for version, mode in (("34", tv_vbo_mode), ("36", tv_vbo_mode)):
             records, errors = read_render_evidence(build_dir / f"outputs/androidTest-results/api-{version}", mode)
             problems.extend(f"API {version}: {error}" for error in errors)
             for record in records:
                 renderer = record["renderer"].replace("|", "\\|").replace("\n", " ")
                 gl_version = record["version"].replace("|", "\\|").replace("\n", " ")
-                lines.append(f"| API {version} | {mode} | {str(record['activeVbo']).lower()} | {renderer} | {gl_version} |")
+                dimensions = [f"{record[prefix + 'Width']}x{record[prefix + 'Height']}" for prefix in ("display", "window", "surface")]
+                lines.append(f"| API {version} | {mode} | {str(record['activeVbo']).lower()} | {renderer} | {gl_version} | "
+                             + " | ".join(dimensions) + f" | {record['scale']} |")
     lint = build_dir / "reports/lint-results-debug.xml"
     try:
         issues = ET.parse(lint).getroot().findall("issue")
@@ -206,7 +218,7 @@ def main():
     summary, problems = evaluate(
         build_dir, os.environ.get("BUILD_STATUS", "not run"),
         {"34": os.environ.get("DEVICE_API34_STATUS", "not run"),
-         "37.2": os.environ.get("DEVICE_API37_STATUS", "not run")},
+         "36": os.environ.get("DEVICE_API36_STATUS", "not run")},
         os.environ.get("GITHUB_SHA", "local workspace"), local=args.local,
         tv_vbo_mode=os.environ.get("BATTLECITY_TV_VBO_MODE", "default"),
     )

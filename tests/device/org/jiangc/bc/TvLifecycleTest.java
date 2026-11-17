@@ -735,16 +735,15 @@ public class TvLifecycleTest {
                 View.MeasureSpec.makeMeasureSpec(480, View.MeasureSpec.EXACTLY));
         root.layout(0, 0, 640, 480);
         WindowInsets obstructed = new WindowInsets.Builder()
-                .setInsets(WindowInsets.Type.systemBars(), Insets.of(100, 20, 40, 60))
-                .setInsets(WindowInsets.Type.displayCutout(), Insets.of(0, 50, 0, 0)).build();
+                .setInsets(WindowInsets.Type.systemBars(), Insets.of(100, 20, 40, 60)).build();
         for (int repeat = 0; repeat < 2; repeat++) {
             root.dispatchApplyWindowInsets(obstructed);
-            // Available area is 500 x 370; five percent adds 25 x 18 pixels.
-            assertArrayEquals(new int[]{125, 68, 65, 78}, new int[]{root.getPaddingLeft(),
+            // Available area is 500 x 400; five percent adds 25 x 20 pixels.
+            assertArrayEquals(new int[]{125, 40, 65, 80}, new int[]{root.getPaddingLeft(),
                     root.getPaddingTop(), root.getPaddingRight(), root.getPaddingBottom()});
         }
         root.dispatchApplyWindowInsets(new WindowInsets.Builder()
-                .setInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout(), Insets.NONE).build());
+                .setInsets(WindowInsets.Type.systemBars(), Insets.NONE).build());
         assertArrayEquals(new int[]{32, 24, 32, 24}, new int[]{root.getPaddingLeft(),
                 root.getPaddingTop(), root.getPaddingRight(), root.getPaddingBottom()});
         root.requestApplyInsets();

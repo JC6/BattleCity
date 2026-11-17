@@ -2,6 +2,7 @@ package org.jiangc.bc.presentation;
 
 import java.util.*;
 import java.nio.file.*;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.regex.Pattern;
 import org.junit.Test;
@@ -14,7 +15,7 @@ import org.jiangc.bc.presentation.PresentationTest.Surface;
 public final class WebGraphicsTest {
     @Test public void everyGeneratedFrameMatchesTheFixedReferenceWithoutExternalAssets()throws Exception{
         Surface s=new Surface();
-        String data=Files.readString(Path.of("web/tests/game/fixtures/native-golden.json"));
+        String data=new String(Files.readAllBytes(Path.of("web/tests/game/fixtures/native-golden.json")),StandardCharsets.UTF_8);
         data=data.substring(data.indexOf("\"referenceFrames\": {"));
         var entries=Pattern.compile("\"([^\"]+)\": \\{\\s*\"width\": (\\d+),\\s*\"height\": (\\d+),\\s*\"sha256\": \"([0-9a-f]{64})\"").matcher(data);
         Set<String> keys=new HashSet<>();

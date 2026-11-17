@@ -14,7 +14,7 @@ final class GameWindow {
         window.setDecorFitsSystemWindows(false);
         Insets[] insets = {Insets.NONE};
         root.setOnApplyWindowInsetsListener((view, applied) -> {
-            insets[0] = applied.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+            insets[0] = applied.getInsets(WindowInsets.Type.systemBars());
             pad(view, insets[0]);
             return applied;
         });

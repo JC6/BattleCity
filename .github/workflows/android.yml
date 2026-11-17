@@ -12,7 +12,7 @@ on:
         type: boolean
         default: false
       tv_vbo_mode:
-        description: API 34 TV VBO experiment (disabled is diagnostic only)
+        description: API 34 and 36 TV VBO experiment (disabled is diagnostic only)
         type: choice
         default: default
         options: [default, disabled]
@@ -56,7 +56,7 @@ jobs:
             ln -s "$installed_tools" "$latest_tools"
           fi
           "$latest_tools/bin/sdkmanager" --version
-          "$latest_tools/bin/sdkmanager" 'platforms;android-37.2'
+          "$latest_tools/bin/sdkmanager" 'platforms;android-36'
       - name: Check acceptance report validation
         run: python3 -m unittest discover -s tests/ci -v
       - name: Build, unit tests and lint
@@ -79,35 +79,35 @@ jobs:
             ls -l /dev/kvm || exit "$?"
             python3 -c 'import os; fd = os.open("/dev/kvm", os.O_RDWR); os.close(fd); print("KVM device opened for read/write")'
           } 2>&1 | tee build/diagnostics/kvm/setup.txt
-      - name: API 34 TV framework smoke tests
+      - name: API 34 TV 4K framework tests
         id: device34
         uses: reactivecircus/android-emulator-runner@v2.38.0
         with:
           api-level: 34
           target: android-tv
           arch: x86
-          profile: tv_1080p
+          profile: tv_4k
           pre-emulator-launch-script: mkdir -p build/diagnostics/emulator-api-34
           emulator-options: -no-window -gpu software -no-snapshot -noaudio -no-boot-anim -logcat-output ${{ github.workspace }}/build/diagnostics/emulator-api-34/startup-logcat.txt
           script: bash tools/run-android-device-tests.sh 34
-      - name: API 37.2 phone (16 KB) framework smoke tests
+      - name: API 36 TV 4K framework tests
         if: ${{ !cancelled() && steps.checks.outcome == 'success' && steps.acceleration.outcome == 'success' }}
-        id: device37
+        id: device36
         uses: reactivecircus/android-emulator-runner@v2.38.0
         with:
-          api-level: '37.2'
-          target: google_apis_ps16k
+          api-level: 36
+          target: android-tv
           arch: x86_64
-          profile: pixel_2
-          pre-emulator-launch-script: mkdir -p build/diagnostics/emulator-api-37.2
-          emulator-options: -no-window -gpu software -no-snapshot -noaudio -no-boot-anim -logcat-output ${{ github.workspace }}/build/diagnostics/emulator-api-37.2/startup-logcat.txt
-          script: bash tools/run-android-device-tests.sh 37.2
+          profile: tv_4k
+          pre-emulator-launch-script: mkdir -p build/diagnostics/emulator-api-36
+          emulator-options: -no-window -gpu software -no-snapshot -noaudio -no-boot-anim -logcat-output ${{ github.workspace }}/build/diagnostics/emulator-api-36/startup-logcat.txt
+          script: bash tools/run-android-device-tests.sh 36
       - name: Verify and summarize acceptance
         if: always()
         env:
           BUILD_STATUS: ${{ steps.checks.outcome }}
           DEVICE_API34_STATUS: ${{ steps.device34.outcome }}
-          DEVICE_API37_STATUS: ${{ steps.device37.outcome }}
+          DEVICE_API36_STATUS: ${{ steps.device36.outcome }}
         run: python3 tools/check-android-results.py
       - uses: actions/upload-artifact@v7.0.2
         if: always()

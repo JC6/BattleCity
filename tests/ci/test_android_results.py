@@ -25,7 +25,7 @@ class AcceptanceResultsTest(unittest.TestCase):
         self.build = Path(self.temporary.name)
         for _, relative, count in results.GROUPS:
             self.write_report(relative, count)
-        for version in ("34", "37.2"):
+        for version in ("34", "36"):
             self.write_render_evidence(version)
         lint = self.build / "reports/lint-results-debug.xml"
         lint.parent.mkdir(parents=True)
@@ -53,7 +53,9 @@ class AcceptanceResultsTest(unittest.TestCase):
 
     def write_render_evidence(self, platform, mode="default", **changes):
         record = dict(requested=mode, activeVbo=mode == "default", optionsDisabled=mode == "disabled",
-                      renderer="Fixture GL renderer", version="Fixture GL version")
+                      renderer="Fixture GL renderer", version="Fixture GL version",
+                      displayWidth=3840, displayHeight=2160, windowWidth=3840, windowHeight=2160,
+                      surfaceWidth=2048, surfaceHeight=1920, scale=8)
         record.update(changes)
         path = self.build / f"outputs/androidTest-results/api-{platform}/debug/fixture" / (
             "logcat-org.jiangc.bc.TvMenuFlowTest-actualGlAdapterMatchesSoftwareAcrossSpriteSizesAndPausedScreens.txt")
@@ -62,17 +64,18 @@ class AcceptanceResultsTest(unittest.TestCase):
         return path
 
     def evaluate(self, build_status="success", device_status="success", device_statuses=None, tv_vbo_mode="default"):
-        statuses = {"34": device_status, "37.2": device_status} if device_statuses is None else device_statuses
+        statuses = {"34": device_status, "36": device_status} if device_statuses is None else device_statuses
         return results.evaluate(self.build, build_status, statuses, "fixture-commit", tv_vbo_mode=tv_vbo_mode)
 
-    def test_disabled_vbo_success_is_diagnostic_only_and_phone_is_default(self):
-        self.write_render_evidence("34", "disabled")
+    def test_disabled_vbo_success_is_diagnostic_only_on_both_tv_channels(self):
+        for version in ("34", "36"):
+            self.write_render_evidence(version, "disabled")
         summary, problems = self.evaluate(tv_vbo_mode="disabled")
         self.assertEqual([], problems)
         self.assertIn(results.DIAGNOSTIC_SUCCESS, summary)
         self.assertNotIn("**PASSED**", summary)
         self.assertIn("| API 34 | disabled | false | Fixture GL renderer | Fixture GL version |", summary)
-        self.assertIn("| API 37.2 | default | true |", summary)
+        self.assertIn("| API 36 | disabled | false |", summary)
 
     def test_missing_malformed_or_contradictory_render_evidence_fails(self):
         path = self.write_render_evidence("34")
@@ -94,11 +97,40 @@ class AcceptanceResultsTest(unittest.TestCase):
                 self.write_render_evidence("34", **changes)
                 self.assertTrue(self.evaluate()[1])
 
-    def test_disabled_tv_cannot_accept_default_evidence_or_a_disabled_phone(self):
-        self.assertTrue(self.evaluate(tv_vbo_mode="disabled")[1])
-        self.write_render_evidence("34", "disabled")
-        self.write_render_evidence("37.2", "disabled")
-        self.assertTrue(self.evaluate(tv_vbo_mode="disabled")[1])
+    def test_each_disabled_tv_channel_requires_its_own_disabled_evidence(self):
+        for version in ("34", "36"):
+            with self.subTest(version=version):
+                for platform in ("34", "36"):
+                    self.write_render_evidence(platform, "disabled")
+                self.write_render_evidence(version, "default")
+                self.assertTrue(self.evaluate(tv_vbo_mode="disabled")[1])
+
+    def test_4k_display_and_application_window_evidence_is_required(self):
+        for changes in ({"displayWidth": 1920}, {"displayHeight": 1080},
+                        {"windowWidth": 1920}, {"windowHeight": 1080},
+                        {"windowWidth": "3840"}, {"displayWidth": True},
+                        {"windowHeight": None}, {"scale": 8.0}):
+            with self.subTest(changes=changes):
+                self.write_render_evidence("36", **changes)
+                self.assertTrue(self.evaluate()[1])
+        path = self.write_render_evidence("36")
+        record = json.loads(path.read_text().split("BATTLECITY_RENDER_MODE ", 1)[1])
+        del record["surfaceWidth"]
+        path.write_text("BATTLECITY_RENDER_MODE " + json.dumps(record))
+        self.assertTrue(self.evaluate()[1])
+
+    def test_surface_must_use_one_integer_scale_and_fit_the_window(self):
+        for changes in ({"scale": 0}, {"scale": -1}, {"scale": True},
+                        {"surfaceWidth": 2047}, {"surfaceHeight": 1919},
+                        {"surfaceWidth": 2048, "surfaceHeight": 960},
+                        {"surfaceWidth": 4096, "surfaceHeight": 3840, "scale": 16}):
+            with self.subTest(changes=changes):
+                self.write_render_evidence("34", **changes)
+                self.assertTrue(self.evaluate()[1])
+        self.write_render_evidence("34", surfaceWidth=1792, surfaceHeight=1680, scale=7)
+        summary, problems = self.evaluate()
+        self.assertFalse(problems)
+        self.assertIn("3840x2160 | 3840x2160 | 1792x1680 | 7 |", summary)
 
     def test_other_logs_and_other_platform_cannot_replace_native_gl_evidence(self):
         path = self.write_render_evidence("34")
@@ -291,10 +323,10 @@ V2 Signer: certificate MD5 digest: 4efa2d677cea1f1aff0d97c3353d7047
                     self.write_report(relative, minimum)
 
     def test_each_platform_requires_its_own_success_status(self):
-        for version in ("34", "37.2"):
+        for version in ("34", "36"):
             for status in (None, "failure", "skipped", "cancelled", "not run"):
                 with self.subTest(version=version, status=status):
-                    statuses = {"34": "success", "37.2": "success"}
+                    statuses = {"34": "success", "36": "success"}
                     if status is None:
                         del statuses[version]
                     else:
@@ -308,6 +340,16 @@ V2 Signer: certificate MD5 digest: 4efa2d677cea1f1aff0d97c3353d7047
                 (self.build / relative / "TEST-fixture.xml").unlink()
                 self.assertTrue(self.evaluate()[1])
                 self.write_report(relative, minimum)
+
+    def test_old_phone_results_and_status_cannot_replace_api36_tv(self):
+        self.write_report("outputs/androidTest-results/api-37.2", 46)
+        self.write_render_evidence("37.2")
+        (self.build / "outputs/androidTest-results/api-36/TEST-fixture.xml").unlink()
+        summary, problems = self.evaluate(device_statuses={"34": "success", "37.2": "success"})
+        self.assertTrue(problems)
+        self.assertIn("API 36 device tests did not succeed (not run)", summary)
+        self.assertIn("API 36 TV / 4K device: JUnit XML reports are missing", summary)
+        self.assertNotIn("API 37.2", summary)
 
     def test_suite_level_runner_error_is_not_ignored(self):
         path = self.build / results.GROUPS[1][1] / "TEST-runner.xml"
@@ -339,7 +381,7 @@ V2 Signer: certificate MD5 digest: 4efa2d677cea1f1aff0d97c3353d7047
         self.write_report(results.GROUPS[1][1], count, wrapped=True)
         summary, problems = self.evaluate()
         self.assertEqual([], problems)
-        self.assertIn(f"| API 34 TV device | {count} | 0 | 0 | 0 |", summary)
+        self.assertIn(f"| API 34 TV / 4K device | {count} | 0 | 0 | 0 |", summary)
 
 
 if __name__ == "__main__":

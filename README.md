@@ -6,9 +6,9 @@
 
 ## Android
 
-运行要求 Android 14（API 34）及以上的 Leanback 环境，使用手柄操作。
+Android 面向 Android 14（API 34）及以上的 Leanback TV 环境，使用手柄操作；手机和平板不作为适配与验收目标。`minSdk=34`，`compileSdk=36`，`targetSdk=36`。
 
-另需 JDK 17、Python 3 和 Android SDK Platform 37.2；设置 `JAVA_HOME`、`ANDROID_HOME`，确保 `node`、`python3` 在 PATH 中可用。仓库根目录执行：
+另需 JDK 17、Python 3 和 Android SDK Platform 36；设置 `JAVA_HOME`、`ANDROID_HOME`，确保 `node`、`python3` 在 PATH 中可用。仓库根目录执行：
 
 ```sh
 bash ./gradlew assembleDebug
@@ -63,13 +63,15 @@ BUILD_STATUS=success python3 tools/check-android-results.py --local
 
 报告位于 `build/reports/android-acceptance.md`，JVM 验收至少 173 项，自动验收见 [Android CI](.github/workflows/android.yml)。
 
-Android CI 使用两条设备通道，每条要求至少 46 项用例通过，失败、错误和跳过均为零：API 34 Android TV（`android-tv`、`x86`、`tv_1080p`）覆盖最低支持版本的电视环境；API 37.2 手机（`google_apis_ps16k`、`x86_64`、`pixel_2`）覆盖新系统和 16 KB 页大小。脚本预检实际 API、ABI、Leanback 特征和手机页大小，保留独立报告；手机通道会预先确认系统全屏引导。
+Android CI 只运行两条 TV 通道，每条要求至少 46 项用例通过，失败、错误和跳过均为零：API 34（`android-tv`、`x86`、`tv_4k`）作为主验收通道；API 36（`android-tv`、`x86_64`、`tv_4k`）验证最高稳定 TV 版本。API 34 失败后仍继续收集 API 36 结果。脚本预检实际 API、ABI、Leanback 特征以及物理和有效显示尺寸 3840×2160，保留独立报告。两个通道均使用同一套主 APK 和设备测试 APK；配置进入 CI 后，实际验证状态以该提交的产物为准。
+
+4K 面板与应用窗口的尺寸可能不同。原生 GL 像素用例在首帧后记录实际显示模式、应用窗口、游戏 Surface 尺寸和整数缩放倍数；验收要求显示与应用窗口均为 3840×2160，游戏 Surface 以 256×240 的整数倍显示并位于窗口内。报告不会仅凭 `tv_4k` 设备名认定完成 4K 验证。
 
 当前应用及 AndEngine JAR 不含原生 `.so`，保持单 APK 且不限制 ABI；ARMv7 电视仍需满足 API 34 最低系统要求。x86 模拟器回归不代表已完成 ARM 电视的真机验证。
 
-VBO 对照实验仅作用于设备测试 APK。手动运行 Android CI 时，`tv_vbo_mode` 可选 `default`（默认策略）或 `disabled`（调用 AndEngine 的 VBO 关闭接口）；普通推送保持默认策略，API 37.2 手机通道始终作为默认策略控制组。在模拟器内也可使用 `BATTLECITY_TV_VBO_MODE=disabled bash tools/run-android-device-tests.sh 34`。每次测试进程只使用一种模式，测试回调在首帧前配置所有游戏 Activity，清理后注销；主 APK 不增加渲染开关。
+VBO 对照实验仅作用于设备测试 APK。手动运行 Android CI 时，`tv_vbo_mode` 可选 `default`（默认策略）或 `disabled`（调用 AndEngine 的 VBO 关闭接口）；普通推送保持默认策略；所选模式同时作用于 API 34 和 API 36 两条 TV 通道。在模拟器内也可使用 `BATTLECITY_TV_VBO_MODE=disabled bash tools/run-android-device-tests.sh 34`。每次测试进程只使用一种模式，测试回调在首帧前配置所有游戏 Activity，清理后注销；主 APK 不增加渲染开关。
 
-原生 GL 像素测试会在首帧后记录并断言实际 VBO 状态、引擎选项和 GL renderer/version，报告校验这些证据。关闭 VBO 的运行全部通过时也只标记为诊断验证通过，生产验收待定。手动运行的报告名称包含模式和运行编号；在同一提交上以独立模拟器分别运行默认组、关闭组各一次，关闭组全过后再连续复验两次。默认组未复现时对照证据不足；关闭组失败时说明该绕过未解决问题；默认组复现且关闭组三次全过时形成兼容候选，生产 ANR 仍需后续修复验证。
+原生 GL 像素测试会在首帧后记录并断言实际 VBO 状态、引擎选项和 GL renderer/version，报告校验这些证据。关闭 VBO 的运行全部通过时也只标记为诊断验证通过，生产验收待定。手动运行的报告名称包含模式和运行编号；在同一提交上以独立模拟器分别运行双 TV 默认组、双 TV 关闭组各一次，关闭组全过后再连续复验两次；旧提交或旧 1080p 产物不计入新 4K 配置的验证轮次。默认组未复现时对照证据不足；关闭组失败时说明该绕过未解决问题；默认组复现且关闭组三次全过时形成兼容候选，生产 ANR 仍需后续修复验证。
 
 日常构建和 CI 默认关闭引擎诊断；设备测试 APK 内的独立看门狗每 250ms 检查主线程心跳，连续 2 秒和 4 秒未响应时分别保留线程栈、测试名称及执行阶段，每次阻塞最多两份，恢复后重新计时。看门狗不获取引擎锁，清理后停止，输出随现有 logcat 诊断进入报告；测试等待超时也会保留线程栈。需要详细生命周期、引擎启停调用栈和帧计数时，手动运行 Android CI 并勾选 `engine_diagnostics`。在模拟器内运行测试脚本时也可设置 `BATTLECITY_ENGINE_DIAGNOSTICS=true`；测试在 Activity 启动前读取参数，清理结束后复位开关，非可调试构建始终关闭诊断。
 
