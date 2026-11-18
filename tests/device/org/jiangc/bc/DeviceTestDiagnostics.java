@@ -12,6 +12,7 @@ import java.util.function.Consumer;
 
 /** Test-APK-only diagnostics, including when a synchronous UI call cannot return. */
 final class DeviceTestDiagnostics {
+    static final long RECORD_RETURN_TIMEOUT_MS = 30_000;
     private static volatile TvEngine observedEngine;
     private static volatile Watchdog watchdog;
     private static volatile TestPresentationProgress presentation;

@@ -12,6 +12,8 @@ import androidx.test.platform.app.InstrumentationRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
@@ -44,6 +46,7 @@ public class TvMenuFlowTest {
     // Activity references and lifecycle state are accessed only on the main thread.
     private final List<Activity> activities = new ArrayList<>();
     private Activity resumed;
+    private final Set<Activity> destroyed = ConcurrentHashMap.newKeySet();
     private BattleCityApplication app;
     private TestControllers devices;
     private ActivityScenario<MainMenuActivity> root;
@@ -56,7 +59,7 @@ public class TvMenuFlowTest {
         @Override public void onActivityStarted(Activity activity) { }
         @Override public void onActivityStopped(Activity activity) { }
         @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) { }
-        @Override public void onActivityDestroyed(Activity activity) { }
+        @Override public void onActivityDestroyed(Activity activity) { destroyed.add(activity); }
     };
 
     @Before public void beforeTest() {
@@ -153,7 +156,7 @@ public class TvMenuFlowTest {
         onEngine(battle, () -> DeviceTestDiagnostics.watchPresentation(battle));
         AtomicBoolean recordShown = lose(battle, record);
         awaitEngine(battle, "New record must enter HISCORE", () -> battle.session().screen == BattleSession.HISCORE);
-        returned(menu, battle, record, record, 0);
+        recordReturned(menu, battle, record);
         assertTrue("Record presentation must have run", recordShown.get());
         assertNull("Game Over must discard the construction draft", app.memory().customTiles());
 
@@ -257,7 +260,7 @@ public class TvMenuFlowTest {
         onEngine(battle,()->assertEquals(BattleSession.GAME_OVER,battle.session().screen));
         press(battle,101,Button.START);
         awaitEngine(battle,"Skipping Game Over must still show record",()->battle.session().screen==BattleSession.HISCORE);
-        returned(menu,battle,score,score,0);assertTrue(record.get());
+        recordReturned(menu, battle, score);assertTrue(record.get());
     }
 
     @Test public void firstControllerStartEntersSelectionWithoutReadyPageOrExtraConfirmation()throws Exception{
@@ -741,6 +744,17 @@ public class TvMenuFlowTest {
     private void returned(MainMenuActivity menu, Activity child, int high, int first, int second) throws Exception {
         DeviceTestDiagnostics.phase("return to original menu: await child destroyed");
         awaitUi("Child activity must finish", child::isDestroyed);
+        verifyReturn(menu, high, first, second);
+    }
+
+    private void recordReturned(MainMenuActivity menu, Activity child, int score) throws Exception {
+        DeviceTestDiagnostics.phase("record presentation: await child destroyed");
+        await("New record must return automatically", () -> destroyed.contains(child),
+                DeviceTestDiagnostics.RECORD_RETURN_TIMEOUT_MS);
+        verifyReturn(menu, score, score, 0);
+    }
+
+    private void verifyReturn(MainMenuActivity menu, int high, int first, int second) throws Exception {
         awaitReturnedMenu(menu);
         ui(() -> {
             assertSame("The original menu must resume", menu, resumed);
@@ -866,12 +880,16 @@ public class TvMenuFlowTest {
     private static void ui(Runnable action) { InstrumentationRegistry.getInstrumentation().runOnMainSync(action); }
 
     private static void await(String message, BooleanSupplier condition) {
-        long deadline = SystemClock.uptimeMillis() + TIMEOUT_MS;
+        await(message, condition, TIMEOUT_MS);
+    }
+
+    private static void await(String message, BooleanSupplier condition, long timeoutMillis) {
+        long deadline = SystemClock.uptimeMillis() + timeoutMillis;
         do {
             if (condition.getAsBoolean()) return;
             SystemClock.sleep(20);
         } while (SystemClock.uptimeMillis() < deadline);
-        throw DeviceTestDiagnostics.timeout(message, TIMEOUT_MS, null);
+        throw DeviceTestDiagnostics.timeout(message, timeoutMillis, null);
     }
 
     private static void awaitUi(String message, BooleanSupplier condition) {

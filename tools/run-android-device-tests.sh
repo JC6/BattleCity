@@ -16,9 +16,10 @@ mkdir -p "$results" "$reports" "$diagnostics"
 
 collect_results() {
   status=$?
-  local copy_status
+  local copy_status logcat_status=0
   trap - EXIT
-  adb logcat -d -v threadtime > "$diagnostics/device-logcat.txt" 2>&1 || true
+  adb logcat -d -v threadtime > "$diagnostics/device-logcat.txt" 2>&1 || logcat_status=$?
+  printf 'Logcat exit status: %s\n' "$logcat_status" >> "$diagnostics/preflight.txt"
   adb shell dumpsys display > "$diagnostics/display-state.txt" 2>&1 || true
   {
     read_device_value shell wm density || true

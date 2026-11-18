@@ -178,8 +178,39 @@ def read_vbo_stalls(directory):
     return stalls
 
 
+APP_ANR = re.compile(
+    r"\b(?:WindowManager: ANR in Window\{[^}]*\sorg\.jiangc\.bc/[^}]+\}"
+    r"|ActivityManager: ANR in org\.jiangc\.bc(?=\s|\(|$))"
+)
+
+
+def check_application_anrs(build_dir, device_statuses):
+    lines, problems = ["", "Application ANR checks:", ""], []
+    for api in WINDOWS:
+        directory = build_dir / f"diagnostics/api-{api}"
+        try:
+            log = (directory / "device-logcat.txt").read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            log = ""
+        try:
+            preflight = (directory / "preflight.txt").read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            preflight = ""
+        matches = [line for line in log.splitlines() if APP_ANR.search(line)]
+        if matches:
+            problems.append(f"API {api}: system log reports a BattleCity ANR")
+            lines.extend([f"- API {api}: BattleCity ANR recorded", "", "```text", *matches, "```", ""])
+        elif not log.strip() or re.findall(r"^Logcat exit status: (\d+)$", preflight, re.MULTILINE) != ["0"]:
+            lines.append(f"- API {api}: system log unavailable or incomplete")
+            if device_statuses.get(api) == "success":
+                problems.append(f"API {api}: complete system log required for ANR verification")
+        else:
+            lines.append(f"- API {api}: no BattleCity ANR recorded")
+    return lines, problems
+
+
 def diagnostic_summary(build_dir):
-    lines = ["", "Presentation progress (diagnostic only; the 10-second assertions are unchanged):", "",
+    lines = ["", "Presentation progress (30-second automatic return budget):", "",
              "| Platform / case | JUnit outcome | Latest progress |",
              "|---|---|---|"]
     vbo = []
@@ -270,6 +301,9 @@ def evaluate(build_dir, build_status, device_statuses, commit, local=False, tv_v
                 lines.append(f"| API {version} | {mode} | {str(record['activeVbo']).lower()} | {renderer} | {gl_version} | "
                              + " | ".join(dimensions) + f" | {record['scale']} |")
         lines.extend(diagnostic_summary(build_dir))
+        anr_lines, anr_problems = check_application_anrs(build_dir, device_statuses)
+        lines.extend(anr_lines)
+        problems.extend(anr_problems)
     lint = build_dir / "reports/lint-results-debug.xml"
     try:
         issues = ET.parse(lint).getroot().findall("issue")

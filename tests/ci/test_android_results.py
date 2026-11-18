@@ -27,6 +27,10 @@ class AcceptanceResultsTest(unittest.TestCase):
             self.write_report(relative, count)
         for version in ("34", "36"):
             self.write_render_evidence(version)
+            directory = self.build / f"diagnostics/api-{version}"
+            directory.mkdir(parents=True)
+            (directory / "preflight.txt").write_text("Logcat exit status: 0\n")
+            (directory / "device-logcat.txt").write_text("I TestRunner: finished\n")
         lint = self.build / "reports/lint-results-debug.xml"
         lint.parent.mkdir(parents=True)
         lint.write_text('<issues><issue severity="Warning"/></issues>')
@@ -68,6 +72,36 @@ class AcceptanceResultsTest(unittest.TestCase):
     def evaluate(self, build_status="success", device_status="success", device_statuses=None, tv_vbo_mode="default"):
         statuses = {"34": device_status, "36": device_status} if device_statuses is None else device_statuses
         return results.evaluate(self.build, build_status, statuses, "fixture-commit", tv_vbo_mode=tv_vbo_mode)
+
+    def test_system_anr_fails_even_with_passing_junit(self):
+        log = self.build / "diagnostics/api-36/device-logcat.txt"
+        for line in ("WindowManager: ANR in Window{abc u0 org.jiangc.bc/.MainMenuActivity}",
+                     "ActivityManager: ANR in org.jiangc.bc (org.jiangc.bc/.MainMenuActivity)"):
+            with self.subTest(line=line):
+                log.write_text(line + "\n")
+                summary, problems = self.evaluate()
+                self.assertIn("API 36: system log reports a BattleCity ANR", problems)
+                self.assertIn(line, summary)
+                self.assertIn("| API 36 TV / 4K display / 4K window | 46 | 0 | 0 | 0 |", summary)
+                self.assertIn("**NOT ACCEPTED**", summary)
+
+    def test_unrelated_anr_and_watchdog_are_informational(self):
+        log = self.build / "diagnostics/api-34/device-logcat.txt"
+        log.write_text("ActivityManager: ANR in org.jiangc.bc.other\n"
+                       "WindowManager: ANR in Window{abc u0 com.android.tv/.Home}\n"
+                       "BattleCityTest: watchdog test=org.jiangc.bc.Test sample=1 waitingMillis=4000\n")
+        self.assertFalse(self.evaluate()[1])
+
+    def test_passing_device_requires_collected_system_log(self):
+        directory = self.build / "diagnostics/api-34"
+        log = directory / "device-logcat.txt"
+        log.unlink()
+        self.assertTrue(self.evaluate()[1])
+        log.write_text("  \n")
+        self.assertTrue(self.evaluate()[1])
+        log.write_text("I TestRunner: finished\n")
+        (directory / "preflight.txt").write_text("Logcat exit status: 1\n")
+        self.assertTrue(self.evaluate()[1])
 
     def test_disabled_vbo_success_is_diagnostic_only_on_both_tv_channels(self):
         for version in ("34", "36"):

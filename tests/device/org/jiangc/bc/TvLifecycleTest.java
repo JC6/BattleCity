@@ -113,12 +113,16 @@ public class TvLifecycleTest {
         return ActivityScenario.launch(ConstructionActivity.class);
     }
     private static void await(String message, BooleanSupplier condition) {
-        long deadline = SystemClock.uptimeMillis() + TIMEOUT_MS;
+        await(message, condition, TIMEOUT_MS);
+    }
+
+    private static void await(String message, BooleanSupplier condition, long timeoutMillis) {
+        long deadline = SystemClock.uptimeMillis() + timeoutMillis;
         do {
             if (condition.getAsBoolean()) return;
             SystemClock.sleep(20);
         } while (SystemClock.uptimeMillis() < deadline);
-        throw DeviceTestDiagnostics.timeout(message, TIMEOUT_MS, null);
+        throw DeviceTestDiagnostics.timeout(message, timeoutMillis, null);
     }
 
     private static <A extends Activity> void awaitActivity(
@@ -563,7 +567,8 @@ public class TvLifecycleTest {
             });
             onEngine(scenario,activity->assertEquals(BattleSession.HISCORE,activity.session().screen));
             DeviceTestDiagnostics.phase("record presentation: await automatic return after reconnect");
-            await("New record must return automatically",()->scenario.getState()==Lifecycle.State.DESTROYED);
+            await("New record must return automatically", () -> scenario.getState() == Lifecycle.State.DESTROYED,
+                    DeviceTestDiagnostics.RECORD_RETURN_TIMEOUT_MS);
             assertEquals(record,app.memory().highScore());assertArrayEquals(new int[]{record,0},app.memory().lastScores());
         }
     }

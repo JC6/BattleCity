@@ -277,6 +277,15 @@ exit "$FAKE_EXIT"
                 self.env["FAKE_EXIT"] = status
                 self.assertEqual(expected, self.run_script("34").returncode)
 
+    def test_logcat_failure_is_recorded_without_masking_device_exit(self):
+        for status in ("0", "7"):
+            with self.subTest(status=status):
+                self.env.update(FAKE_ENV_FAIL_COMMAND="logcat -d -v threadtime", FAKE_EXIT=status)
+                self.assertEqual(int(status), self.run_script("34").returncode)
+                log = (self.root / "build/diagnostics/api-34/preflight.txt").read_text()
+                self.assertIn("Logcat exit status: 17", log)
+                self.assertIn(f"Runner exit status: {status}", log)
+
     def test_diagnostic_dump_failures_do_not_mask_test_status(self):
         self.env.update(FAKE_WINDOW_EXIT="19", FAKE_DISPLAY_DUMP_EXIT="18")
         for status in ("0", "7"):
