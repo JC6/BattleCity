@@ -32,16 +32,15 @@ fi
 case "$*" in
   'shell getprop ro.build.version.sdk') printf '%s%s\\n' "$FAKE_API" "$FAKE_CR" ;;
   'shell getprop ro.product.cpu.abi')
-    if [[ "$FAKE_API" == 34 ]]; then abi=x86; else abi=x86_64; fi
-    printf '%s%s\\n' "${FAKE_ABI-$abi}" "$FAKE_CR" ;;
+    printf '%s%s\\n' "${FAKE_ABI-x86}" "$FAKE_CR" ;;
+  'shell getprop ro.build.fingerprint') echo 'google/tv/tv:14/BUILD/1234:user/release-keys' ;;
   'shell pm list features') printf '%s%s\\n' "${FAKE_FEATURES-feature:android.software.leanback}" "$FAKE_CR" ;;
   'shell wm size')
-    display='Physical size: 3840x2160'
-    if [[ "$FAKE_API" == 34 ]]; then display+=$'\\nOverride size: 1920x1080'; fi
+    display=$'Physical size: 3840x2160\\nOverride size: 1920x1080'
     printf '%s%s\\n' "${FAKE_DISPLAY-$display}" "$FAKE_CR" ;;
   'shell wm density') echo 'Physical density: 640' ;;
   'shell cmd overlay lookup android android:integer/config_maxUiWidth')
-    if [[ "$FAKE_API" == 34 ]]; then echo 1920; else echo 3840; fi ;;
+    echo 1920 ;;
   'shell dumpsys window displays') echo 'fixture window display state' ;;
   'shell dumpsys display')
     echo 'fixture display state'
@@ -87,47 +86,47 @@ exit "$FAKE_EXIT"
         path.write_text("stale report")
         return path
 
-    def test_both_tv_versions_require_real_leanback_and_4k_without_system_settings(self):
-        for version in ("34", "36"):
-            with self.subTest(version=version):
-                self.env["FAKE_API"] = version
-                run = self.run_script(version)
-                self.assertEqual(0, run.returncode, run.stdout + run.stderr)
-                commands = self.commands.read_text()
-                self.assertIn("adb shell wm size", commands)
-                self.assertNotIn("shell settings", commands)
-                self.assertNotIn("adb shell wm size ", commands)
-                self.assertNotIn("adb shell wm density ", commands)
-                self.assertNotIn("adb root", commands)
-                self.assertNotIn("PAGE_SIZE", commands)
-                self.assertNotIn("sdk_full", commands)
-                self.assertNotIn("sdk_minor", commands)
-                log = (self.root / f"build/diagnostics/api-{version}/preflight.txt").read_text()
-                self.assertIn(f"Verified Android TV API {version}", log)
-                self.assertIn("4K display 3840x2160", log)
-                expected = "1920x1080" if version == "34" else "3840x2160"
-                self.assertIn(f"effective display {expected}", log)
-                configuration = (self.root / f"build/diagnostics/api-{version}/display-configuration.txt").read_text()
-                self.assertIn("Physical density: 640", configuration)
-                self.assertIn("config_maxUiWidth", configuration)
-                self.assertIn("fixture window display state", configuration)
+    def test_api34_requires_leanback_and_4k_without_system_settings(self):
+        version = "34"
+        run = self.run_script(version)
+        self.assertEqual(0, run.returncode, run.stdout + run.stderr)
+        commands = self.commands.read_text()
+        self.assertIn("adb shell wm size", commands)
+        self.assertNotIn("shell settings", commands)
+        self.assertNotIn("adb shell wm size ", commands)
+        self.assertNotIn("adb shell wm density ", commands)
+        self.assertNotIn("adb root", commands)
+        self.assertNotIn("PAGE_SIZE", commands)
+        self.assertNotIn("sdk_full", commands)
+        self.assertNotIn("sdk_minor", commands)
+        log = (self.root / f"build/diagnostics/api-{version}/preflight.txt").read_text()
+        self.assertIn(f"Verified Android TV API {version}", log)
+        self.assertIn("4K display 3840x2160", log)
+        self.assertIn("effective display 1920x1080", log)
+        configuration = (self.root / f"build/diagnostics/api-{version}/display-configuration.txt").read_text()
+        self.assertIn("Physical density: 640", configuration)
+        self.assertIn("config_maxUiWidth", configuration)
+        self.assertIn("fixture window display state", configuration)
+        diagnostics = self.root / "build/diagnostics/api-34"
+        self.assertTrue((diagnostics / "runner-started").is_file())
+        self.assertIn("google/tv/tv:14/BUILD/1234:user/release-keys",
+                      (diagnostics / "device-fingerprint.txt").read_text())
 
-    def test_diagnostics_and_vbo_arguments_reach_both_tv_channels(self):
-        for version in ("34", "36"):
-            self.env["FAKE_API"] = version
-            for diagnostic in (None, "true", "false"):
-                for mode in (None, "default", "disabled"):
-                    with self.subTest(version=version, diagnostic=diagnostic, mode=mode):
-                        for key, value in (("BATTLECITY_ENGINE_DIAGNOSTICS", diagnostic), ("BATTLECITY_TV_VBO_MODE", mode)):
-                            if value is None:
-                                self.env.pop(key, None)
-                            else:
-                                self.env[key] = value
-                        run = self.run_script(version)
-                        self.assertEqual(0, run.returncode, run.stdout + run.stderr)
-                        args = self.arguments.read_text().splitlines()
-                        self.assertIn("-Pandroid.testInstrumentationRunnerArguments.battlecityEngineDiagnostics=" + (diagnostic or "false"), args)
-                        self.assertIn("-Pandroid.testInstrumentationRunnerArguments.battlecityVboMode=" + (mode or "default"), args)
+    def test_diagnostics_and_vbo_arguments_reach_device_tests(self):
+        version = "34"
+        for diagnostic in (None, "true", "false"):
+            for mode in (None, "default", "disabled"):
+                with self.subTest(version=version, diagnostic=diagnostic, mode=mode):
+                    for key, value in (("BATTLECITY_ENGINE_DIAGNOSTICS", diagnostic), ("BATTLECITY_TV_VBO_MODE", mode)):
+                        if value is None:
+                            self.env.pop(key, None)
+                        else:
+                            self.env[key] = value
+                    run = self.run_script(version)
+                    self.assertEqual(0, run.returncode, run.stdout + run.stderr)
+                    args = self.arguments.read_text().splitlines()
+                    self.assertIn("-Pandroid.testInstrumentationRunnerArguments.battlecityEngineDiagnostics=" + (diagnostic or "false"), args)
+                    self.assertIn("-Pandroid.testInstrumentationRunnerArguments.battlecityVboMode=" + (mode or "default"), args)
 
     def test_invalid_experiment_arguments_stop_tests_and_keep_diagnostics(self):
         for key, expected in (("BATTLECITY_ENGINE_DIAGNOSTICS", "must be true or false"),
@@ -145,7 +144,7 @@ exit "$FAKE_EXIT"
                 self.assertTrue((diagnostic / "window-state.txt").exists())
 
     def test_unsupported_versions_are_rejected_before_any_device_command(self):
-        for version in ("33", "35", "37", "37.2", "36.1", "garbage"):
+        for version in ("33", "35", "36", "37", "37.2", "36.1", "garbage"):
             with self.subTest(version=version):
                 run = self.run_script(version)
                 self.assertEqual(2, run.returncode)
@@ -153,7 +152,7 @@ exit "$FAKE_EXIT"
                 self.assertFalse(self.commands.exists())
 
     def test_wrong_api_cannot_reuse_old_reports(self):
-        for requested, actual in (("34", "36"), ("36", "34"), ("36", "36.1"), ("34", "garbage")):
+        for requested, actual in (("34", "36"), ("34", "34.1"), ("34", "garbage")):
             with self.subTest(requested=requested, actual=actual):
                 old = self.stale(f"build/outputs/androidTest-results/api-{requested}")
                 self.env["FAKE_API"] = actual
@@ -162,7 +161,7 @@ exit "$FAKE_EXIT"
                 self.assertFalse(self.arguments.exists())
 
     def test_wrong_abi_cannot_run_tests_or_reuse_reports(self):
-        for version, abi in (("34", "x86_64"), ("34", "armeabi-v7a"), ("36", "x86"), ("36", "arm64-v8a")):
+        for version, abi in (("34", "x86_64"), ("34", "armeabi-v7a"), ("34", "arm64-v8a")):
             with self.subTest(version=version, abi=abi):
                 self.env.update(FAKE_API=version, FAKE_ABI=abi)
                 old = self.stale(f"build/outputs/androidTest-results/api-{version}")
@@ -170,21 +169,21 @@ exit "$FAKE_EXIT"
                 self.assertFalse(old.exists())
                 self.assertFalse(self.arguments.exists())
 
-    def test_non_tv_images_are_rejected_on_both_channels(self):
-        for version in ("34", "36"):
-            for features in ("", "feature:android.software.activities", "feature:android.software.leanback_only"):
-                with self.subTest(version=version, features=features):
-                    self.env.update(FAKE_API=version, FAKE_FEATURES=features)
-                    run = self.run_script(version)
-                    self.assertEqual(1, run.returncode)
-                    self.assertFalse(self.arguments.exists())
-                    self.assertIn("requires android.software.leanback", run.stdout + run.stderr)
+    def test_non_tv_images_are_rejected(self):
+        version = "34"
+        for features in ("", "feature:android.software.activities", "feature:android.software.leanback_only"):
+            with self.subTest(version=version, features=features):
+                self.env.update(FAKE_API=version, FAKE_FEATURES=features)
+                run = self.run_script(version)
+                self.assertEqual(1, run.returncode)
+                self.assertFalse(self.arguments.exists())
+                self.assertIn("requires android.software.leanback", run.stdout + run.stderr)
 
     def test_versioned_leanback_feature_and_crlf_properties_are_accepted(self):
-        self.env.update(FAKE_API="36", FAKE_FEATURES="feature:android.software.leanback=1", FAKE_CR="\r")
-        run = self.run_script("36")
+        self.env.update(FAKE_API="34", FAKE_FEATURES="feature:android.software.leanback=1", FAKE_CR="\r")
+        run = self.run_script("34")
         self.assertEqual(0, run.returncode, run.stdout + run.stderr)
-        self.assertIn(b"36\r\n", (self.root / "build/diagnostics/api-36/preflight.txt").read_bytes())
+        self.assertIn(b"34\r\n", (self.root / "build/diagnostics/api-34/preflight.txt").read_bytes())
 
     def test_wrong_missing_malformed_or_cross_channel_display_is_rejected(self):
         cases = ("Physical size: 1920x1080", "Physical size: 2160x3840", "Override size: 3840x2160", "",
@@ -192,21 +191,15 @@ exit "$FAKE_EXIT"
                  "Physical size: 3840x2160\nOverride size: unknown",
                  "Physical size: 3840x2160\nPhysical size: 3840x2160",
                  "Physical size: 3840x2160\nOverride size: 3840x2160\nOverride size: 3840x2160")
-        for version in ("34", "36"):
-            wrong_window = "3840x2160" if version == "34" else "1920x1080"
-            for display in (*cases, "Physical size: 3840x2160\nOverride size: " + wrong_window,
-                            *(('Physical size: 3840x2160',) if version == "34" else ())):
-                with self.subTest(version=version, display=display):
-                    self.env.update(FAKE_API=version, FAKE_DISPLAY=display)
-                    old = self.stale(f"build/outputs/androidTest-results/api-{version}")
-                    self.assertEqual(1, self.run_script(version).returncode)
-                    self.assertFalse(old.exists())
-                    self.assertFalse(self.arguments.exists())
-
-    def test_matching_4k_override_is_accepted_only_on_api36(self):
-        self.env["FAKE_API"] = "36"
-        self.env["FAKE_DISPLAY"] = "Physical size: 3840x2160\nOverride size: 3840x2160"
-        self.assertEqual(0, self.run_script("36").returncode)
+        version = "34"
+        for display in (*cases, "Physical size: 3840x2160\nOverride size: 3840x2160",
+                        "Physical size: 3840x2160"):
+            with self.subTest(version=version, display=display):
+                self.env.update(FAKE_API=version, FAKE_DISPLAY=display)
+                old = self.stale(f"build/outputs/androidTest-results/api-{version}")
+                self.assertEqual(1, self.run_script(version).returncode)
+                self.assertFalse(old.exists())
+                self.assertFalse(self.arguments.exists())
 
     def test_auxiliary_display_query_failures_do_not_change_runner_status(self):
         for command in ("shell wm density", "shell cmd overlay lookup android android:integer/config_maxUiWidth",
@@ -220,53 +213,49 @@ exit "$FAKE_EXIT"
                     self.assertIn("fixture environment stderr", configuration)
 
     def test_environment_query_failures_preserve_output_and_exit_status(self):
-        for version in ("34", "36"):
-            for command in ("shell getprop ro.build.version.sdk", "shell getprop ro.product.cpu.abi", "shell pm list features", "shell wm size"):
-                with self.subTest(version=version, command=command):
-                    self.env.update(FAKE_API=version, FAKE_ENV_FAIL_COMMAND=command)
-                    run = self.run_script(version)
-                    self.assertEqual(17, run.returncode)
-                    self.assertFalse(self.arguments.exists())
-                    log = (self.root / f"build/diagnostics/api-{version}/preflight.txt").read_text()
-                    self.assertIn("fixture environment stdout", log)
-                    self.assertIn("fixture environment stderr", log)
-                    self.assertIn("Runner exit status: 17", log)
-
-    def test_success_replaces_stale_results_and_preserves_other_tv_channel(self):
-        for version, other_version in (("34", "36"), ("36", "34")):
-            with self.subTest(version=version):
-                self.env["FAKE_API"] = version
-                self.stale("build/outputs/androidTest-results/connected")
-                old = self.stale(f"build/outputs/androidTest-results/api-{version}")
-                other = self.stale(f"build/outputs/androidTest-results/api-{other_version}")
-                startup = self.root / f"build/diagnostics/emulator-api-{version}/startup-logcat.txt"
-                startup.parent.mkdir(parents=True, exist_ok=True)
-                startup.write_text("emulator startup log")
-                window = self.root / f"build/diagnostics/api-{version}/window-state.txt"
-                window.parent.mkdir(parents=True, exist_ok=True)
-                window.write_text("stale window dump")
+        version = "34"
+        for command in ("shell getprop ro.build.version.sdk", "shell getprop ro.product.cpu.abi", "shell pm list features", "shell wm size"):
+            with self.subTest(version=version, command=command):
+                self.env.update(FAKE_API=version, FAKE_ENV_FAIL_COMMAND=command)
                 run = self.run_script(version)
-                self.assertEqual(0, run.returncode, run.stdout + run.stderr)
-                self.assertFalse(old.exists())
-                self.assertTrue(other.exists())
-                self.assertTrue((old.parent / "TEST-new.xml").exists())
-                self.assertTrue((self.root / f"build/reports/androidTests/api-{version}/index.html").exists())
-                self.assertEqual("emulator startup log", startup.read_text())
-                self.assertFalse(window.exists())
+                self.assertEqual(17, run.returncode)
+                self.assertFalse(self.arguments.exists())
+                log = (self.root / f"build/diagnostics/api-{version}/preflight.txt").read_text()
+                self.assertIn("fixture environment stdout", log)
+                self.assertIn("fixture environment stderr", log)
+                self.assertIn("Runner exit status: 17", log)
 
-    def test_disabled_run_preserves_test_failure_and_diagnostics_on_both_channels(self):
-        for version in ("34", "36"):
-            with self.subTest(version=version):
-                self.env.update(FAKE_API=version, FAKE_EXIT="7", BATTLECITY_TV_VBO_MODE="disabled")
-                run = self.run_script(version)
-                self.assertEqual(7, run.returncode)
-                diagnostic = self.root / f"build/diagnostics/api-{version}"
-                self.assertIn("simulated emulator log", (diagnostic / "device-logcat.txt").read_text())
-                self.assertIn("fixture display state", (diagnostic / "display-state.txt").read_text())
-                self.assertIn("mCurrentFocus=Window{fixture.focus}", (diagnostic / "window-state.txt").read_text())
-                log = (diagnostic / "preflight.txt").read_text()
-                self.assertIn("Render mode requested: disabled", log)
-                self.assertIn("Runner exit status: 7", log)
+    def test_success_replaces_stale_results_and_preserves_startup_log(self):
+        version = "34"
+        self.stale("build/outputs/androidTest-results/connected")
+        old = self.stale(f"build/outputs/androidTest-results/api-{version}")
+        startup = self.root / f"build/diagnostics/emulator-api-{version}/startup-logcat.txt"
+        startup.parent.mkdir(parents=True, exist_ok=True)
+        startup.write_text("emulator startup log")
+        window = self.root / f"build/diagnostics/api-{version}/window-state.txt"
+        window.parent.mkdir(parents=True, exist_ok=True)
+        window.write_text("stale window dump")
+        run = self.run_script(version)
+        self.assertEqual(0, run.returncode, run.stdout + run.stderr)
+        self.assertFalse(old.exists())
+        self.assertTrue((old.parent / "TEST-new.xml").exists())
+        self.assertTrue((self.root / f"build/reports/androidTests/api-{version}/index.html").exists())
+        self.assertEqual("emulator startup log", startup.read_text())
+        self.assertFalse(window.exists())
+
+    def test_disabled_run_preserves_test_failure_and_diagnostics(self):
+        version = "34"
+        with self.subTest(version=version):
+            self.env.update(FAKE_API=version, FAKE_EXIT="7", BATTLECITY_TV_VBO_MODE="disabled")
+            run = self.run_script(version)
+            self.assertEqual(7, run.returncode)
+            diagnostic = self.root / f"build/diagnostics/api-{version}"
+            self.assertIn("simulated emulator log", (diagnostic / "device-logcat.txt").read_text())
+            self.assertIn("fixture display state", (diagnostic / "display-state.txt").read_text())
+            self.assertIn("mCurrentFocus=Window{fixture.focus}", (diagnostic / "window-state.txt").read_text())
+            log = (diagnostic / "preflight.txt").read_text()
+            self.assertIn("Render mode requested: disabled", log)
+            self.assertIn("Runner exit status: 7", log)
 
     def test_result_copy_failure_does_not_replace_original_test_failure(self):
         copy = self.root / "bin/cp"

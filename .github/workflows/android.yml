@@ -12,7 +12,7 @@ on:
         type: boolean
         default: false
       tv_vbo_mode:
-        description: API 34 and 36 TV VBO experiment (disabled is diagnostic only)
+        description: API 34 TV VBO experiment (disabled is diagnostic only)
         type: choice
         default: default
         options: [default, disabled]
@@ -56,7 +56,7 @@ jobs:
             ln -s "$installed_tools" "$latest_tools"
           fi
           "$latest_tools/bin/sdkmanager" --version
-          "$latest_tools/bin/sdkmanager" 'platforms;android-36'
+          "$latest_tools/bin/sdkmanager" 'platforms;android-34'
       - name: Check acceptance report validation
         run: python3 -m unittest discover -s tests/ci -v
       - name: Build, unit tests and lint
@@ -87,27 +87,25 @@ jobs:
           target: android-tv
           arch: x86
           profile: tv_4k
-          pre-emulator-launch-script: mkdir -p build/diagnostics/emulator-api-34
-          emulator-options: -no-window -gpu software -no-snapshot -noaudio -no-boot-anim -logcat-output ${{ github.workspace }}/build/diagnostics/emulator-api-34/startup-logcat.txt
+          pre-emulator-launch-script: |
+            mkdir -p build/diagnostics/emulator-api-34
+            "$ANDROID_HOME/emulator/emulator" -version > build/diagnostics/emulator-api-34/version.txt 2>&1
+            cp "$ANDROID_HOME/system-images/android-34/android-tv/x86/source.properties" build/diagnostics/emulator-api-34/image.properties
+          emulator-options: >-
+            -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim
+            -logcat-output build/diagnostics/emulator-api-34/startup-logcat.txt
+            > build/diagnostics/emulator-api-34/host-startup.txt 2>&1
           script: bash tools/run-android-device-tests.sh 34
-      - name: API 36 TV 4K display / 4K window framework tests
-        if: ${{ !cancelled() && steps.checks.outcome == 'success' && steps.acceleration.outcome == 'success' }}
-        id: device36
-        uses: reactivecircus/android-emulator-runner@v2.38.0
-        with:
-          api-level: 36
-          target: android-tv
-          arch: x86_64
-          profile: tv_4k
-          pre-emulator-launch-script: mkdir -p build/diagnostics/emulator-api-36
-          emulator-options: -no-window -gpu software -no-snapshot -noaudio -no-boot-anim -logcat-output ${{ github.workspace }}/build/diagnostics/emulator-api-36/startup-logcat.txt
-          script: bash tools/run-android-device-tests.sh 36
+      - name: Show API 34 emulator output on failure
+        if: failure() && steps.device34.outcome == 'failure'
+        run: |
+          log=build/diagnostics/emulator-api-34/host-startup.txt
+          if [[ -s "$log" ]]; then tail -n 100 "$log"; fi
       - name: Verify and summarize acceptance
         if: always()
         env:
           BUILD_STATUS: ${{ steps.checks.outcome }}
           DEVICE_API34_STATUS: ${{ steps.device34.outcome }}
-          DEVICE_API36_STATUS: ${{ steps.device36.outcome }}
         run: python3 tools/check-android-results.py
       - uses: actions/upload-artifact@v7.0.2
         if: always()

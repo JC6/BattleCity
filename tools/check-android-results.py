@@ -15,9 +15,8 @@ import xml.etree.ElementTree as ET
 GROUPS = (
     ("JVM", "test-results/testDebugUnitTest", 173),
     ("API 34 TV / 4K display / 1080p window", "outputs/androidTest-results/api-34", 46),
-    ("API 36 TV / 4K display / 4K window", "outputs/androidTest-results/api-36", 46),
 )
-WINDOWS = {"34": (1920, 1080), "36": (3840, 2160)}
+DEVICE_RESULTS = GROUPS[1][1]
 PRESENTATION_CASES = (
     "highScoreDisconnectFreezesPresentationAndFinishesOnce",
     "constructionSelectedStageAndRecordReturnToOriginalMenu",
@@ -60,7 +59,7 @@ def read_results(directory):
     return counts, problems
 
 
-def read_render_evidence(directory, expected, api):
+def read_render_evidence(directory, expected):
     records, problems = [], []
     marker = "BATTLECITY_RENDER_MODE "
     for path in sorted(directory.rglob("logcat-*TvMenuFlowTest-actualGlAdapterMatchesSoftwareAcrossSpriteSizesAndPausedScreens.txt")):
@@ -70,7 +69,7 @@ def read_render_evidence(directory, expected, api):
                     continue
                 record = json.loads(line.split(marker, 1)[1])
                 if (not isinstance(record, dict) or type(record.get("api")) is not int
-                        or record["api"] != int(api) or record.get("requested") != expected
+                        or record["api"] != 34 or record.get("requested") != expected
                         or type(record.get("activeVbo")) is not bool
                         or type(record.get("optionsDisabled")) is not bool
                         or record["activeVbo"] != (expected == "default")
@@ -78,12 +77,15 @@ def read_render_evidence(directory, expected, api):
                         or any(not isinstance(record.get(key), str) or not record[key].strip()
                                for key in ("renderer", "version"))):
                     raise ValueError("API, requested mode, engine options or actual GL state do not match")
+                renderer = record["renderer"].casefold()
+                if "swiftshader" not in renderer or "angle" in renderer or "angle" in record["version"].casefold():
+                    raise ValueError(f"expected SwiftShader GLES renderer, detected {record['renderer']} / {record['version']}")
                 dimensions = ("displayWidth", "displayHeight", "windowWidth", "windowHeight",
                               "surfaceWidth", "surfaceHeight", "scale")
                 if any(type(record.get(key)) is not int for key in dimensions):
                     raise ValueError("display, window, surface and integer scale evidence is required")
-                if (record["displayWidth"], record["displayHeight"], record["windowWidth"], record["windowHeight"]) != (3840, 2160, *WINDOWS[api]):
-                    raise ValueError(f"API {api} requires a 3840x2160 display and a {WINDOWS[api][0]}x{WINDOWS[api][1]} window")
+                if (record["displayWidth"], record["displayHeight"], record["windowWidth"], record["windowHeight"]) != (3840, 2160, 1920, 1080):
+                    raise ValueError("API 34 requires a 3840x2160 display and a 1920x1080 window")
                 scale = record["scale"]
                 if (scale < 1 or record["surfaceWidth"] != 256 * scale or record["surfaceHeight"] != 240 * scale
                         or record["surfaceWidth"] > record["windowWidth"] or record["surfaceHeight"] > record["windowHeight"]):
@@ -184,29 +186,50 @@ APP_ANR = re.compile(
 )
 
 
-def check_application_anrs(build_dir, device_statuses):
+def check_application_anrs(build_dir, device_status):
     lines, problems = ["", "Application ANR checks:", ""], []
-    for api in WINDOWS:
-        directory = build_dir / f"diagnostics/api-{api}"
-        try:
-            log = (directory / "device-logcat.txt").read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            log = ""
-        try:
-            preflight = (directory / "preflight.txt").read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            preflight = ""
-        matches = [line for line in log.splitlines() if APP_ANR.search(line)]
-        if matches:
-            problems.append(f"API {api}: system log reports a BattleCity ANR")
-            lines.extend([f"- API {api}: BattleCity ANR recorded", "", "```text", *matches, "```", ""])
-        elif not log.strip() or re.findall(r"^Logcat exit status: (\d+)$", preflight, re.MULTILINE) != ["0"]:
-            lines.append(f"- API {api}: system log unavailable or incomplete")
-            if device_statuses.get(api) == "success":
-                problems.append(f"API {api}: complete system log required for ANR verification")
-        else:
-            lines.append(f"- API {api}: no BattleCity ANR recorded")
+    directory = build_dir / "diagnostics/api-34"
+    try:
+        log = (directory / "device-logcat.txt").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        log = ""
+    try:
+        preflight = (directory / "preflight.txt").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        preflight = ""
+    matches = [line for line in log.splitlines() if APP_ANR.search(line)]
+    if matches:
+        problems.append("API 34: system log reports a BattleCity ANR")
+        lines.extend(["- API 34: BattleCity ANR recorded", "", "```text", *matches, "```", ""])
+    elif not log.strip() or re.findall(r"^Logcat exit status: (\d+)$", preflight, re.MULTILINE) != ["0"]:
+        lines.append("- API 34: system log unavailable or incomplete")
+        if device_status == "success":
+            problems.append("API 34: complete system log required for ANR verification")
+    else:
+        lines.append("- API 34: no BattleCity ANR recorded")
     return lines, problems
+
+
+def emulator_summary(build_dir):
+    diagnostics = build_dir / "diagnostics"
+    host = diagnostics / "emulator-api-34"
+    lines = ["", "Emulator evidence:", "",
+             "- Device test script: " + (
+                 "started" if (diagnostics / "api-34/runner-started").is_file() else "not started")]
+    for label, path, pattern in (
+        ("Emulator version", host / "version.txt", r"^.*Android emulator version.*$"),
+        ("TV image revision", host / "image.properties", r"^Pkg\.Revision\s*=\s*(.+)$"),
+        ("Device build fingerprint", diagnostics / "api-34/device-fingerprint.txt", r"^([^\s]+/[^\s]+:[^\s]+)$"),
+    ):
+        try:
+            match = re.search(pattern, path.read_text(encoding="utf-8", errors="replace"), re.MULTILINE)
+        except OSError:
+            match = None
+        value = match[match.lastindex or 0].strip() if match else ""
+        lines.append(f"- {label}: {value or 'unavailable'}")
+    if (host / "host-startup.txt").is_file():
+        lines.append("- Host startup output: diagnostics/emulator-api-34/host-startup.txt")
+    return lines
 
 
 def diagnostic_summary(build_dir):
@@ -214,38 +237,37 @@ def diagnostic_summary(build_dir):
              "| Platform / case | JUnit outcome | Latest progress |",
              "|---|---|---|"]
     vbo = []
-    for api in WINDOWS:
-        directory = build_dir / f"outputs/androidTest-results/api-{api}"
-        outcomes = case_outcomes(directory)
-        for case in PRESENTATION_CASES:
-            records, notes = read_case_progress(directory, case)
-            # Prefer the assertion-time snapshot over teardown observations after a failure.
-            candidates = [record for record in records if record["event"] == "timeout"] or records
-            if not candidates:
-                detail = "Evidence insufficient: no valid progress snapshots; cause unconfirmed"
+    directory = build_dir / DEVICE_RESULTS
+    outcomes = case_outcomes(directory)
+    for case in PRESENTATION_CASES:
+        records, notes = read_case_progress(directory, case)
+        # Prefer the assertion-time snapshot over teardown observations after a failure.
+        candidates = [record for record in records if record["event"] == "timeout"] or records
+        if not candidates:
+            detail = "Evidence insufficient: no valid progress snapshots; cause unconfirmed"
+        else:
+            last = max(candidates, key=lambda record: record["uptimeMillis"])
+            e, u = last.get("engine"), last.get("ui")
+            detail = f"{last['event']}; phase={last['phase']}"
+            if e is None:
+                detail += "; engine sample unavailable"
             else:
-                last = max(candidates, key=lambda record: record["uptimeMillis"])
-                e, u = last.get("engine"), last.get("ui")
-                detail = f"{last['event']}; phase={last['phase']}"
-                if e is None:
-                    detail += "; engine sample unavailable"
-                else:
-                    detail += (f"; {e['screen']} elapsed={e['elapsed']}, updates={e['frames']}, "
-                               f"paused={str(e['explicitlyPaused']).lower()}, running={str(e['running']).lower()}, "
-                               f"engine sample age={e['ageMillis']}ms, last advance uptime={e['lastAdvanceUptimeMillis']}ms")
-                if u is None:
-                    detail += "; UI sample unavailable"
-                else:
-                    detail += "; " + ", ".join(f"{key}={str(u[key]).lower()}" for key in
-                                                ("foreground", "focused", "finishing", "destroyed"))
-                    detail += f", UI sample age={u['ageMillis']}ms"
-                detail += "; cause unconfirmed"
-            if notes:
-                detail += "; " + "; ".join(sorted(set(notes)))
-            detail = detail.replace("|", "\\|").replace("\n", " ").replace("\r", " ")
-            lines.append(f"| API {api} / {case} | {outcomes.get(case, 'not recorded')} | {detail} |")
-        for case, (count, waiting) in sorted(read_vbo_stalls(directory).items()):
-            vbo.append(f"| API {api} / {case} | {outcomes.get(case, 'not recorded')} | {count} | {waiting} |")
+                detail += (f"; {e['screen']} elapsed={e['elapsed']}, updates={e['frames']}, "
+                           f"paused={str(e['explicitlyPaused']).lower()}, running={str(e['running']).lower()}, "
+                           f"engine sample age={e['ageMillis']}ms, last advance uptime={e['lastAdvanceUptimeMillis']}ms")
+            if u is None:
+                detail += "; UI sample unavailable"
+            else:
+                detail += "; " + ", ".join(f"{key}={str(u[key]).lower()}" for key in
+                                            ("foreground", "focused", "finishing", "destroyed"))
+                detail += f", UI sample age={u['ageMillis']}ms"
+            detail += "; cause unconfirmed"
+        if notes:
+            detail += "; " + "; ".join(sorted(set(notes)))
+        detail = detail.replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+        lines.append(f"| API 34 / {case} | {outcomes.get(case, 'not recorded')} | {detail} |")
+    for case, (count, waiting) in sorted(read_vbo_stalls(directory).items()):
+        vbo.append(f"| API 34 / {case} | {outcomes.get(case, 'not recorded')} | {count} | {waiting} |")
     lines.extend(["", "VBO lifecycle wait observations (separate from presentation timeouts):", "",
                   "| Platform / case | JUnit outcome | Matching stack samples | Longest sampled wait ms |",
                   "|---|---|---:|---:|", *vbo])
@@ -254,7 +276,7 @@ def diagnostic_summary(build_dir):
     return lines
 
 
-def evaluate(build_dir, build_status, device_statuses, commit, local=False, tv_vbo_mode="default"):
+def evaluate(build_dir, build_status, device_status, commit, local=False, tv_vbo_mode="default"):
     problems = []
     if tv_vbo_mode not in ("default", "disabled"):
         problems.append("TV VBO mode must be default or disabled")
@@ -263,15 +285,13 @@ def evaluate(build_dir, build_status, device_statuses, commit, local=False, tv_v
         "Data: **shared source-generated game data**; no external pack is required.",
         "These checks validate the adaptation and Android framework, not a complete pixel-exact original-game match.", "",
         f"Build / unit tests / lint: **{build_status}**",
-        f"API 34 Android TV / x86 / 4K display / 1080p window test command: **{device_statuses.get('34', 'not run')}**",
-        f"API 36 Android TV / x86_64 / 4K display / 4K window test command: **{device_statuses.get('36', 'not run')}**", "",
-        f"Requested render mode for both TV channels: **{tv_vbo_mode}**.", "",
+        f"API 34 Android TV / x86 / 4K display / 1080p window test command: **{device_status}**",
+        f"Requested render mode: **{tv_vbo_mode}**.", "",
         "| Suite | Tests | Failures | Errors | Skipped |",
         "|---|---:|---:|---:|---:|",
     ]
     statuses = [("Build checks", build_status)] + ([] if local else [
-        (f"API {version} device tests", device_statuses.get(version, "not run"))
-        for version in ("34", "36")
+        ("API 34 device tests", device_status)
     ])
     for label, status in statuses:
         if status != "success":
@@ -291,17 +311,17 @@ def evaluate(build_dir, build_status, device_statuses, commit, local=False, tv_v
     else:
         lines.extend(["", "| Platform | Requested mode | Active VBO | GL renderer | GL version | Display px | Window px | Surface px | Scale |",
                       "|---|---|---|---|---|---|---|---|---|"])
-        for version, mode in (("34", tv_vbo_mode), ("36", tv_vbo_mode)):
-            records, errors = read_render_evidence(build_dir / f"outputs/androidTest-results/api-{version}", mode, version)
-            problems.extend(f"API {version}: {error}" for error in errors)
-            for record in records:
-                renderer = record["renderer"].replace("|", "\\|").replace("\n", " ")
-                gl_version = record["version"].replace("|", "\\|").replace("\n", " ")
-                dimensions = [f"{record[prefix + 'Width']}x{record[prefix + 'Height']}" for prefix in ("display", "window", "surface")]
-                lines.append(f"| API {version} | {mode} | {str(record['activeVbo']).lower()} | {renderer} | {gl_version} | "
-                             + " | ".join(dimensions) + f" | {record['scale']} |")
+        records, errors = read_render_evidence(build_dir / DEVICE_RESULTS, tv_vbo_mode)
+        problems.extend(f"API 34: {error}" for error in errors)
+        for record in records:
+            renderer = record["renderer"].replace("|", "\\|").replace("\n", " ")
+            gl_version = record["version"].replace("|", "\\|").replace("\n", " ")
+            dimensions = [f"{record[prefix + 'Width']}x{record[prefix + 'Height']}" for prefix in ("display", "window", "surface")]
+            lines.append(f"| API 34 | {tv_vbo_mode} | {str(record['activeVbo']).lower()} | {renderer} | {gl_version} | "
+                         + " | ".join(dimensions) + f" | {record['scale']} |")
+        lines.extend(emulator_summary(build_dir))
         lines.extend(diagnostic_summary(build_dir))
-        anr_lines, anr_problems = check_application_anrs(build_dir, device_statuses)
+        anr_lines, anr_problems = check_application_anrs(build_dir, device_status)
         lines.extend(anr_lines)
         problems.extend(anr_problems)
     lint = build_dir / "reports/lint-results-debug.xml"
@@ -386,8 +406,7 @@ def main():
     build_dir = Path("build")
     summary, problems = evaluate(
         build_dir, os.environ.get("BUILD_STATUS", "not run"),
-        {"34": os.environ.get("DEVICE_API34_STATUS", "not run"),
-         "36": os.environ.get("DEVICE_API36_STATUS", "not run")},
+        os.environ.get("DEVICE_API34_STATUS", "not run"),
         os.environ.get("GITHUB_SHA", "local workspace"), local=args.local,
         tv_vbo_mode=os.environ.get("BATTLECITY_TV_VBO_MODE", "default"),
     )

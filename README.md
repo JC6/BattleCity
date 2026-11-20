@@ -6,9 +6,9 @@
 
 ## Android
 
-Android 面向 Android 14（API 34）及以上的 Leanback TV 环境，使用手柄操作；手机和平板不作为适配与验收目标。`minSdk=34`，`compileSdk=36`，`targetSdk=36`。
+Android 适配和验收范围为 Android 14（API 34）的 Leanback TV，使用手柄操作。较新版本的 TV 可安装，兼容性由实际设备验证。`minSdk`、`compileSdk` 和 `targetSdk` 均为 34。
 
-另需 JDK 17、Python 3 和 Android SDK Platform 36；设置 `JAVA_HOME`、`ANDROID_HOME`，确保 `node`、`python3` 在 PATH 中可用。仓库根目录执行：
+另需 JDK 17、Python 3 和 Android SDK Platform 34；设置 `JAVA_HOME`、`ANDROID_HOME`，确保 `node`、`python3` 在 PATH 中可用。仓库根目录执行：
 
 ```sh
 bash ./gradlew assembleDebug
@@ -63,15 +63,15 @@ BUILD_STATUS=success python3 tools/check-android-results.py --local
 
 报告位于 `build/reports/android-acceptance.md`，JVM 验收至少 173 项，自动验收见 [Android CI](.github/workflows/android.yml)。
 
-Android CI 只运行两条 TV 通道，每条要求至少 46 项用例通过，失败、错误和跳过均为零：API 34（`android-tv`、`x86`、`tv_4k`）作为主验收通道，要求 3840×2160 物理显示及 1920×1080 有效显示与应用窗口；API 36（`android-tv`、`x86_64`、`tv_4k`）要求物理显示、有效显示与应用窗口均为 3840×2160。API 34 失败后仍继续收集 API 36 结果。脚本预检实际 API、ABI、Leanback 特征及各通道的显示尺寸，保留独立报告。两个通道均使用同一套主 APK 和设备测试 APK；配置进入 CI 后，实际验证状态以该提交的产物为准。
+Android CI 使用 API 34 官方 TV 镜像（`android-tv`、`x86`、`tv_4k`）。验收至少 46 项设备用例，失败、错误、跳过和应用 ANR 均为零，并要求成功采集 logcat。脚本预检实际 API、ABI、Leanback 特征、3840×2160 物理显示和 1920×1080 有效显示。
 
-4K 面板与应用窗口的尺寸可能不同。[AOSP TV 配置存在 `config_maxUiWidth` 上限](https://android.googlesource.com/device/google/atv/+/d0325a2098ba9691efd4c268d64cb391d94a9b02/overlay/TvFrameworkOverlay/res/values/config.xml)，API 34 通道按官方镜像的 1080p 窗口验收；API 36 通道按 4K 窗口验收。CI 保留官方镜像原样，只读取显示尺寸、密度、UI 宽度配置及窗口诊断，不覆盖分辨率或修改系统。原生 GL 像素用例在首帧后记录实际 API、显示模式、应用窗口、游戏 Surface 尺寸和整数缩放倍数；游戏 Surface 必须以 256×240 的正整数倍显示并位于各自窗口内。报告明确区分物理显示与窗口尺寸。
+[AOSP TV 设置了 UI 宽度上限](https://android.googlesource.com/device/google/atv/+/d0325a2098ba9691efd4c268d64cb391d94a9b02/overlay/TvFrameworkOverlay/res/values/config.xml)。GL 像素用例单独校验 1920×1080 应用窗口，确认游戏 Surface 以 256×240 的正整数倍显示且位于窗口内。CI 通过 `-gpu swiftshader` 指定渲染后端，报告校验实际 renderer 并拒绝 ANGLE。报告还记录模拟器版本和 build ID、系统镜像 revision、设备 build fingerprint 和测试脚本是否启动。宿主启动信息保存在 `diagnostics/emulator-api-34/host-startup.txt`，设备日志位于 `diagnostics/api-34/device-logcat.txt`。
 
 当前应用及 AndEngine JAR 不含原生 `.so`，保持单 APK 且不限制 ABI；ARMv7 电视仍需满足 API 34 最低系统要求。x86 模拟器回归不代表已完成 ARM 电视的真机验证。
 
-VBO 对照实验仅作用于设备测试 APK。手动运行 Android CI 时，`tv_vbo_mode` 可选 `default`（默认策略）或 `disabled`（调用 AndEngine 的 VBO 关闭接口）；普通推送保持默认策略；所选模式同时作用于 API 34 和 API 36 两条 TV 通道。在模拟器内也可使用 `BATTLECITY_TV_VBO_MODE=disabled bash tools/run-android-device-tests.sh 34`。每次测试进程只使用一种模式，测试回调在首帧前配置所有游戏 Activity，清理后注销；主 APK 不增加渲染开关。
+VBO 对照实验仅作用于设备测试 APK。手动运行 Android CI 时，`tv_vbo_mode` 可选 `default`（默认策略）或 `disabled`（调用 AndEngine 的 VBO 关闭接口）；普通推送使用默认策略。在模拟器内也可使用 `BATTLECITY_TV_VBO_MODE=disabled bash tools/run-android-device-tests.sh 34`。每次测试进程只使用一种模式，测试回调在首帧前配置所有游戏 Activity，清理后注销；主 APK 不增加渲染开关。
 
-原生 GL 像素测试会在首帧后记录并断言实际 VBO 状态、引擎选项和 GL renderer/version，报告校验这些证据。关闭 VBO 的运行全部通过时也只标记为诊断验证通过，生产验收待定。手动运行的报告名称包含模式和运行编号；在同一提交上以独立模拟器分别运行双 TV 默认组、双 TV 关闭组各一次，关闭组全过后再连续复验两次；旧提交或缺少本轮 API、显示与窗口证据的产物不计入验证轮次。默认组未复现时对照证据不足；关闭组失败时说明该绕过未解决问题；默认组复现且关闭组三次全过时形成兼容候选，生产 ANR 仍需后续修复验证。报告单独汇总同一次看门狗采样中同时出现 `glGenBuffers` 与等待 GL 退出的生命周期阻塞，保留对应 JUnit 结果；用例通过也可能伴随长时间阻塞。应用的系统 ANR 会使该通道验收失败，设备用例成功时须提供完整的 logcat 采集结果。
+原生 GL 像素测试在首帧后记录实际 VBO 状态、引擎选项和 GL renderer/version。手动运行的报告名称包含模式和运行编号。在同一提交上依次运行一次 `default` 和一次 `disabled`，后者通过后再独立复验两次。比较时使用相同的模拟器 build、镜像 revision、设备 fingerprint 和实际渲染后端。默认组复现原阻塞且关闭组三次全过时，关闭 VBO 成为真机验证候选。关闭组通过仅表示诊断通过，生产验收仍待确认。报告汇总 `glGenBuffers` 与主线程等待 GL 退出同时出现的看门狗样本，并保留 JUnit 和系统 ANR 结果。
 
 三个新纪录自动返回场景使用 30 秒等待预算：手柄断开重连、编辑器与选关返回链路、START 跳过 Game Over。测试 APK 的进度观察器每 250ms 更新缓存，每秒最多输出一次 `BATTLECITY_PRESENTATION_PROGRESS` 日志，记录展示阶段、`elapsed`、观察到的更新帧数、暂停与运行状态、最近推进时间，以及前台、焦点和销毁状态。超时和看门狗直接读取缓存并标注样本年龄，不等待 UI 或引擎锁；清理后停止采样。报告优先展示断言超时当时的快照，证据不足时保留“原因未确认”；不会据此自动放宽超时或判定软件渲染慢。
 

@@ -112,10 +112,9 @@ final class TestRenderMode {
                 mode.equals("default"), state.activeVbo());
         assertEquals("The display mode must be 4K", 3840, dimensions.displayWidth());
         assertEquals("The display mode must be 4K", 2160, dimensions.displayHeight());
-        int api = Build.VERSION.SDK_INT;
-        assertTrue("Only the API 34 and 36 TV channels are supported", api == 34 || api == 36);
-        assertEquals("The window must match the official TV channel", api == 34 ? 1920 : 3840, dimensions.windowWidth());
-        assertEquals("The window must match the official TV channel", api == 34 ? 1080 : 2160, dimensions.windowHeight());
+        assertEquals("The test device must run Android TV API 34", 34, Build.VERSION.SDK_INT);
+        assertEquals("The window must match the official TV image", 1920, dimensions.windowWidth());
+        assertEquals("The window must match the official TV image", 1080, dimensions.windowHeight());
         assertTrue("The game surface must have a positive integer scale", scale > 0);
         assertEquals(256 * scale, dimensions.surfaceWidth());
         assertEquals(240 * scale, dimensions.surfaceHeight());

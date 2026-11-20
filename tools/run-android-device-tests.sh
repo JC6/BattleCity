@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-version=${1:?Usage: run-android-device-tests.sh 34|36}
+version=${1:?Usage: run-android-device-tests.sh 34}
 case "$version" in
-  34|36) ;;
+  34) ;;
   *) echo "Unsupported test platform: $version" >&2; exit 2 ;;
 esac
 export ANDROID_SERIAL="emulator-${EMULATOR_PORT:?Run inside android-emulator-runner}"
@@ -13,6 +13,7 @@ diagnostics="build/diagnostics/api-$version"
 rm -rf "$results" "$reports" "$diagnostics" \
   build/outputs/androidTest-results/connected build/reports/androidTests/connected
 mkdir -p "$results" "$reports" "$diagnostics"
+touch "$diagnostics/runner-started"
 
 collect_results() {
   status=$?
@@ -65,8 +66,7 @@ read_device_value() {
 }
 
 verify_environment() {
-  local expected_abi feature leanback=false
-  if [[ "$version" == 34 ]]; then expected_abi=x86; else expected_abi=x86_64; fi
+  local expected_abi=x86 feature leanback=false
   read_device_value shell getprop ro.product.cpu.abi || return "$?"
   if [[ "$device_value" != "$expected_abi" ]]; then
     printf 'Expected ABI %s, found <%s>\n' "$expected_abi" "$device_value" >&2
@@ -96,8 +96,7 @@ verify_environment() {
       return 1
     fi
   done <<< "$device_value"
-  local expected_effective=3840x2160
-  if [[ "$version" == 34 ]]; then expected_effective=1920x1080; fi
+  local expected_effective=1920x1080
   if [[ "$physical_count" != 1 || "$override_count" -gt 1 || "$physical" != 3840x2160 || "${override:-$physical}" != "$expected_effective" ]]; then
     printf 'Expected 4K physical display 3840x2160 and effective display %s, found physical=<%s>, override=<%s>\n' "$expected_effective" "$physical" "$override" >&2
     return 1
@@ -107,6 +106,7 @@ verify_environment() {
 
 preflight 2>&1 | tee "$diagnostics/preflight.txt"
 verify_environment 2>&1 | tee -a "$diagnostics/preflight.txt"
+read_device_value shell getprop ro.build.fingerprint > "$diagnostics/device-fingerprint.txt" || true
 engine_diagnostics=${BATTLECITY_ENGINE_DIAGNOSTICS:-false}
 case "$engine_diagnostics" in
   true|false) ;;

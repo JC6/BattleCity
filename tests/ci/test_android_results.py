@@ -25,12 +25,11 @@ class AcceptanceResultsTest(unittest.TestCase):
         self.build = Path(self.temporary.name)
         for _, relative, count in results.GROUPS:
             self.write_report(relative, count)
-        for version in ("34", "36"):
-            self.write_render_evidence(version)
-            directory = self.build / f"diagnostics/api-{version}"
-            directory.mkdir(parents=True)
-            (directory / "preflight.txt").write_text("Logcat exit status: 0\n")
-            (directory / "device-logcat.txt").write_text("I TestRunner: finished\n")
+        self.write_render_evidence("34")
+        directory = self.build / "diagnostics/api-34"
+        directory.mkdir(parents=True)
+        (directory / "preflight.txt").write_text("Logcat exit status: 0\n")
+        (directory / "device-logcat.txt").write_text("I TestRunner: finished\n")
         lint = self.build / "reports/lint-results-debug.xml"
         lint.parent.mkdir(parents=True)
         lint.write_text('<issues><issue severity="Warning"/></issues>')
@@ -56,11 +55,11 @@ class AcceptanceResultsTest(unittest.TestCase):
         return path
 
     def write_render_evidence(self, platform, mode="default", **changes):
-        scale = 4 if platform == "34" else 8
+        scale = 4
         record = dict(api=int(platform.split('.')[0]), requested=mode, activeVbo=mode == "default", optionsDisabled=mode == "disabled",
-                      renderer="Fixture GL renderer", version="Fixture GL version",
+                      renderer="Android Emulator OpenGL ES Translator (Google SwiftShader)", version="Fixture GL version",
                       displayWidth=3840, displayHeight=2160,
-                      windowWidth=1920 if platform == "34" else 3840, windowHeight=1080 if platform == "34" else 2160,
+                      windowWidth=1920, windowHeight=1080,
                       surfaceWidth=256 * scale, surfaceHeight=240 * scale, scale=scale)
         record.update(changes)
         path = self.build / f"outputs/androidTest-results/api-{platform}/debug/fixture" / (
@@ -69,20 +68,19 @@ class AcceptanceResultsTest(unittest.TestCase):
         path.write_text("I BattleCityRenderMode: BATTLECITY_RENDER_MODE " + json.dumps(record) + "\n")
         return path
 
-    def evaluate(self, build_status="success", device_status="success", device_statuses=None, tv_vbo_mode="default"):
-        statuses = {"34": device_status, "36": device_status} if device_statuses is None else device_statuses
-        return results.evaluate(self.build, build_status, statuses, "fixture-commit", tv_vbo_mode=tv_vbo_mode)
+    def evaluate(self, build_status="success", device_status="success", tv_vbo_mode="default"):
+        return results.evaluate(self.build, build_status, device_status, "fixture-commit", tv_vbo_mode=tv_vbo_mode)
 
     def test_system_anr_fails_even_with_passing_junit(self):
-        log = self.build / "diagnostics/api-36/device-logcat.txt"
+        log = self.build / "diagnostics/api-34/device-logcat.txt"
         for line in ("WindowManager: ANR in Window{abc u0 org.jiangc.bc/.MainMenuActivity}",
                      "ActivityManager: ANR in org.jiangc.bc (org.jiangc.bc/.MainMenuActivity)"):
             with self.subTest(line=line):
                 log.write_text(line + "\n")
                 summary, problems = self.evaluate()
-                self.assertIn("API 36: system log reports a BattleCity ANR", problems)
+                self.assertIn("API 34: system log reports a BattleCity ANR", problems)
                 self.assertIn(line, summary)
-                self.assertIn("| API 36 TV / 4K display / 4K window | 46 | 0 | 0 | 0 |", summary)
+                self.assertIn("| API 34 TV / 4K display / 1080p window | 46 | 0 | 0 | 0 |", summary)
                 self.assertIn("**NOT ACCEPTED**", summary)
 
     def test_unrelated_anr_and_watchdog_are_informational(self):
@@ -103,15 +101,13 @@ class AcceptanceResultsTest(unittest.TestCase):
         (directory / "preflight.txt").write_text("Logcat exit status: 1\n")
         self.assertTrue(self.evaluate()[1])
 
-    def test_disabled_vbo_success_is_diagnostic_only_on_both_tv_channels(self):
-        for version in ("34", "36"):
-            self.write_render_evidence(version, "disabled")
+    def test_disabled_vbo_success_is_diagnostic_only(self):
+        self.write_render_evidence("34", "disabled")
         summary, problems = self.evaluate(tv_vbo_mode="disabled")
         self.assertEqual([], problems)
         self.assertIn(results.DIAGNOSTIC_SUCCESS, summary)
         self.assertNotIn("**PASSED**", summary)
-        self.assertIn("| API 34 | disabled | false | Fixture GL renderer | Fixture GL version |", summary)
-        self.assertIn("| API 36 | disabled | false |", summary)
+        self.assertIn("| API 34 | disabled | false |", summary)
 
     def test_missing_malformed_or_contradictory_render_evidence_fails(self):
         path = self.write_render_evidence("34")
@@ -134,23 +130,28 @@ class AcceptanceResultsTest(unittest.TestCase):
                 self.write_render_evidence("34", **changes)
                 self.assertTrue(self.evaluate()[1])
 
-    def test_each_disabled_tv_channel_requires_its_own_disabled_evidence(self):
-        for version in ("34", "36"):
-            with self.subTest(version=version):
-                for platform in ("34", "36"):
-                    self.write_render_evidence(platform, "disabled")
-                self.write_render_evidence(version, "default")
-                self.assertTrue(self.evaluate(tv_vbo_mode="disabled")[1])
+    def test_disabled_requires_effective_disabled_evidence(self):
+        self.assertTrue(self.evaluate(tv_vbo_mode="disabled")[1])
+
+    def test_other_software_backends_do_not_pass_swiftshader_gate(self):
+        for renderer in ("ANGLE (Google, Vulkan, SwiftShader)", "Mesa llvmpipe", "Emulator GLES"):
+            with self.subTest(renderer=renderer):
+                self.write_render_evidence("34", renderer=renderer)
+                summary, problems = self.evaluate()
+                self.assertTrue(problems)
+                self.assertIn("expected SwiftShader GLES renderer", summary)
+        self.write_render_evidence("34", version="OpenGL ES 3.1 (ANGLE)")
+        self.assertTrue(self.evaluate()[1])
 
     def test_4k_display_and_application_window_evidence_is_required(self):
         for changes in ({"displayWidth": 1920}, {"displayHeight": 1080},
-                        {"windowWidth": 1920}, {"windowHeight": 1080},
+                        {"windowWidth": 3840}, {"windowHeight": 2160},
                         {"windowWidth": "3840"}, {"displayWidth": True},
                         {"windowHeight": None}, {"scale": 8.0}):
             with self.subTest(changes=changes):
-                self.write_render_evidence("36", **changes)
+                self.write_render_evidence("34", **changes)
                 self.assertTrue(self.evaluate()[1])
-        path = self.write_render_evidence("36")
+        path = self.write_render_evidence("34")
         record = json.loads(path.read_text().split("BATTLECITY_RENDER_MODE ", 1)[1])
         del record["surfaceWidth"]
         path.write_text("BATTLECITY_RENDER_MODE " + json.dumps(record))
@@ -169,16 +170,25 @@ class AcceptanceResultsTest(unittest.TestCase):
         self.assertFalse(problems)
         self.assertIn("3840x2160 | 1920x1080 | 768x720 | 3 |", summary)
 
-    def test_each_channel_requires_its_own_official_window_dimensions(self):
-        for platform, width, height in (("34", 3840, 2160), ("36", 1920, 1080)):
-            with self.subTest(platform=platform):
-                self.write_render_evidence(platform, windowWidth=width, windowHeight=height)
-                self.assertTrue(self.evaluate()[1])
-                self.write_render_evidence(platform)
-        summary, problems = self.evaluate()
-        self.assertFalse(problems)
-        self.assertIn("4K display / 1080p window", summary)
-        self.assertIn("4K display / 4K window", summary)
+    def test_emulator_evidence_distinguishes_boot_failure_from_device_test_failure(self):
+        host = self.build / "diagnostics/emulator-api-34"
+        host.mkdir(parents=True)
+        (host / "version.txt").write_text("INFO | Android emulator version 36.4.9.0 (build_id 1234)\n")
+        (host / "image.properties").write_text("Pkg.Revision=3\n")
+        (host / "host-startup.txt").write_text("fixture startup error\n")
+        summary, problems = self.evaluate(device_status="failure")
+        self.assertTrue(problems)
+        for expected in ("Device test script: not started", "(build_id 1234)",
+                         "TV image revision: 3", "emulator-api-34/host-startup.txt"):
+            self.assertIn(expected, summary)
+        diagnostics = self.build / "diagnostics/api-34"
+        (diagnostics / "runner-started").touch()
+        fingerprint = "google/tv/tv:14/BUILD/1234:user/release-keys"
+        (diagnostics / "device-fingerprint.txt").write_text(
+            "adb shell getprop ro.build.fingerprint (exit 0):\n" + fingerprint + "\n")
+        summary, _ = self.evaluate(device_status="failure")
+        self.assertIn("Device test script: started", summary)
+        self.assertIn(fingerprint, summary)
 
     def test_other_logs_and_other_platform_cannot_replace_native_gl_evidence(self):
         path = self.write_render_evidence("34")
@@ -211,15 +221,15 @@ class AcceptanceResultsTest(unittest.TestCase):
         first = self.progress_record(case)
         later = self.progress_record(case, uptimeMillis=11_000, event="sample", phase="teardown")
         later["engine"].update(screen="DONE", elapsed=0)
-        self.case_log("36", case, "\n".join("BATTLECITY_PRESENTATION_PROGRESS " + json.dumps(r) for r in (first, later)))
-        path = self.write_report(results.GROUPS[2][1], 46, "failure")
+        self.case_log("34", case, "\n".join("BATTLECITY_PRESENTATION_PROGRESS " + json.dumps(r) for r in (first, later)))
+        path = self.write_report(results.GROUPS[1][1], 46, "failure")
         root = ET.parse(path)
         root.getroot().find("testcase").set("name", case)
         root.write(path)
         summary, problems = self.evaluate()
         self.assertTrue(problems)
         self.assertIn("**NOT ACCEPTED**", summary)
-        self.assertIn(f"API 36 / {case} | FAILURE", summary)
+        self.assertIn(f"API 34 / {case} | FAILURE", summary)
         self.assertIn("HISCORE elapsed=400, updates=80", summary)
         self.assertIn("engine sample age=1000ms", summary)
         self.assertIn("UI sample age=4000ms", summary)
@@ -252,7 +262,7 @@ class AcceptanceResultsTest(unittest.TestCase):
 
     def test_vbo_waits_are_grouped_by_test_and_sample_and_keep_passing_outcomes(self):
         case = "soloUsesBoundControllerAndLifecycleKeepsPause"
-        path = self.write_report(results.GROUPS[2][1], 46)
+        path = self.write_report(results.GROUPS[1][1], 46)
         root = ET.parse(path)
         root.getroot().find("testcase").set("name", case)
         root.write(path)
@@ -262,10 +272,10 @@ class AcceptanceResultsTest(unittest.TestCase):
             lines += [prefix + f"phase=background waitingMillis={waiting}",
                       prefix + "at com.google.android.gles_jni.GLImpl.glGenBuffers(Native Method)",
                       prefix + "at org.anddev.andengine.opengl.view.GLSurfaceView$GLThread.requestExitAndWait(GLSurfaceView.java:718)"]
-        self.case_log("36", case, "\n".join(lines + lines))
+        self.case_log("34", case, "\n".join(lines + lines))
         summary, problems = self.evaluate()
         self.assertFalse(problems)
-        self.assertIn(f"API 36 / {case} | PASS | 2 | 4100", summary)
+        self.assertIn(f"API 34 / {case} | PASS | 2 | 4100", summary)
         self.assertIn("VBO stability remains pending", summary)
 
     def test_stacks_from_different_samples_or_tests_cannot_form_a_vbo_wait(self):
@@ -279,7 +289,7 @@ class AcceptanceResultsTest(unittest.TestCase):
         self.assertEqual({}, results.read_vbo_stalls(self.build / "outputs/androidTest-results/api-34"))
 
     def test_diagnostic_outcomes_preserve_skipped_and_duplicate_failures(self):
-        directory = self.build / results.GROUPS[2][1]
+        directory = self.build / results.GROUPS[1][1]
         (directory / 'TEST-a.xml').write_text('<testsuite><testcase name="record"><failure/></testcase>'
                                             '<testcase name="notStarted" status="notrun"/></testsuite>')
         (directory / 'TEST-z.xml').write_text('<testsuite><testcase name="record"/></testsuite>')
@@ -305,12 +315,12 @@ class AcceptanceResultsTest(unittest.TestCase):
     def test_local_mode_never_claims_device_acceptance(self):
         for _, relative, _ in results.GROUPS[1:]:
             (self.build / relative / "TEST-fixture.xml").unlink()
-        summary, problems = results.evaluate(self.build, "success", {}, "workspace", local=True)
+        summary, problems = results.evaluate(self.build, "success", "not run", "workspace", local=True)
         self.assertEqual([], problems)
         self.assertIn("Device tests: **NOT RUN**", summary)
         self.assertIn("device validation pending", summary)
-        self.assertTrue(results.evaluate(self.build, "success", {}, "workspace")[1])
-        self.assertTrue(results.evaluate(self.build, "failure", {}, "workspace", local=True)[1])
+        self.assertTrue(results.evaluate(self.build, "success", "not run", "workspace")[1])
+        self.assertTrue(results.evaluate(self.build, "failure", "not run", "workspace", local=True)[1])
 
     def test_lint_and_instrumentation_artifact_are_required(self):
         lint = self.build / "reports/lint-results-debug.xml"
@@ -469,16 +479,10 @@ V2 Signer: certificate MD5 digest: 4efa2d677cea1f1aff0d97c3353d7047
                     self.assertTrue(self.evaluate()[1])
                     self.write_report(relative, minimum)
 
-    def test_each_platform_requires_its_own_success_status(self):
-        for version in ("34", "36"):
-            for status in (None, "failure", "skipped", "cancelled", "not run"):
-                with self.subTest(version=version, status=status):
-                    statuses = {"34": "success", "36": "success"}
-                    if status is None:
-                        del statuses[version]
-                    else:
-                        statuses[version] = status
-                    self.assertTrue(self.evaluate(device_statuses=statuses)[1])
+    def test_device_step_must_succeed(self):
+        for status in ("failure", "skipped", "cancelled", "not run"):
+            with self.subTest(status=status):
+                self.assertTrue(self.evaluate(device_status=status)[1])
 
     def test_unseparated_reports_cannot_replace_a_missing_platform(self):
         self.write_report("outputs/androidTest-results/connected", 100)
@@ -488,15 +492,16 @@ V2 Signer: certificate MD5 digest: 4efa2d677cea1f1aff0d97c3353d7047
                 self.assertTrue(self.evaluate()[1])
                 self.write_report(relative, minimum)
 
-    def test_old_phone_results_and_status_cannot_replace_api36_tv(self):
-        self.write_report("outputs/androidTest-results/api-37.2", 46)
-        self.write_render_evidence("37.2")
-        (self.build / "outputs/androidTest-results/api-36/TEST-fixture.xml").unlink()
-        summary, problems = self.evaluate(device_statuses={"34": "success", "37.2": "success"})
+    def test_api36_results_cannot_replace_api34_tv(self):
+        self.write_report("outputs/androidTest-results/api-36", 46)
+        self.write_render_evidence("36")
+        (self.build / results.DEVICE_RESULTS / "TEST-fixture.xml").unlink()
+        self.write_render_evidence("34").unlink()
+        summary, problems = self.evaluate()
         self.assertTrue(problems)
-        self.assertIn("API 36 device tests did not succeed (not run)", summary)
-        self.assertIn("API 36 TV / 4K display / 4K window: JUnit XML reports are missing", summary)
-        self.assertNotIn("API 37.2", summary)
+        self.assertIn("API 34 TV / 4K display / 1080p window: JUnit XML reports are missing", summary)
+        self.assertIn("API 34: render-mode evidence from the native GL pixel test is missing", summary)
+        self.assertNotIn("API 36", summary)
 
     def test_suite_level_runner_error_is_not_ignored(self):
         path = self.build / results.GROUPS[1][1] / "TEST-runner.xml"
