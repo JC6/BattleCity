@@ -89,8 +89,8 @@ jobs:
           profile: tv_4k
           pre-emulator-launch-script: |
             mkdir -p build/diagnostics/emulator-api-34
-            "$ANDROID_HOME/emulator/emulator" -version > build/diagnostics/emulator-api-34/version.txt 2>&1
-            cp "$ANDROID_HOME/system-images/android-34/android-tv/x86/source.properties" build/diagnostics/emulator-api-34/image.properties
+            cp "$ANDROID_HOME/system-images/android-34/android-tv/x86/source.properties" build/diagnostics/emulator-api-34/image.properties || true
+            cp "$ANDROID_HOME/system-images/android-34/android-tv/x86/package.xml" build/diagnostics/emulator-api-34/image-package.xml || true
           emulator-options: >-
             -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim
             -logcat-output build/diagnostics/emulator-api-34/startup-logcat.txt

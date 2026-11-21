@@ -173,22 +173,97 @@ class AcceptanceResultsTest(unittest.TestCase):
     def test_emulator_evidence_distinguishes_boot_failure_from_device_test_failure(self):
         host = self.build / "diagnostics/emulator-api-34"
         host.mkdir(parents=True)
-        (host / "version.txt").write_text("INFO | Android emulator version 36.4.9.0 (build_id 1234)\n")
+        (host / "version.txt").write_text("error while loading shared libraries: libpulse.so.0\n")
         (host / "image.properties").write_text("Pkg.Revision=3\n")
         (host / "host-startup.txt").write_text("fixture startup error\n")
         summary, problems = self.evaluate(device_status="failure")
         self.assertTrue(problems)
-        for expected in ("Device test script: not started", "(build_id 1234)",
+        for expected in ("Device test script: not started", "Emulator version: unavailable",
                          "TV image revision: 3", "emulator-api-34/host-startup.txt"):
             self.assertIn(expected, summary)
         diagnostics = self.build / "diagnostics/api-34"
+        (host / "host-startup.txt").write_text("INFO | Android emulator version 37.3.10.0 (build_id 16970787) (CL:N/A)\n")
         (diagnostics / "runner-started").touch()
+        (diagnostics / "boot-logcat.txt").touch()
         fingerprint = "google/tv/tv:14/BUILD/1234:user/release-keys"
         (diagnostics / "device-fingerprint.txt").write_text(
             "adb shell getprop ro.build.fingerprint (exit 0):\n" + fingerprint + "\n")
         summary, _ = self.evaluate(device_status="failure")
-        self.assertIn("Device test script: started", summary)
-        self.assertIn(fingerprint, summary)
+        for expected in ("Device test script: started", "Emulator version: 37.3.10.0 (build_id 16970787)",
+                         fingerprint, "VBO environment comparison: complete", "api-34/boot-logcat.txt"):
+            self.assertIn(expected, summary)
+        (diagnostics / "device-fingerprint.txt").write_text(
+            "adb shell getprop ro.build.fingerprint (exit 1):\n" + fingerprint + "\n")
+        summary, _ = self.evaluate(device_status="failure")
+        self.assertIn("VBO environment comparison: unavailable (Device build fingerprint)", summary)
+
+    def test_tv_image_revision_prefers_properties_and_falls_back_to_matching_local_package(self):
+        host = self.build / "diagnostics/emulator-api-34"
+        host.mkdir(parents=True)
+        properties = host / "image.properties"
+        package = host / "image-package.xml"
+        xml = (
+            '<repository xmlns="urn:android:sdk">'
+            '<localPackage path="system-images;android-34;android-tv;x86">'
+            '<revision><major>2</major><minor>1</minor><micro>0</micro></revision>'
+            '</localPackage></repository>'
+        )
+        package.write_text(xml)
+        properties.write_text("Pkg.Revision=3.0.0\n")
+        self.assertEqual("3", results.read_image_revision(host))
+        properties.write_text("Pkg.Revision=   \nPkg.Desc=Android TV\n")
+        self.assertEqual("2.1", results.read_image_revision(host))
+        properties.unlink()
+        self.assertEqual("2.1", results.read_image_revision(host))
+        for invalid in (xml.replace("x86", "x86_64"), xml.replace(">2<", ">bad<"), "<malformed>"):
+            package.write_text(invalid)
+            self.assertEqual("", results.read_image_revision(host))
+
+    def test_device_gl_diagnoses_interrupted_run_without_replacing_pixel_evidence(self):
+        self.write_render_evidence("34").unlink()
+        host = self.build / "diagnostics/emulator-api-34"
+        host.mkdir(parents=True)
+        (host / "host-startup.txt").write_text("INFO | Android emulator version 37.3.10.0 (build_id 16970787)\n")
+        (host / "image.properties").write_text("Pkg.Revision=3\n")
+        device = self.build / "diagnostics/api-34"
+        (device / "runner-started").touch()
+        (device / "device-fingerprint.txt").write_text(
+            "adb shell getprop ro.build.fingerprint (exit 0):\ngoogle/tv/tv:14/BUILD/1234:user/release-keys\n")
+        log = device / "device-logcat.txt"
+        renderer = "Android Emulator OpenGL ES Translator (Google SwiftShader)"
+        version = "OpenGL ES-CM 1.1 (OpenGL ES 3.0 SwiftShader 4.0.0.1)"
+        render_line = f"11-21 00:36:53.536  2986  3150 D AndEngine: RENDERER: {renderer}\n"
+        version_line = f"11-21 00:36:53.536  2986  3150 D AndEngine: VERSION: {version}\n"
+        watchdog_case = "remainingSecondControllerCanStartFromTitleAfterPairDisconnects"
+        sample = f"BattleCityTest: watchdog test=org.jiangc.bc.TvMenuFlowTest#{watchdog_case} sample=2 heartbeat=14 stallSample=2 | "
+        watchdog = "\n".join(sample + detail for detail in (
+            "phase=teardown waitingMillis=4052",
+            "at GLImpl.glGenBuffers(Native Method)",
+            "at BufferObject.loadToHardware(BufferObject.java:93)",
+            "at GLSurfaceView$GLThread.requestExitAndWait(GLSurfaceView.java:718)",
+        ))
+        anr = "WindowManager: ANR in Window{abc u0 org.jiangc.bc/.Level1Activity}\n"
+        log.write_text(render_line + version_line + watchdog + "\n" + anr)
+        summary, problems = self.evaluate(device_status="failure")
+        for expected in (f"Device GL (AndEngine): {renderer} / {version}",
+                         "VBO environment comparison: complete", "| 1 | 4052 | observed |"):
+            self.assertIn(expected, summary)
+        self.assertIn("API 34: render-mode evidence from the native GL pixel test is missing", problems)
+        self.assertIn("API 34: system log reports a BattleCity ANR", problems)
+        self.assertIn("**NOT ACCEPTED**", summary)
+
+        # A renderer and version written by different contexts cannot supply a pair.
+        for invalid in (render_line + version_line.replace("3150", "3151"),
+                        render_line + version_line.replace("2986", "2987"),
+                        render_line.replace("Google SwiftShader", "ANGLE (SwiftShader)") + version_line,
+                        render_line + version_line.replace("SwiftShader 4.0.0.1", "ANGLE"),
+                        render_line + version_line + render_line.replace("Google SwiftShader", "llvmpipe") + version_line):
+            log.write_text(invalid)
+            self.assertIn("VBO environment comparison: unavailable", self.evaluate(device_status="failure")[0])
+
+        log.write_text(render_line + version_line)
+        self.write_render_evidence("34", renderer="ANGLE (SwiftShader)")
+        self.assertIn("VBO environment comparison: unavailable", self.evaluate(device_status="failure")[0])
 
     def test_other_logs_and_other_platform_cannot_replace_native_gl_evidence(self):
         path = self.write_render_evidence("34")

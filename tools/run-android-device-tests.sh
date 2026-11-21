@@ -119,6 +119,9 @@ case "$vbo_mode" in
   *) echo 'BATTLECITY_TV_VBO_MODE must be default or disabled' | tee -a "$diagnostics/preflight.txt" >&2; exit 2 ;;
 esac
 printf 'Render mode requested: %s\n' "$vbo_mode" | tee -a "$diagnostics/preflight.txt"
+boot_logcat_status=0
+adb logcat -b all -d -v threadtime > "$diagnostics/boot-logcat.txt" 2>&1 || boot_logcat_status=$?
+printf 'Boot logcat exit status: %s\n' "$boot_logcat_status" >> "$diagnostics/preflight.txt"
 adb logcat -c
 bash ./gradlew connectedDebugAndroidTest --stacktrace \
   "-Pandroid.testInstrumentationRunnerArguments.battlecityEngineDiagnostics=$engine_diagnostics" \

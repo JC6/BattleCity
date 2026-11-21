@@ -49,6 +49,7 @@ case "$*" in
     if [[ "$FAKE_WINDOW_EXIT" != 0 ]]; then echo 'fixture window dump failed' >&2; fi
     echo 'mCurrentFocus=Window{fixture.focus}'
     exit "$FAKE_WINDOW_EXIT" ;;
+  'logcat -b all -d -v threadtime') echo 'simulated device boot log' ;;
   'logcat -d -v threadtime') echo 'simulated emulator log' ;;
   'logcat -c') ;;
   *) echo "Unexpected adb command: $*" >&2; exit 99 ;;
@@ -242,6 +243,9 @@ exit "$FAKE_EXIT"
         self.assertTrue((self.root / f"build/reports/androidTests/api-{version}/index.html").exists())
         self.assertEqual("emulator startup log", startup.read_text())
         self.assertFalse(window.exists())
+        self.assertEqual("simulated device boot log\n", (window.parent / "boot-logcat.txt").read_text())
+        self.assertEqual([line for line in self.commands.read_text().splitlines() if line == "gradle" or "logcat" in line],
+                         ["adb logcat -b all -d -v threadtime", "adb logcat -c", "gradle", "adb logcat -d -v threadtime"])
 
     def test_disabled_run_preserves_test_failure_and_diagnostics(self):
         version = "34"
@@ -275,6 +279,18 @@ exit "$FAKE_EXIT"
                 self.assertIn("Logcat exit status: 17", log)
                 self.assertIn(f"Runner exit status: {status}", log)
 
+    def test_boot_log_failure_keeps_test_log_and_test_status(self):
+        self.env.update(FAKE_ENV_FAIL_COMMAND="logcat -b all -d -v threadtime")
+        for status in ("0", "7"):
+            with self.subTest(status=status):
+                self.env["FAKE_EXIT"] = status
+                self.assertEqual(int(status), self.run_script("34").returncode)
+                diagnostics = self.root / "build/diagnostics/api-34"
+                self.assertIn("fixture environment stderr", (diagnostics / "boot-logcat.txt").read_text())
+                self.assertIn("Boot logcat exit status: 17\nLogcat exit status: 0\n",
+                              (diagnostics / "preflight.txt").read_text())
+                self.assertIn("simulated emulator log", (diagnostics / "device-logcat.txt").read_text())
+
     def test_diagnostic_dump_failures_do_not_mask_test_status(self):
         self.env.update(FAKE_WINDOW_EXIT="19", FAKE_DISPLAY_DUMP_EXIT="18")
         for status in ("0", "7"):
@@ -282,6 +298,27 @@ exit "$FAKE_EXIT"
                 self.env["FAKE_EXIT"] = status
                 self.assertEqual(int(status), self.run_script("34").returncode)
                 self.assertIn("fixture display state", (self.root / "build/diagnostics/api-34/display-state.txt").read_text())
+
+
+class EmulatorMetadataTest(unittest.TestCase):
+    def test_prelaunch_preserves_each_available_image_file_without_running_the_emulator(self):
+        commands = WORKFLOW.read_text().split("pre-emulator-launch-script: |\n", 1)[1]
+        commands = commands.split("emulator-options:", 1)[0].splitlines()
+        for source, output in (("source.properties", "image.properties"), ("package.xml", "image-package.xml")):
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                sdk = root / "test sdk"
+                image = sdk / "system-images/android-34/android-tv/x86"
+                image.mkdir(parents=True)
+                (image / source).write_text("metadata from " + source)
+                # The action runs each nonempty line in its own shell.
+                for command in filter(None, map(str.strip, commands)):
+                    run = subprocess.run(["sh", "-c", command], cwd=root, env=dict(os.environ, ANDROID_HOME=str(sdk)),
+                                         text=True, capture_output=True, timeout=10)
+                    self.assertEqual(0, run.returncode, run.stderr)
+                diagnostics = root / "build/diagnostics/emulator-api-34"
+                self.assertEqual("metadata from " + source, (diagnostics / output).read_text())
+                self.assertEqual([output], [path.name for path in diagnostics.iterdir()])
 
 
 class KvmPreparationTest(unittest.TestCase):

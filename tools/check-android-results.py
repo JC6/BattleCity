@@ -59,8 +59,13 @@ def read_results(directory):
     return counts, problems
 
 
+def swiftshader_gles(renderer, version):
+    renderer = renderer.casefold()
+    return "swiftshader" in renderer and "angle" not in renderer and "angle" not in version.casefold()
+
+
 def read_render_evidence(directory, expected):
-    records, problems = [], []
+    records, problems, observed_gl = [], [], set()
     marker = "BATTLECITY_RENDER_MODE "
     for path in sorted(directory.rglob("logcat-*TvMenuFlowTest-actualGlAdapterMatchesSoftwareAcrossSpriteSizesAndPausedScreens.txt")):
         try:
@@ -68,17 +73,19 @@ def read_render_evidence(directory, expected):
                 if marker not in line:
                     continue
                 record = json.loads(line.split(marker, 1)[1])
-                if (not isinstance(record, dict) or type(record.get("api")) is not int
+                has_gl = isinstance(record, dict) and all(
+                    isinstance(record.get(key), str) and record[key].strip() for key in ("renderer", "version")
+                )
+                if has_gl:
+                    observed_gl.add((record["renderer"].strip(), record["version"].strip()))
+                if (not has_gl or type(record.get("api")) is not int
                         or record["api"] != 34 or record.get("requested") != expected
                         or type(record.get("activeVbo")) is not bool
                         or type(record.get("optionsDisabled")) is not bool
                         or record["activeVbo"] != (expected == "default")
-                        or record["optionsDisabled"] != (expected == "disabled")
-                        or any(not isinstance(record.get(key), str) or not record[key].strip()
-                               for key in ("renderer", "version"))):
+                        or record["optionsDisabled"] != (expected == "disabled")):
                     raise ValueError("API, requested mode, engine options or actual GL state do not match")
-                renderer = record["renderer"].casefold()
-                if "swiftshader" not in renderer or "angle" in renderer or "angle" in record["version"].casefold():
+                if not swiftshader_gles(record["renderer"], record["version"]):
                     raise ValueError(f"expected SwiftShader GLES renderer, detected {record['renderer']} / {record['version']}")
                 dimensions = ("displayWidth", "displayHeight", "windowWidth", "windowHeight",
                               "surfaceWidth", "surfaceHeight", "scale")
@@ -95,7 +102,7 @@ def read_render_evidence(directory, expected):
             problems.append(f"{path.name}: invalid render-mode evidence ({failure})")
     if not records:
         problems.append("render-mode evidence from the native GL pixel test is missing")
-    return records, problems
+    return records, problems, observed_gl
 
 
 def case_outcomes(directory):
@@ -153,21 +160,25 @@ def read_case_progress(directory, case):
     return records, notes
 
 
-def read_vbo_stalls(directory):
+def read_vbo_stalls(directory, device_log=None):
     samples = {}
     pattern = re.compile(r"watchdog test=(\S+) sample=(\d+) heartbeat=(\d+) stallSample=\d+")
-    for path in sorted(directory.rglob("logcat-*.txt")):
+    paths = sorted(directory.rglob("logcat-*.txt"))
+    if device_log is not None:
+        paths.append(device_log)
+    for path in paths:
         try:
             for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
                 match = pattern.search(line)
                 if not match:
                     continue
-                sample = samples.setdefault(match.groups(), dict(wait=0, allocation=False, exit=False))
+                sample = samples.setdefault(match.groups(), dict(wait=0, allocation=False, exit=False, hardware=False))
                 waiting = re.search(r"\bwaitingMillis=(\d+)\b", line)
                 if waiting:
                     sample["wait"] = max(sample["wait"], int(waiting[1]))
                 sample["allocation"] |= "GLImpl.glGenBuffers(" in line
                 sample["exit"] |= "GLThread.requestExitAndWait(" in line
+                sample["hardware"] |= "BufferObject.loadToHardware(" in line
         except OSError:
             continue
     stalls = {}
@@ -175,8 +186,8 @@ def read_vbo_stalls(directory):
         if not sample["allocation"] or not sample["exit"] or sample["wait"] < 2_000:
             continue
         case = test.rsplit("#", 1)[-1]
-        count, waiting = stalls.get(case, (0, 0))
-        stalls[case] = count + 1, max(waiting, sample["wait"])
+        count, waiting, hardware = stalls.get(case, (0, 0, False))
+        stalls[case] = count + 1, max(waiting, sample["wait"]), hardware or sample["hardware"]
     return stalls
 
 
@@ -210,25 +221,89 @@ def check_application_anrs(build_dir, device_status):
     return lines, problems
 
 
-def emulator_summary(build_dir):
+def diagnostic_text(path):
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def read_image_revision(host):
+    properties = diagnostic_text(host / "image.properties")
+    match = re.search(r"^Pkg\.Revision[ \t]*=[ \t]*(\d+(?:\.\d+){0,2})[ \t]*$", properties, re.MULTILINE)
+    if match:
+        return match[1].removesuffix(".0").removesuffix(".0")
+    try:
+        package = ET.parse(host / "image-package.xml").find(
+            ".//{*}localPackage[@path='system-images;android-34;android-tv;x86']/{*}revision")
+    except (OSError, ET.ParseError):
+        return ""
+    if package is None:
+        return ""
+    parts = [package.findtext(f"{{*}}{part}", default).strip()
+             for part, default in (("major", ""), ("minor", "0"), ("micro", "0"))]
+    if not all(re.fullmatch(r"\d+", part) for part in parts):
+        return ""
+    return ".".join(parts).removesuffix(".0").removesuffix(".0")
+
+
+def read_andengine_gl(device_log):
+    pattern = re.compile(
+        r"^\d\d-\d\d[ \t]+\d\d:\d\d:\d\d\.\d+[ \t]+(\d+)[ \t]+(\d+)[ \t]+[A-Z][ \t]+"
+        r"AndEngine[ \t]*:[ \t]*(RENDERER|VERSION):[ \t]*(\S.*)$"
+    )
+    pending, pairs = {}, set()
+    try:
+        with device_log.open(encoding="utf-8", errors="replace") as log:
+            for line in log:
+                match = pattern.match(line)
+                if match is None:
+                    continue
+                pid, tid, key, value = match.groups()
+                context = pending.setdefault((pid, tid), {})
+                context[key] = value.strip()
+                if "RENDERER" in context and "VERSION" in context:
+                    pairs.add((context["RENDERER"], context["VERSION"]))
+                    del pending[(pid, tid)]
+    except OSError:
+        return set()
+    return pairs
+
+
+def emulator_summary(build_dir, native_gl):
     diagnostics = build_dir / "diagnostics"
     host = diagnostics / "emulator-api-34"
-    lines = ["", "Emulator evidence:", "",
-             "- Device test script: " + (
-                 "started" if (diagnostics / "api-34/runner-started").is_file() else "not started")]
-    for label, path, pattern in (
-        ("Emulator version", host / "version.txt", r"^.*Android emulator version.*$"),
-        ("TV image revision", host / "image.properties", r"^Pkg\.Revision\s*=\s*(.+)$"),
-        ("Device build fingerprint", diagnostics / "api-34/device-fingerprint.txt", r"^([^\s]+/[^\s]+:[^\s]+)$"),
-    ):
-        try:
-            match = re.search(pattern, path.read_text(encoding="utf-8", errors="replace"), re.MULTILINE)
-        except OSError:
-            match = None
-        value = match[match.lastindex or 0].strip() if match else ""
+    device = diagnostics / "api-34"
+    host_log = host / "host-startup.txt"
+    started = (device / "runner-started").is_file()
+    version = re.search(r"^.*Android emulator version[ \t]+(\S+[ \t]+\(build_id[ \t]+\d+\))",
+                        diagnostic_text(host_log), re.MULTILINE)
+    revision = read_image_revision(host)
+    fingerprint = re.search(r"^adb shell getprop ro\.build\.fingerprint \(exit 0\):\n(\S+/\S+:\S+)$",
+                            diagnostic_text(device / "device-fingerprint.txt"), re.MULTILINE)
+    andengine_gl = read_andengine_gl(device / "device-logcat.txt")
+    observed_gl = native_gl | andengine_gl
+    incomplete = []
+    lines = ["", "Emulator evidence:", "", f"- Device test script: {'started' if started else 'not started'}"]
+    for label, value in (("Emulator version", version[1] if version else ""),
+                         ("TV image revision", revision),
+                         ("Device build fingerprint", fingerprint[1] if fingerprint else "")):
         lines.append(f"- {label}: {value or 'unavailable'}")
-    if (host / "host-startup.txt").is_file():
+        if not value:
+            incomplete.append(label)
+    if not started:
+        incomplete.append("device test script did not start")
+    lines.extend(f"- Device GL (AndEngine): {renderer} / {gl_version}" for renderer, gl_version in sorted(andengine_gl))
+    if len(observed_gl) != 1 or not any(swiftshader_gles(*pair) for pair in observed_gl):
+        incomplete.append("missing, conflicting or non-SwiftShader device GL evidence")
+    if incomplete:
+        lines.append("- VBO environment comparison: unavailable (" + ", ".join(incomplete) + ")")
+    else:
+        lines.append("- VBO environment comparison: complete")
+    if host_log.is_file():
         lines.append("- Host startup output: diagnostics/emulator-api-34/host-startup.txt")
+    if (device / "boot-logcat.txt").is_file():
+        lines.append("- Device boot log: diagnostics/api-34/boot-logcat.txt")
     return lines
 
 
@@ -266,11 +341,13 @@ def diagnostic_summary(build_dir):
             detail += "; " + "; ".join(sorted(set(notes)))
         detail = detail.replace("|", "\\|").replace("\n", " ").replace("\r", " ")
         lines.append(f"| API 34 / {case} | {outcomes.get(case, 'not recorded')} | {detail} |")
-    for case, (count, waiting) in sorted(read_vbo_stalls(directory).items()):
-        vbo.append(f"| API 34 / {case} | {outcomes.get(case, 'not recorded')} | {count} | {waiting} |")
+    device_log = build_dir / "diagnostics/api-34/device-logcat.txt"
+    for case, (count, waiting, hardware) in sorted(read_vbo_stalls(directory, device_log).items()):
+        vbo.append(f"| API 34 / {case} | {outcomes.get(case, 'not recorded')} | {count} | {waiting} | "
+                   f"{'observed' if hardware else 'unconfirmed'} |")
     lines.extend(["", "VBO lifecycle wait observations (separate from presentation timeouts):", "",
-                  "| Platform / case | JUnit outcome | Matching stack samples | Longest sampled wait ms |",
-                  "|---|---|---:|---:|", *vbo])
+                  "| Platform / case | JUnit outcome | Matching stack samples | Longest sampled wait ms | VBO buffer upload |",
+                  "|---|---|---:|---:|---|", *vbo])
     lines.extend(["", "VBO stability remains pending comparison of independent default/disabled runs. "
                   "A passing JUnit outcome can coexist with a long GL lifecycle wait; observations do not establish a system ANR."])
     return lines
@@ -311,7 +388,7 @@ def evaluate(build_dir, build_status, device_status, commit, local=False, tv_vbo
     else:
         lines.extend(["", "| Platform | Requested mode | Active VBO | GL renderer | GL version | Display px | Window px | Surface px | Scale |",
                       "|---|---|---|---|---|---|---|---|---|"])
-        records, errors = read_render_evidence(build_dir / DEVICE_RESULTS, tv_vbo_mode)
+        records, errors, native_gl = read_render_evidence(build_dir / DEVICE_RESULTS, tv_vbo_mode)
         problems.extend(f"API 34: {error}" for error in errors)
         for record in records:
             renderer = record["renderer"].replace("|", "\\|").replace("\n", " ")
@@ -319,7 +396,7 @@ def evaluate(build_dir, build_status, device_status, commit, local=False, tv_vbo
             dimensions = [f"{record[prefix + 'Width']}x{record[prefix + 'Height']}" for prefix in ("display", "window", "surface")]
             lines.append(f"| API 34 | {tv_vbo_mode} | {str(record['activeVbo']).lower()} | {renderer} | {gl_version} | "
                          + " | ".join(dimensions) + f" | {record['scale']} |")
-        lines.extend(emulator_summary(build_dir))
+        lines.extend(emulator_summary(build_dir, native_gl))
         lines.extend(diagnostic_summary(build_dir))
         anr_lines, anr_problems = check_application_anrs(build_dir, device_status)
         lines.extend(anr_lines)
