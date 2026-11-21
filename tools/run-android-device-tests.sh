@@ -7,18 +7,36 @@ case "$version" in
   *) echo "Unsupported test platform: $version" >&2; exit 2 ;;
 esac
 export ANDROID_SERIAL="emulator-${EMULATOR_PORT:?Run inside android-emulator-runner}"
-results="build/outputs/androidTest-results/api-$version"
-reports="build/reports/androidTests/api-$version"
-diagnostics="build/diagnostics/api-$version"
+round=${2:-}
+case "$round" in
+  '') ;;
+  baseline) export BATTLECITY_TV_VBO_MODE=default ;;
+  comparison-1|comparison-2|comparison-3) export BATTLECITY_TV_VBO_MODE=disabled ;;
+  *) echo "Unsupported device round: $round" >&2; exit 2 ;;
+esac
+channel="api-$version${round:+/$round}"
+results="build/outputs/androidTest-results/$channel"
+reports="build/reports/androidTests/$channel"
+diagnostics="build/diagnostics/$channel"
 rm -rf "$results" "$reports" "$diagnostics" \
   build/outputs/androidTest-results/connected build/reports/androidTests/connected
 mkdir -p "$results" "$reports" "$diagnostics"
 touch "$diagnostics/runner-started"
 
+verify_apk_digests() {
+  sha256sum build/outputs/apk/debug/BattleCity-debug.apk \
+    build/outputs/apk/androidTest/debug/BattleCity-debug-androidTest.apk > "$diagnostics/apks-$1.sha256" &&
+    cmp -s build/diagnostics/apks-built.sha256 "$diagnostics/apks-$1.sha256"
+}
+
 collect_results() {
   status=$?
   local copy_status logcat_status=0
   trap - EXIT
+  if [[ -n "$round" ]] && ! verify_apk_digests after; then
+    echo 'APK digest verification failed after device tests' >&2
+    if [[ "$status" == 0 ]]; then status=1; fi
+  fi
   adb logcat -d -v threadtime > "$diagnostics/device-logcat.txt" 2>&1 || logcat_status=$?
   printf 'Logcat exit status: %s\n' "$logcat_status" >> "$diagnostics/preflight.txt"
   adb shell dumpsys display > "$diagnostics/display-state.txt" 2>&1 || true
@@ -44,6 +62,11 @@ collect_results() {
   exit "$status"
 }
 trap collect_results EXIT
+
+if [[ -n "$round" ]] && ! verify_apk_digests before; then
+  echo 'APK digest verification failed before device tests' >&2
+  exit 1
+fi
 
 preflight() {
   printf 'Requested API: %s\n' "$version"
@@ -123,6 +146,13 @@ boot_logcat_status=0
 adb logcat -b all -d -v threadtime > "$diagnostics/boot-logcat.txt" 2>&1 || boot_logcat_status=$?
 printf 'Boot logcat exit status: %s\n' "$boot_logcat_status" >> "$diagnostics/preflight.txt"
 adb logcat -c
-bash ./gradlew connectedDebugAndroidTest --stacktrace \
+command=(bash ./gradlew connectedDebugAndroidTest --stacktrace \
   "-Pandroid.testInstrumentationRunnerArguments.battlecityEngineDiagnostics=$engine_diagnostics" \
-  "-Pandroid.testInstrumentationRunnerArguments.battlecityVboMode=$vbo_mode"
+  "-Pandroid.testInstrumentationRunnerArguments.battlecityVboMode=$vbo_mode")
+if [[ -n "$round" ]]; then
+  timeout --kill-after=30s 20m "${command[@]}" \
+    -x compileDebugJavaWithJavac -x compileDebugAndroidTestJavaWithJavac \
+    -x packageDebug -x packageDebugAndroidTest
+else
+  "${command[@]}"
+fi

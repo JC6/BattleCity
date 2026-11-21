@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import os
 from pathlib import Path
+from typing import NamedTuple
 import xml.etree.ElementTree as ET
 
 
@@ -17,6 +18,12 @@ GROUPS = (
     ("API 34 TV / 4K display / 1080p window", "outputs/androidTest-results/api-34", 46),
 )
 DEVICE_RESULTS = GROUPS[1][1]
+APK_FILES = (
+    ("APK", "debug/BattleCity-debug.apk"),
+    ("Instrumentation APK", "androidTest/debug/BattleCity-debug-androidTest.apk"),
+)
+ROUND_NAMES = ("baseline", "comparison-1", "comparison-2", "comparison-3")
+ROUND_LABELS = dict(zip(ROUND_NAMES, ("Production baseline", "VBO diagnostic", "VBO diagnostic repeat 1", "VBO diagnostic repeat 2")))
 PRESENTATION_CASES = (
     "highScoreDisconnectFreezesPresentationAndFinishesOnce",
     "constructionSelectedStageAndRecordReturnToOriginalMenu",
@@ -197,9 +204,8 @@ APP_ANR = re.compile(
 )
 
 
-def check_application_anrs(build_dir, device_status):
+def check_application_anrs(directory, device_status):
     lines, problems = ["", "Application ANR checks:", ""], []
-    directory = build_dir / "diagnostics/api-34"
     try:
         log = (directory / "device-logcat.txt").read_text(encoding="utf-8", errors="replace")
     except OSError:
@@ -218,7 +224,7 @@ def check_application_anrs(build_dir, device_status):
             problems.append("API 34: complete system log required for ANR verification")
     else:
         lines.append("- API 34: no BattleCity ANR recorded")
-    return lines, problems
+    return lines, problems, bool(matches)
 
 
 def diagnostic_text(path):
@@ -270,10 +276,10 @@ def read_andengine_gl(device_log):
     return pairs
 
 
-def emulator_summary(build_dir, native_gl):
+def emulator_summary(build_dir, native_gl, round_name):
     diagnostics = build_dir / "diagnostics"
-    host = diagnostics / "emulator-api-34"
-    device = diagnostics / "api-34"
+    host = diagnostics / "emulator-api-34" / round_name
+    device = diagnostics / "api-34" / round_name
     host_log = host / "host-startup.txt"
     started = (device / "runner-started").is_file()
     version = re.search(r"^.*Android emulator version[ \t]+(\S+[ \t]+\(build_id[ \t]+\d+\))",
@@ -285,9 +291,10 @@ def emulator_summary(build_dir, native_gl):
     observed_gl = native_gl | andengine_gl
     incomplete = []
     lines = ["", "Emulator evidence:", "", f"- Device test script: {'started' if started else 'not started'}"]
-    for label, value in (("Emulator version", version[1] if version else ""),
+    identity = dict((("Emulator version", version[1] if version else ""),
                          ("TV image revision", revision),
-                         ("Device build fingerprint", fingerprint[1] if fingerprint else "")):
+                         ("Device build fingerprint", fingerprint[1] if fingerprint else "")))
+    for label, value in identity.items():
         lines.append(f"- {label}: {value or 'unavailable'}")
         if not value:
             incomplete.append(label)
@@ -296,23 +303,26 @@ def emulator_summary(build_dir, native_gl):
     lines.extend(f"- Device GL (AndEngine): {renderer} / {gl_version}" for renderer, gl_version in sorted(andengine_gl))
     if len(observed_gl) != 1 or not any(swiftshader_gles(*pair) for pair in observed_gl):
         incomplete.append("missing, conflicting or non-SwiftShader device GL evidence")
+    else:
+        identity["GL renderer"], identity["GL version"] = next(iter(observed_gl))
     if incomplete:
         lines.append("- VBO environment comparison: unavailable (" + ", ".join(incomplete) + ")")
     else:
         lines.append("- VBO environment comparison: complete")
     if host_log.is_file():
-        lines.append("- Host startup output: diagnostics/emulator-api-34/host-startup.txt")
+        lines.append(f"- Host startup output: {host_log.relative_to(build_dir)}")
+    if (host / "adb-startup.txt").is_file():
+        lines.append(f"- ADB startup status: {(host / 'adb-startup.txt').relative_to(build_dir)}")
     if (device / "boot-logcat.txt").is_file():
-        lines.append("- Device boot log: diagnostics/api-34/boot-logcat.txt")
-    return lines
+        lines.append(f"- Device boot log: {(device / 'boot-logcat.txt').relative_to(build_dir)}")
+    return lines, None if incomplete else identity
 
 
-def diagnostic_summary(build_dir):
+def diagnostic_summary(directory, stalls):
     lines = ["", "Presentation progress (30-second automatic return budget):", "",
              "| Platform / case | JUnit outcome | Latest progress |",
              "|---|---|---|"]
     vbo = []
-    directory = build_dir / DEVICE_RESULTS
     outcomes = case_outcomes(directory)
     for case in PRESENTATION_CASES:
         records, notes = read_case_progress(directory, case)
@@ -341,19 +351,150 @@ def diagnostic_summary(build_dir):
             detail += "; " + "; ".join(sorted(set(notes)))
         detail = detail.replace("|", "\\|").replace("\n", " ").replace("\r", " ")
         lines.append(f"| API 34 / {case} | {outcomes.get(case, 'not recorded')} | {detail} |")
-    device_log = build_dir / "diagnostics/api-34/device-logcat.txt"
-    for case, (count, waiting, hardware) in sorted(read_vbo_stalls(directory, device_log).items()):
+    for case, (count, waiting, hardware) in sorted(stalls.items()):
         vbo.append(f"| API 34 / {case} | {outcomes.get(case, 'not recorded')} | {count} | {waiting} | "
                    f"{'observed' if hardware else 'unconfirmed'} |")
     lines.extend(["", "VBO lifecycle wait observations (separate from presentation timeouts):", "",
                   "| Platform / case | JUnit outcome | Matching stack samples | Longest sampled wait ms | VBO buffer upload |",
                   "|---|---|---:|---:|---|", *vbo])
-    lines.extend(["", "VBO stability remains pending comparison of independent default/disabled runs. "
+    lines.extend(["", "VBO stability remains pending physical TV validation. "
                   "A passing JUnit outcome can coexist with a long GL lifecycle wait; observations do not establish a system ANR."])
     return lines
 
 
-def evaluate(build_dir, build_status, device_status, commit, local=False, tv_vbo_mode="default"):
+def suite_summary(directory, label, minimum):
+    counts, errors = read_results(directory)
+    row = f"| {label} | {counts['tests']} | {counts['failures']} | {counts['errors']} | {counts['skipped']} |"
+    problems = [f"{label}: {error}" for error in errors]
+    if counts["tests"] < minimum:
+        problems.append(f"{label}: expected at least {minimum} tests, found {counts['tests']}")
+    if any(counts[key] for key in ("failures", "errors", "skipped")):
+        problems.append(f"{label}: failures, errors and skipped tests must all be zero")
+    return row, problems
+
+
+class DeviceRound(NamedTuple):
+    lines: list
+    problems: list
+    environment: dict | None
+    reproduced: bool
+    stalled: bool
+    apk_verified: bool
+    apk_mismatch: bool
+
+
+def device_round(build_dir, status, mode, round_name=""):
+    label, relative, minimum = GROUPS[1]
+    directory = build_dir / relative / round_name
+    diagnostics = build_dir / "diagnostics/api-34" / round_name
+    row, problems = suite_summary(directory, label, minimum)
+    lines = [f"API 34 Android TV / x86 / 4K display / 1080p window test command: **{status}**",
+             f"Requested render mode: **{mode}**.", "",
+             "| Suite | Tests | Failures | Errors | Skipped |", "|---|---:|---:|---:|---:|", row]
+    if status != "success":
+        problems.append(f"API 34 device tests did not succeed ({status})")
+    lines.extend(["", "| Platform | Requested mode | Active VBO | GL renderer | GL version | Display px | Window px | Surface px | Scale |",
+                  "|---|---|---|---|---|---|---|---|---|"])
+    records, errors, native_gl = read_render_evidence(directory, mode)
+    problems.extend(f"API 34: {error}" for error in errors)
+    for record in records:
+        renderer = record["renderer"].replace("|", "\\|").replace("\n", " ")
+        gl_version = record["version"].replace("|", "\\|").replace("\n", " ")
+        dimensions = [f"{record[prefix + 'Width']}x{record[prefix + 'Height']}" for prefix in ("display", "window", "surface")]
+        lines.append(f"| API 34 | {mode} | {str(record['activeVbo']).lower()} | {renderer} | {gl_version} | "
+                     + " | ".join(dimensions) + f" | {record['scale']} |")
+    emulator_lines, environment = emulator_summary(build_dir, native_gl, round_name)
+    lines.extend(emulator_lines)
+    stalls = read_vbo_stalls(directory, diagnostics / "device-logcat.txt")
+    lines.extend(diagnostic_summary(directory, stalls))
+    anr_lines, anr_problems, anr = check_application_anrs(diagnostics, status)
+    lines.extend(anr_lines)
+    problems.extend(anr_problems)
+    apk_verified, apk_mismatch = False, False
+    if round_name:
+        expected = diagnostic_text(build_dir / "diagnostics/apks-built.sha256")
+        matched = 0
+        for phase in ("before", "after"):
+            digest_file = diagnostics / f"apks-{phase}.sha256"
+            if not expected or not digest_file.is_file():
+                problems.append(f"APK digest evidence unavailable {phase} device tests")
+            elif diagnostic_text(digest_file) != expected:
+                problems.append(f"APK digest changed {phase} device tests")
+                apk_mismatch = True
+            else:
+                matched += 1
+        apk_verified = matched == 2
+        if apk_verified:
+            lines.append("- Same APK digests verified before and after device tests")
+    return DeviceRound(lines, problems, environment,
+                       status == "failure" and anr and any(hardware for _, _, hardware in stalls.values()),
+                       bool(stalls), apk_verified, apk_mismatch)
+
+
+def comparison_problem(baseline, diagnostic):
+    if baseline.environment is None or diagnostic.environment is None:
+        return "Environment evidence unavailable"
+    if not (baseline.apk_verified and diagnostic.apk_verified):
+        return "Identical APKs could not be verified"
+    differences = [key for key in baseline.environment if baseline.environment[key] != diagnostic.environment[key]]
+    if differences:
+        return "Environment differs from baseline: " + ", ".join(differences)
+    if diagnostic.problems:
+        return "Diagnostic checks failed"
+    if diagnostic.stalled:
+        return "GL lifecycle wait observed"
+    return ""
+
+
+def built_apks_match(build_dir):
+    try:
+        expected = "".join(
+            f"{hashlib.sha256((build_dir / 'outputs/apk' / file).read_bytes()).hexdigest()}  build/outputs/apk/{file}\n"
+            for _, file in APK_FILES
+        )
+    except OSError:
+        return False
+    return diagnostic_text(build_dir / "diagnostics/apks-built.sha256") == expected
+
+
+def comparison_progress(build_dir, statuses, completed):
+    baseline = device_round(build_dir, statuses["baseline"], "default", "baseline")
+    if not baseline.reproduced or not baseline.apk_verified or not built_apks_match(build_dir):
+        return False
+    for name in ROUND_NAMES[1:completed + 1]:
+        diagnostic = device_round(build_dir, statuses[name], "disabled", name)
+        if comparison_problem(baseline, diagnostic):
+            return False
+    return True
+
+
+def paired_report(build_dir, statuses):
+    baseline = device_round(build_dir, statuses["baseline"], "default", "baseline")
+    lines = ["", f"## {ROUND_LABELS['baseline']}", "", *baseline.lines]
+    problems = list(baseline.problems)
+    built_match = built_apks_match(build_dir)
+    if not built_match:
+        problems.append("Final APKs do not match the build-time SHA-256 manifest")
+    passed = 0
+    for name in ROUND_NAMES[1:]:
+        if statuses[name] in ("skipped", "not run"):
+            lines.extend(["", f"## {ROUND_LABELS[name]}", "", "**Not run**"])
+            continue
+        diagnostic = device_round(build_dir, statuses[name], "disabled", name)
+        issue = comparison_problem(baseline, diagnostic)
+        if not issue:
+            passed += 1
+        lines.extend(["", f"## {ROUND_LABELS[name]}", "", f"**{issue or 'Matched diagnostic passed'}**", "", *diagnostic.lines])
+        lines.extend(f"- {problem}" for problem in diagnostic.problems)
+        if diagnostic.apk_mismatch:
+            problems.append(f"{ROUND_LABELS[name]} used APKs that differ from the initial build")
+    lines.extend(["", f"Matched VBO diagnostic passes: **{passed}/3**."])
+    if passed == 3 and baseline.reproduced and built_match:
+        lines.append("**Disabling VBO is a candidate for physical TV validation.**")
+    return lines, problems
+
+
+def evaluate(build_dir, build_status, device_status, commit, local=False, tv_vbo_mode="default", rounds=None):
     problems = []
     if tv_vbo_mode not in ("default", "disabled"):
         problems.append("TV VBO mode must be default or disabled")
@@ -361,46 +502,27 @@ def evaluate(build_dir, build_status, device_status, commit, local=False, tv_vbo
         "# Android TV framework validation", "", f"Commit: `{commit}`", "",
         "Data: **shared source-generated game data**; no external pack is required.",
         "These checks validate the adaptation and Android framework, not a complete pixel-exact original-game match.", "",
-        f"Build / unit tests / lint: **{build_status}**",
-        f"API 34 Android TV / x86 / 4K display / 1080p window test command: **{device_status}**",
-        f"Requested render mode: **{tv_vbo_mode}**.", "",
+        f"Build / unit tests / lint: **{build_status}**", "",
         "| Suite | Tests | Failures | Errors | Skipped |",
         "|---|---:|---:|---:|---:|",
     ]
-    statuses = [("Build checks", build_status)] + ([] if local else [
-        ("API 34 device tests", device_status)
-    ])
-    for label, status in statuses:
-        if status != "success":
-            problems.append(f"{label} did not succeed ({status})")
-    for label, relative, minimum in (GROUPS[:1] if local else GROUPS):
-        counts, errors = read_results(build_dir / relative)
-        lines.append(f"| {label} | {counts['tests']} | {counts['failures']} | "
-                     f"{counts['errors']} | {counts['skipped']} |")
-        problems.extend(f"{label}: {error}" for error in errors)
-        if counts["tests"] < minimum:
-            problems.append(f"{label}: expected at least {minimum} tests, found {counts['tests']}")
-        if any(counts[key] for key in ("failures", "errors", "skipped")):
-            problems.append(f"{label}: failures, errors and skipped tests must all be zero")
+    if build_status != "success":
+        problems.append(f"Build checks did not succeed ({build_status})")
+    label, relative, minimum = GROUPS[0]
+    row, errors = suite_summary(build_dir / relative, label, minimum)
+    lines.append(row)
+    problems.extend(errors)
 
     if local:
         lines.extend(["", "Device tests: **NOT RUN**. The instrumentation APK is compiled only; no emulator or physical device is contacted."])
+    elif rounds is not None:
+        round_lines, round_problems = paired_report(build_dir, rounds)
+        lines.extend(round_lines)
+        problems.extend(round_problems)
     else:
-        lines.extend(["", "| Platform | Requested mode | Active VBO | GL renderer | GL version | Display px | Window px | Surface px | Scale |",
-                      "|---|---|---|---|---|---|---|---|---|"])
-        records, errors, native_gl = read_render_evidence(build_dir / DEVICE_RESULTS, tv_vbo_mode)
-        problems.extend(f"API 34: {error}" for error in errors)
-        for record in records:
-            renderer = record["renderer"].replace("|", "\\|").replace("\n", " ")
-            gl_version = record["version"].replace("|", "\\|").replace("\n", " ")
-            dimensions = [f"{record[prefix + 'Width']}x{record[prefix + 'Height']}" for prefix in ("display", "window", "surface")]
-            lines.append(f"| API 34 | {tv_vbo_mode} | {str(record['activeVbo']).lower()} | {renderer} | {gl_version} | "
-                         + " | ".join(dimensions) + f" | {record['scale']} |")
-        lines.extend(emulator_summary(build_dir, native_gl))
-        lines.extend(diagnostic_summary(build_dir))
-        anr_lines, anr_problems = check_application_anrs(build_dir, device_status)
-        lines.extend(anr_lines)
-        problems.extend(anr_problems)
+        device = device_round(build_dir, device_status, tv_vbo_mode)
+        lines.extend(["", *device.lines])
+        problems.extend(device.problems)
     lint = build_dir / "reports/lint-results-debug.xml"
     try:
         issues = ET.parse(lint).getroot().findall("issue")
@@ -410,8 +532,7 @@ def evaluate(build_dir, build_status, device_status, commit, local=False, tv_vbo
         if errors: problems.append("Lint contains errors")
     except (OSError, ET.ParseError):
         problems.append("Lint XML report is missing or invalid")
-    for label, relative in (("APK", "debug/BattleCity-debug.apk"),
-                            ("Instrumentation APK", "androidTest/debug/BattleCity-debug-androidTest.apk")):
+    for label, relative in APK_FILES:
         try:
             data = (build_dir / "outputs/apk" / relative).read_bytes()
             if not data: raise ValueError("APK is empty")
@@ -478,14 +599,24 @@ def verify_apks(build_dir):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--local", action="store_true", help="Check local build artifacts without requiring device results")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--local", action="store_true", help="Check local build artifacts without requiring device results")
+    mode.add_argument("--paired", action="store_true", help="Summarize production and diagnostic device rounds")
+    mode.add_argument("--comparison-progress", type=int, choices=(1, 2), help="Decide whether to run the next diagnostic round")
     args = parser.parse_args()
     build_dir = Path("build")
+    statuses = {name: os.environ.get(f"{name.upper().replace('-', '_')}_STATUS") or "not run" for name in ROUND_NAMES}
+    if args.comparison_progress:
+        repeat = comparison_progress(build_dir, statuses, args.comparison_progress)
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+            output.write(f"repeat={str(repeat).lower()}\n")
+        return 0
     summary, problems = evaluate(
         build_dir, os.environ.get("BUILD_STATUS", "not run"),
         os.environ.get("DEVICE_API34_STATUS", "not run"),
         os.environ.get("GITHUB_SHA", "local workspace"), local=args.local,
         tv_vbo_mode=os.environ.get("BATTLECITY_TV_VBO_MODE", "default"),
+        rounds=statuses if args.paired else None,
     )
     signatures, failures = verify_apks(build_dir)
     if failures and not problems:

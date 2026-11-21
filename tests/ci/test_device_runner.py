@@ -11,6 +11,9 @@ import unittest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "tools/run-android-device-tests.sh"
 WORKFLOW = SCRIPT.parents[1] / ".github/workflows/android.yml"
+PREPARE = SCRIPT.with_name("prepare-android-tv.sh")
+APKS = ("build/outputs/apk/debug/BattleCity-debug.apk",
+        "build/outputs/apk/androidTest/debug/BattleCity-debug-androidTest.apk")
 
 
 class DeviceRunnerTest(unittest.TestCase):
@@ -65,6 +68,7 @@ test ! -f build/outputs/androidTest-results/connected/TEST-stale.xml
 mkdir -p build/outputs/androidTest-results/connected build/reports/androidTests/connected
 echo '<testsuite tests="1"><testcase name="fresh"/></testsuite>' > build/outputs/androidTest-results/connected/TEST-new.xml
 echo 'fresh HTML report' > build/reports/androidTests/connected/index.html
+if [[ -n "$FAKE_MUTATE_APK" ]]; then printf 'changed' > "$FAKE_MUTATE_APK"; fi
 exit "$FAKE_EXIT"
 """)
         self.commands = self.root / "commands.txt"
@@ -72,13 +76,13 @@ exit "$FAKE_EXIT"
         self.env = dict(os.environ, PATH=str(binary) + os.pathsep + os.environ["PATH"],
                         EMULATOR_PORT="5554", FAKE_API="34", FAKE_CR="", FAKE_EXIT="0",
                         FAKE_ENV_FAIL_COMMAND="none", FAKE_ADB_EXIT="17", FAKE_WINDOW_EXIT="0",
-                        FAKE_DISPLAY_DUMP_EXIT="0",
+                        FAKE_DISPLAY_DUMP_EXIT="0", FAKE_MUTATE_APK="",
                         COMMAND_LOG=str(self.commands), GRADLE_ARGUMENTS=str(self.arguments))
         for name in ("BATTLECITY_ENGINE_DIAGNOSTICS", "BATTLECITY_TV_VBO_MODE"):
             self.env.pop(name, None)
 
-    def run_script(self, version):
-        return subprocess.run(["bash", str(SCRIPT), version], cwd=self.root, env=self.env,
+    def run_script(self, version, *args):
+        return subprocess.run(["bash", str(SCRIPT), version, *args], cwd=self.root, env=self.env,
                               text=True, capture_output=True, timeout=10)
 
     def stale(self, relative):
@@ -291,6 +295,52 @@ exit "$FAKE_EXIT"
                               (diagnostics / "preflight.txt").read_text())
                 self.assertIn("simulated emulator log", (diagnostics / "device-logcat.txt").read_text())
 
+    def build_fixture_apks(self):
+        for relative in APKS:
+            apk = self.root / relative
+            apk.parent.mkdir(parents=True)
+            apk.write_text(relative)
+        manifest = self.root / "build/diagnostics/apks-built.sha256"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_bytes(subprocess.check_output(["sha256sum", *APKS], cwd=self.root))
+        return manifest.read_bytes()
+
+    def test_failed_baseline_is_archived_before_the_comparison_reuses_the_apks(self):
+        manifest = self.build_fixture_apks()
+        self.env["FAKE_EXIT"] = "7"
+        self.assertEqual(7, self.run_script("34", "baseline").returncode)
+        self.assertIn("-Pandroid.testInstrumentationRunnerArguments.battlecityVboMode=default", self.arguments.read_text())
+        self.env["FAKE_EXIT"] = "0"
+        run = self.run_script("34", "comparison-1")
+        self.assertEqual(0, run.returncode, run.stdout + run.stderr)
+        args = self.arguments.read_text().splitlines()
+        self.assertIn("-Pandroid.testInstrumentationRunnerArguments.battlecityVboMode=disabled", args)
+        for task in ("compileDebugJavaWithJavac", "compileDebugAndroidTestJavaWithJavac",
+                     "packageDebug", "packageDebugAndroidTest"):
+            self.assertEqual("-x", args[args.index(task) - 1])
+        for name, status in (("baseline", "7"), ("comparison-1", "0")):
+            diagnostics = self.root / "build/diagnostics/api-34" / name
+            self.assertIn(f"Runner exit status: {status}", (diagnostics / "preflight.txt").read_text())
+            for phase in ("before", "after"):
+                self.assertEqual(manifest, (diagnostics / f"apks-{phase}.sha256").read_bytes())
+            self.assertTrue((self.root / "build/outputs/androidTest-results/api-34" / name / "TEST-new.xml").is_file())
+            self.assertTrue((self.root / "build/reports/androidTests/api-34" / name / "index.html").is_file())
+
+    def test_changed_apk_fails_round_and_blocks_later_execution(self):
+        manifest = self.build_fixture_apks()
+        self.env["FAKE_MUTATE_APK"] = APKS[0]
+        after_change = self.run_script("34", "baseline")
+        self.assertEqual(1, after_change.returncode)
+        self.assertIn("APK digest verification failed after device tests", after_change.stderr)
+        baseline = self.root / "build/diagnostics/api-34/baseline"
+        self.assertEqual(manifest, (baseline / "apks-before.sha256").read_bytes())
+        self.assertNotEqual(manifest, (baseline / "apks-after.sha256").read_bytes())
+        self.commands.unlink()
+        before_run = self.run_script("34", "comparison-1")
+        self.assertEqual(1, before_run.returncode)
+        self.assertIn("APK digest verification failed before device tests", before_run.stderr)
+        self.assertNotIn("gradle", self.commands.read_text().splitlines())
+
     def test_diagnostic_dump_failures_do_not_mask_test_status(self):
         self.env.update(FAKE_WINDOW_EXIT="19", FAKE_DISPLAY_DUMP_EXIT="18")
         for status in ("0", "7"):
@@ -301,9 +351,34 @@ exit "$FAKE_EXIT"
 
 
 class EmulatorMetadataTest(unittest.TestCase):
+    def test_watch_records_unauthorized_transport_before_the_runner_starts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            adb = root / "platform-tools/adb"
+            bin_dir = root / "bin"
+            host = root / "build/diagnostics/emulator-api-34/baseline"
+            for directory in (adb.parent, bin_dir, host):
+                directory.mkdir(parents=True)
+            adb.write_text("""#!/usr/bin/env bash
+case "$*" in
+  'devices -l') echo 'emulator-5554 unauthorized' ;;
+  '-s emulator-5554 get-state') echo 'adb: device unauthorized' >&2; exit 1 ;;
+  *) exit 99 ;;
+esac
+""")
+            pause = bin_dir / "sleep"
+            pause.write_text('#!/usr/bin/env bash\ntouch "$STOP_WATCH"\n')
+            adb.chmod(0o755)
+            pause.chmod(0o755)
+            env = dict(os.environ, ANDROID_HOME=str(root), STOP_WATCH=str(host / "stop-adb-watch"),
+                       PATH=str(bin_dir) + os.pathsep + os.environ["PATH"])
+            run = subprocess.run(["bash", str(PREPARE), "watch", "baseline", "5554"], cwd=root, env=env,
+                                 text=True, capture_output=True, timeout=10)
+            self.assertEqual(0, run.returncode, run.stderr)
+            self.assertIn("emulator-5554 unauthorized", run.stdout)
+            self.assertIn("adb: device unauthorized", run.stderr)
+
     def test_prelaunch_preserves_each_available_image_file_without_running_the_emulator(self):
-        commands = WORKFLOW.read_text().split("pre-emulator-launch-script: |\n", 1)[1]
-        commands = commands.split("emulator-options:", 1)[0].splitlines()
         for source, output in (("source.properties", "image.properties"), ("package.xml", "image-package.xml")):
             with self.subTest(source=source), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
@@ -311,14 +386,33 @@ class EmulatorMetadataTest(unittest.TestCase):
                 image = sdk / "system-images/android-34/android-tv/x86"
                 image.mkdir(parents=True)
                 (image / source).write_text("metadata from " + source)
-                # The action runs each nonempty line in its own shell.
-                for command in filter(None, map(str.strip, commands)):
-                    run = subprocess.run(["sh", "-c", command], cwd=root, env=dict(os.environ, ANDROID_HOME=str(sdk)),
+                adb = sdk / "platform-tools/adb"
+                adb.parent.mkdir()
+                adb.write_text("""#!/usr/bin/env bash
+case "$1" in
+  keygen) touch "$2" "$2.pub" ;;
+  kill-server) exit 1 ;;
+  start-server) test "$ADB_VENDOR_KEYS" = "$ANDROID_EMULATOR_HOME/adbkey" && test -f "$ADB_VENDOR_KEYS" ;;
+  version) echo 'fixture adb version' ;;
+esac
+""")
+                adb.chmod(0o755)
+                env = dict(os.environ, ANDROID_HOME=str(sdk), RUNNER_TEMP=str(root), GITHUB_ENV=str(root / "github-env"))
+                authorize = subprocess.run(["bash", str(PREPARE), "authorize"], cwd=root, env=env,
+                                           text=True, capture_output=True, timeout=10)
+                self.assertEqual(0, authorize.returncode, authorize.stderr)
+                env.update(line.split("=", 1) for line in (root / "github-env").read_text().splitlines())
+                self.assertEqual(env["ANDROID_USER_HOME"], env["ANDROID_EMULATOR_HOME"])
+                device = root / "build/diagnostics/api-34/baseline"
+                device.mkdir(parents=True)
+                (device / "runner-started").touch()
+                prepare = subprocess.run(["bash", str(PREPARE), "prepare", "baseline", "5554"], cwd=root, env=env,
                                          text=True, capture_output=True, timeout=10)
-                    self.assertEqual(0, run.returncode, run.stderr)
-                diagnostics = root / "build/diagnostics/emulator-api-34"
+                self.assertEqual(0, prepare.returncode, prepare.stderr)
+                diagnostics = root / "build/diagnostics/emulator-api-34/baseline"
                 self.assertEqual("metadata from " + source, (diagnostics / output).read_text())
-                self.assertEqual([output], [path.name for path in diagnostics.iterdir()])
+                self.assertEqual("fixture adb version\n", (diagnostics / "adb-setup.txt").read_text())
+                self.assertFalse((diagnostics / "adbkey").exists())
 
 
 class KvmPreparationTest(unittest.TestCase):
@@ -330,7 +424,7 @@ class KvmPreparationTest(unittest.TestCase):
         self.node = self.root / "kvm"
         self.node.symlink_to("/dev/null")
         step = WORKFLOW.read_text().split("      - name: Enable emulator acceleration\n", 1)[1]
-        step = step.split("      - name: API 34 TV ", 1)[0]
+        step = step.split("      - name: ", 1)[0]
         self.script = textwrap.dedent(step.split("        run: |\n", 1)[1]).replace("/dev/kvm", str(self.node))
         binary = self.root / "bin"
         binary.mkdir()

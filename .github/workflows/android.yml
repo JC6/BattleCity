@@ -11,11 +11,6 @@ on:
         description: Collect engine and activity lifecycle diagnostics
         type: boolean
         default: false
-      tv_vbo_mode:
-        description: API 34 TV VBO experiment (disabled is diagnostic only)
-        type: choice
-        default: default
-        options: [default, disabled]
 
 permissions:
   contents: read
@@ -27,10 +22,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 150
     env:
       BATTLECITY_ENGINE_DIAGNOSTICS: ${{ github.event_name == 'workflow_dispatch' && inputs.engine_diagnostics || false }}
-      BATTLECITY_TV_VBO_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.tv_vbo_mode || 'default' }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v6
@@ -63,6 +57,9 @@ jobs:
         id: checks
         run: |
           bash ./gradlew assembleDebug testDebugUnitTest lintDebug assembleDebugAndroidTest --stacktrace
+          mkdir -p build/diagnostics
+          sha256sum build/outputs/apk/debug/BattleCity-debug.apk \
+            build/outputs/apk/androidTest/debug/BattleCity-debug-androidTest.apk > build/diagnostics/apks-built.sha256
       - name: Enable emulator acceleration
         id: acceleration
         run: |
@@ -79,38 +76,65 @@ jobs:
             ls -l /dev/kvm || exit "$?"
             python3 -c 'import os; fd = os.open("/dev/kvm", os.O_RDWR); os.close(fd); print("KVM device opened for read/write")'
           } 2>&1 | tee build/diagnostics/kvm/setup.txt
-      - name: API 34 TV 4K display / 1080p window framework tests
-        id: device34
-        uses: reactivecircus/android-emulator-runner@v2.38.0
+      - name: Initialize runner ADB authentication
+        run: bash tools/prepare-android-tv.sh authorize
+      - name: API 34 TV production baseline
+        id: baseline
+        continue-on-error: true
+        uses: ./.github/actions/android-tv-round
         with:
-          api-level: 34
-          target: android-tv
-          arch: x86
-          profile: tv_4k
-          pre-emulator-launch-script: |
-            mkdir -p build/diagnostics/emulator-api-34
-            cp "$ANDROID_HOME/system-images/android-34/android-tv/x86/source.properties" build/diagnostics/emulator-api-34/image.properties || true
-            cp "$ANDROID_HOME/system-images/android-34/android-tv/x86/package.xml" build/diagnostics/emulator-api-34/image-package.xml || true
-          emulator-options: >-
-            -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim
-            -logcat-output build/diagnostics/emulator-api-34/startup-logcat.txt
-            > build/diagnostics/emulator-api-34/host-startup.txt 2>&1
-          script: bash tools/run-android-device-tests.sh 34
-      - name: Show API 34 emulator output on failure
-        if: failure() && steps.device34.outcome == 'failure'
-        run: |
-          log=build/diagnostics/emulator-api-34/host-startup.txt
-          if [[ -s "$log" ]]; then tail -n 100 "$log"; fi
+          round: baseline
+          port: '5554'
+      - name: API 34 TV VBO diagnostic
+        id: comparison1
+        continue-on-error: true
+        uses: ./.github/actions/android-tv-round
+        with:
+          round: comparison-1
+          port: '5556'
+      - name: Check whether to repeat the VBO diagnostic
+        id: after_first
+        env:
+          BASELINE_STATUS: ${{ steps.baseline.outcome }}
+          COMPARISON_1_STATUS: ${{ steps.comparison1.outcome }}
+        run: python3 tools/check-android-results.py --comparison-progress 1
+      - name: API 34 TV VBO diagnostic repeat 1
+        id: comparison2
+        if: steps.after_first.outputs.repeat == 'true'
+        continue-on-error: true
+        uses: ./.github/actions/android-tv-round
+        with:
+          round: comparison-2
+          port: '5558'
+      - name: Check whether to run the final VBO diagnostic
+        id: after_second
+        if: steps.after_first.outputs.repeat == 'true'
+        env:
+          BASELINE_STATUS: ${{ steps.baseline.outcome }}
+          COMPARISON_1_STATUS: ${{ steps.comparison1.outcome }}
+          COMPARISON_2_STATUS: ${{ steps.comparison2.outcome }}
+        run: python3 tools/check-android-results.py --comparison-progress 2
+      - name: API 34 TV VBO diagnostic repeat 2
+        id: comparison3
+        if: steps.after_second.outputs.repeat == 'true'
+        continue-on-error: true
+        uses: ./.github/actions/android-tv-round
+        with:
+          round: comparison-3
+          port: '5560'
       - name: Verify and summarize acceptance
         if: always()
         env:
           BUILD_STATUS: ${{ steps.checks.outcome }}
-          DEVICE_API34_STATUS: ${{ steps.device34.outcome }}
-        run: python3 tools/check-android-results.py
+          BASELINE_STATUS: ${{ steps.baseline.outcome }}
+          COMPARISON_1_STATUS: ${{ steps.comparison1.outcome }}
+          COMPARISON_2_STATUS: ${{ steps.comparison2.outcome }}
+          COMPARISON_3_STATUS: ${{ steps.comparison3.outcome }}
+        run: python3 tools/check-android-results.py --paired
       - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
-          name: ${{ github.event_name == 'workflow_dispatch' && format('android-reports-{0}-tv-vbo-{1}-{2}', github.sha, env.BATTLECITY_TV_VBO_MODE, github.run_id) || format('android-reports-{0}', github.sha) }}
+          name: android-reports-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             build/reports/
             build/test-results/

@@ -65,15 +65,15 @@ BUILD_STATUS=success python3 tools/check-android-results.py --local
 
 Android CI 使用 API 34 官方 TV 镜像（`android-tv`、`x86`、`tv_4k`）。验收至少 46 项设备用例，失败、错误、跳过和应用 ANR 均为零，并要求成功采集 logcat。脚本预检实际 API、ABI、Leanback 特征、3840×2160 物理显示和 1920×1080 有效显示。
 
-[AOSP TV 设置了 UI 宽度上限](https://android.googlesource.com/device/google/atv/+/d0325a2098ba9691efd4c268d64cb391d94a9b02/overlay/TvFrameworkOverlay/res/values/config.xml)。GL 像素用例单独校验 1920×1080 应用窗口，确认游戏 Surface 以 256×240 的正整数倍显示且位于窗口内。CI 通过 `-gpu swiftshader` 指定渲染后端，报告校验实际 renderer 并拒绝 ANGLE。报告从 `diagnostics/emulator-api-34/host-startup.txt` 读取实际启动的模拟器版本与 build ID，并记录 SDK 镜像 revision、设备 build fingerprint 和测试脚本启动状态。设备启动快照位于 `diagnostics/api-34/boot-logcat.txt`，测试日志位于同目录的 `device-logcat.txt`。
+[AOSP TV 设置了 UI 宽度上限](https://android.googlesource.com/device/google/atv/+/d0325a2098ba9691efd4c268d64cb391d94a9b02/overlay/TvFrameworkOverlay/res/values/config.xml)。GL 像素用例单独校验 1920×1080 应用窗口，确认游戏 Surface 以 256×240 的正整数倍显示且位于窗口内。CI 通过 `-gpu swiftshader` 指定渲染后端，报告校验实际 renderer 并拒绝 ANGLE。各轮的 `diagnostics/emulator-api-34/<轮次>/` 保存模拟器版本、镜像 revision 和 ADB 启动记录。设备指纹、启动快照和测试 logcat 位于 `diagnostics/api-34/<轮次>/`。每个 job 为自己的模拟器和 ADB server 生成共享认证密钥。
 
 当前应用及 AndEngine JAR 不含原生 `.so`，保持单 APK 且不限制 ABI；ARMv7 电视仍需满足 API 34 最低系统要求。x86 模拟器回归不代表已完成 ARM 电视的真机验证。
 
-VBO 对照实验仅作用于设备测试 APK。手动运行 Android CI 时，`tv_vbo_mode` 可选 `default`（默认策略）或 `disabled`（调用 AndEngine 的 VBO 关闭接口）；普通推送使用默认策略。在模拟器内也可使用 `BATTLECITY_TV_VBO_MODE=disabled bash tools/run-android-device-tests.sh 34`。每次测试进程只使用一种模式，测试回调在首帧前配置所有游戏 Activity，清理后注销；主 APK 不增加渲染开关。
+一次 Android CI 构建生成一对 APK，自动运行生产基线和关闭 VBO 的诊断轮。每轮使用独立冷启动的模拟器，并在设备测试前后核对同一对 APK 的 SHA-256。关闭 VBO 由设备测试 APK 在首帧前配置，清理时注销回调。在模拟器内手动排查可使用 `BATTLECITY_TV_VBO_MODE=disabled bash tools/run-android-device-tests.sh 34`。
 
 原生 GL 像素测试在首帧后记录实际 VBO 状态、引擎选项和 GL renderer/version。设备日志里的 AndEngine renderer/version 可用于像素用例未产出时的环境对照，正式验收仍要求原生像素证据。报告汇总 `glGenBuffers` 与主线程等待 GL 退出同时出现的看门狗样本，并标注是否观察到 AndEngine VBO 上传。
 
-手动运行的报告名称包含模式和运行编号。在同一提交上依次冷启动运行一次 `default` 和一次 `disabled`，后者通过后再独立复验两次。逐份核对同一模拟器 build、镜像 revision、设备 fingerprint 和实际 GL renderer/version。证据缺失或不一致时，重新取得同环境的基线和对照报告。默认组复现原阻塞且关闭组三次全过时，关闭 VBO 成为 API 34、4K 真机验证候选。关闭组再次出现同类阻塞时，转查 AndEngine GL 生命周期。关闭组的成功状态为诊断通过，生产验收仍待确认。
+如果生产基线复现 VBO 上传阻塞及应用 ANR，且首轮诊断通过，CI 自动复验两次。复验要求模拟器 build、镜像 revision、设备指纹和应用内 GL renderer/version 一致。每轮最多执行设备测试 20 分钟，失败或证据不匹配时停止剩余复验。诊断三轮均通过才将关闭 VBO 列为 API 34、4K 真机验证候选，正式 CI 结果仍由生产基线和共同的构建验收决定。一次工作流上传一个归档，保留总报告和各轮独立的测试报告及日志。
 
 三个新纪录自动返回场景使用 30 秒等待预算：手柄断开重连、编辑器与选关返回链路、START 跳过 Game Over。测试 APK 的进度观察器每 250ms 更新缓存，每秒最多输出一次 `BATTLECITY_PRESENTATION_PROGRESS` 日志，记录展示阶段、`elapsed`、观察到的更新帧数、暂停与运行状态、最近推进时间，以及前台、焦点和销毁状态。超时和看门狗直接读取缓存并标注样本年龄，不等待 UI 或引擎锁；清理后停止采样。报告优先展示断言超时当时的快照，证据不足时保留“原因未确认”；不会据此自动放宽超时或判定软件渲染慢。
 

@@ -1,0 +1,47 @@
+name: Android TV device round
+description: Cold-boot one API 34 TV emulator and test the previously built APKs
+inputs:
+  round:
+    description: Device result directory name
+    required: true
+  port:
+    description: Emulator console port
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: device
+      uses: reactivecircus/android-emulator-runner@v2.38.0
+      env:
+        BATTLECITY_DEVICE_ROUND: ${{ inputs.round }}
+        BATTLECITY_EMULATOR_PORT: ${{ inputs.port }}
+      with:
+        api-level: 34
+        target: android-tv
+        arch: x86
+        profile: tv_4k
+        avd-name: battlecity-${{ inputs.round }}
+        emulator-port: ${{ inputs.port }}
+        emulator-boot-timeout: 600
+        pre-emulator-launch-script: bash tools/prepare-android-tv.sh prepare "$BATTLECITY_DEVICE_ROUND" "$BATTLECITY_EMULATOR_PORT"
+        emulator-options: >-
+          -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim
+          -logcat-output build/diagnostics/emulator-api-34/${{ inputs.round }}/startup-logcat.txt
+          > build/diagnostics/emulator-api-34/${{ inputs.round }}/host-startup.txt 2>&1
+        script: bash tools/run-android-device-tests.sh 34 "$BATTLECITY_DEVICE_ROUND"
+    - name: Finish collecting startup diagnostics
+      if: always()
+      shell: bash
+      env:
+        BATTLECITY_DEVICE_ROUND: ${{ inputs.round }}
+        DEVICE_STATUS: ${{ steps.device.outcome }}
+      run: |
+        host="build/diagnostics/emulator-api-34/$BATTLECITY_DEVICE_ROUND"
+        if [[ -d "$host" ]]; then
+          touch "$host/stop-adb-watch"
+        fi
+        if [[ "$DEVICE_STATUS" == failure ]]; then
+          for log in "$host"/{adb-setup,adb-startup,host-startup}.txt; do
+            if [[ -s "$log" ]]; then tail -n 40 "$log"; fi
+          done
+        fi

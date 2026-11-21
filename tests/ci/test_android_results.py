@@ -1,6 +1,7 @@
 """Exercise false-green failure modes of the CI artifact gate without Android dependencies."""
 
 import importlib.util
+import hashlib
 import json
 from argparse import Namespace
 from pathlib import Path
@@ -54,7 +55,7 @@ class AcceptanceResultsTest(unittest.TestCase):
         ET.ElementTree(root).write(path)
         return path
 
-    def write_render_evidence(self, platform, mode="default", **changes):
+    def write_render_evidence(self, platform, mode="default", round_name="", **changes):
         scale = 4
         record = dict(api=int(platform.split('.')[0]), requested=mode, activeVbo=mode == "default", optionsDisabled=mode == "disabled",
                       renderer="Android Emulator OpenGL ES Translator (Google SwiftShader)", version="Fixture GL version",
@@ -62,7 +63,7 @@ class AcceptanceResultsTest(unittest.TestCase):
                       windowWidth=1920, windowHeight=1080,
                       surfaceWidth=256 * scale, surfaceHeight=240 * scale, scale=scale)
         record.update(changes)
-        path = self.build / f"outputs/androidTest-results/api-{platform}/debug/fixture" / (
+        path = self.build / f"outputs/androidTest-results/api-{platform}" / round_name / "debug/fixture" / (
             "logcat-org.jiangc.bc.TvMenuFlowTest-actualGlAdapterMatchesSoftwareAcrossSpriteSizesAndPausedScreens.txt")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("I BattleCityRenderMode: BATTLECITY_RENDER_MODE " + json.dumps(record) + "\n")
@@ -375,11 +376,123 @@ class AcceptanceResultsTest(unittest.TestCase):
     def test_invalid_tv_mode_cannot_report_success(self):
         self.assertTrue(self.evaluate(tv_vbo_mode="automatic")[1])
 
+    def paired_fixtures(self, reproduce=True):
+        manifest = "".join(
+            f"{hashlib.sha256((self.build / 'outputs/apk' / file).read_bytes()).hexdigest()}  build/outputs/apk/{file}\n"
+            for _, file in results.APK_FILES
+        )
+        (self.build / "diagnostics/apks-built.sha256").write_text(manifest)
+        statuses = {name: "success" for name in results.ROUND_NAMES}
+        for name in results.ROUND_NAMES:
+            self.write_report(results.DEVICE_RESULTS + "/" + name, 46)
+            self.write_render_evidence("34", "default" if name == "baseline" else "disabled", round_name=name)
+            host = self.build / "diagnostics/emulator-api-34" / name
+            host.mkdir(parents=True)
+            (host / "host-startup.txt").write_text("INFO | Android emulator version 37.3.10.0 (build_id 16970787)\n")
+            (host / "image.properties").write_text("Pkg.Revision=3\n")
+            device = self.build / "diagnostics/api-34" / name
+            device.mkdir(parents=True)
+            (device / "runner-started").touch()
+            (device / "preflight.txt").write_text("Logcat exit status: 0\n")
+            (device / "device-logcat.txt").write_text("I TestRunner: finished\n")
+            (device / "device-fingerprint.txt").write_text(
+                "adb shell getprop ro.build.fingerprint (exit 0):\ngoogle/tv/tv:14/BUILD/1234:user/release-keys\n")
+            for phase in ("before", "after"):
+                (device / f"apks-{phase}.sha256").write_text(manifest)
+        if reproduce:
+            statuses["baseline"] = "failure"
+            sample = "watchdog test=org.jiangc.bc.TvMenuFlowTest#fixture sample=2 heartbeat=14 stallSample=2 | "
+            (self.build / "diagnostics/api-34/baseline/device-logcat.txt").write_text(
+                "\n".join(sample + detail for detail in (
+                    "phase=teardown waitingMillis=4052",
+                    "at GLImpl.glGenBuffers(Native Method)",
+                    "at BufferObject.loadToHardware(BufferObject.java:93)",
+                    "at GLSurfaceView$GLThread.requestExitAndWait(GLSurfaceView.java:718)",
+                )) + "\nWindowManager: ANR in Window{abc u0 org.jiangc.bc/.Level1Activity}\n")
+        return statuses
+
+    def test_paired_repeats_are_automatic_and_a_candidate_does_not_pass_production(self):
+        statuses = self.paired_fixtures()
+        for completed in (1, 2):
+            self.assertTrue(results.comparison_progress(self.build, statuses, completed))
+        summary, problems = results.evaluate(self.build, "success", "unused", "fixture", rounds=statuses)
+        self.assertIn("API 34: system log reports a BattleCity ANR", problems)
+        self.assertIn("**NOT ACCEPTED**", summary)
+        self.assertIn("candidate for physical TV validation", summary)
+        self.assertIn("Matched VBO diagnostic passes: **3/3**", summary)
+
+    def test_paired_missing_or_different_environment_stops_further_rounds(self):
+        statuses = self.paired_fixtures()
+        for relative, value, field in (
+            ("emulator-api-34/comparison-1/image.properties", "Pkg.Revision=4\n", "TV image revision"),
+            ("emulator-api-34/comparison-1/host-startup.txt",
+             "INFO | Android emulator version 37.3.10.0 (build_id 16970788)\n", "Emulator version"),
+            ("api-34/comparison-1/device-fingerprint.txt", "", "Environment evidence unavailable"),
+        ):
+            path = self.build / "diagnostics" / relative
+            original = path.read_text()
+            with self.subTest(field=field):
+                path.write_text(value)
+                self.assertFalse(results.comparison_progress(self.build, statuses, 1))
+                self.assertIn(field, "\n".join(results.paired_report(self.build, statuses)[0]))
+                path.write_text(original)
+        self.write_render_evidence("34", "disabled", round_name="comparison-1", version="Other GLES build")
+        self.assertFalse(results.comparison_progress(self.build, statuses, 1))
+        self.assertIn("**Environment differs from baseline: GL version**", results.paired_report(self.build, statuses)[0])
+
+    def test_failed_first_or_second_diagnostic_cannot_schedule_another_round(self):
+        statuses = self.paired_fixtures()
+        for name, completed in (("comparison-1", 1), ("comparison-2", 2)):
+            with self.subTest(name=name):
+                statuses[name] = "failure"
+                self.assertFalse(results.comparison_progress(self.build, statuses, completed))
+                statuses[name] = "success"
+
+    def test_clean_baseline_stops_repeats_and_keeps_its_own_acceptance(self):
+        statuses = self.paired_fixtures(reproduce=False)
+        statuses.update({"comparison-1": "failure", "comparison-2": "skipped", "comparison-3": "skipped"})
+        self.assertFalse(results.comparison_progress(self.build, statuses, 1))
+        summary, problems = results.evaluate(self.build, "success", "unused", "fixture", rounds=statuses)
+        self.assertEqual([], problems)
+        self.assertIn("**Diagnostic checks failed**", summary)
+        self.assertIn("**PASSED**", summary)
+        self.assertEqual(2, summary.count("**Not run**"))
+
+    def test_changed_apk_in_any_round_invalidates_the_shared_build(self):
+        statuses = self.paired_fixtures(reproduce=False)
+        changed = self.build / "diagnostics/api-34/comparison-1/apks-after.sha256"
+        changed.write_text("recorded different bytes")
+        summary, problems = results.evaluate(self.build, "success", "unused", "fixture", rounds=statuses)
+        self.assertIn("VBO diagnostic used APKs that differ from the initial build", problems)
+        self.assertIn("**NOT ACCEPTED**", summary)
+        _, relative = results.APK_FILES[0]
+        (self.build / "outputs/apk" / relative).write_text("changed final APK")
+        _, problems = results.evaluate(self.build, "success", "unused", "fixture", rounds=statuses)
+        self.assertIn("Final APKs do not match the build-time SHA-256 manifest", problems)
+
+    def test_failed_boot_with_no_guest_results_reports_adb_evidence_and_counts_no_baseline(self):
+        statuses = self.paired_fixtures(reproduce=False)
+        statuses.update({"baseline": "failure", "comparison-2": "skipped", "comparison-3": "skipped"})
+        (self.build / results.DEVICE_RESULTS / "baseline/TEST-fixture.xml").unlink()
+        diagnostics = self.build / "diagnostics/api-34/baseline"
+        for path in diagnostics.iterdir():
+            path.unlink()
+        host = self.build / "diagnostics/emulator-api-34/baseline"
+        (host / "adb-startup.txt").write_text("emulator-5554 unauthorized")
+        self.assertFalse(results.comparison_progress(self.build, statuses, 1))
+        summary, problems = results.evaluate(self.build, "success", "unused", "fixture", rounds=statuses)
+        self.assertTrue(problems)
+        self.assertIn("Device test script: not started", summary)
+        self.assertIn("ADB startup status: diagnostics/emulator-api-34/baseline/adb-startup.txt", summary)
+        self.assertIn("expected at least 46 tests, found 0", summary)
+        self.assertIn("VBO diagnostic passes: **0/3**", summary)
+
     def test_signature_failure_cannot_leave_a_diagnostic_success_heading(self):
         with mock.patch.object(results, "Path", return_value=self.build), \
              mock.patch.object(results, "evaluate", return_value=(results.DIAGNOSTIC_SUCCESS, [])), \
              mock.patch.object(results, "verify_apks", return_value=("Signatures failed", ["fixture failure"])), \
-             mock.patch.object(results.argparse.ArgumentParser, "parse_args", return_value=Namespace(local=False)), \
+             mock.patch.object(results.argparse.ArgumentParser, "parse_args",
+                               return_value=Namespace(local=False, paired=False, comparison_progress=None)), \
              mock.patch.dict(results.os.environ, {"GITHUB_STEP_SUMMARY": ""}), \
              mock.patch("builtins.print"):
             self.assertEqual(1, results.main())
