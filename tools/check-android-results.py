@@ -315,6 +315,8 @@ def emulator_summary(build_dir, native_gl, round_name):
         lines.append(f"- ADB startup status: {(host / 'adb-startup.txt').relative_to(build_dir)}")
     if (device / "boot-logcat.txt").is_file():
         lines.append(f"- Device boot log: {(device / 'boot-logcat.txt').relative_to(build_dir)}")
+    if (device / "gradle-device.txt").is_file():
+        lines.append(f"- Gradle device output: {(device / 'gradle-device.txt').relative_to(build_dir)}")
     return lines, None if incomplete else identity
 
 

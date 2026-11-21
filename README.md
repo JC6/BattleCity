@@ -69,7 +69,7 @@ Android CI 使用 API 34 官方 TV 镜像（`android-tv`、`x86`、`tv_4k`）。
 
 当前应用及 AndEngine JAR 不含原生 `.so`，保持单 APK 且不限制 ABI；ARMv7 电视仍需满足 API 34 最低系统要求。x86 模拟器回归不代表已完成 ARM 电视的真机验证。
 
-一次 Android CI 构建生成一对 APK，自动运行生产基线和关闭 VBO 的诊断轮。每轮使用独立冷启动的模拟器，并在设备测试前后核对同一对 APK 的 SHA-256。关闭 VBO 由设备测试 APK 在首帧前配置，清理时注销回调。在模拟器内手动排查可使用 `BATTLECITY_TV_VBO_MODE=disabled bash tools/run-android-device-tests.sh 34`。
+一次 Android CI 构建生成一对 APK，自动运行生产基线和关闭 VBO 的诊断轮。构建与设备测试使用同一 Android 用户目录，Gradle 通过增量构建复用编译和打包输出。每轮独立冷启动，在测试前后核对两份 APK 的 SHA-256，并将 Gradle 输出保存到该轮的 `gradle-device.txt`。关闭 VBO 由设备测试 APK 在首帧前配置，清理时注销回调。在模拟器内手动排查可使用 `BATTLECITY_TV_VBO_MODE=disabled bash tools/run-android-device-tests.sh 34`。
 
 原生 GL 像素测试在首帧后记录实际 VBO 状态、引擎选项和 GL renderer/version。设备日志里的 AndEngine renderer/version 可用于像素用例未产出时的环境对照，正式验收仍要求原生像素证据。报告汇总 `glGenBuffers` 与主线程等待 GL 退出同时出现的看门狗样本，并标注是否观察到 AndEngine VBO 上传。
 

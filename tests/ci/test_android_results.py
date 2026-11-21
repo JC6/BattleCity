@@ -451,10 +451,12 @@ class AcceptanceResultsTest(unittest.TestCase):
     def test_clean_baseline_stops_repeats_and_keeps_its_own_acceptance(self):
         statuses = self.paired_fixtures(reproduce=False)
         statuses.update({"comparison-1": "failure", "comparison-2": "skipped", "comparison-3": "skipped"})
+        (self.build / "diagnostics/api-34/comparison-1/gradle-device.txt").write_text("fixture Gradle exception\n")
         self.assertFalse(results.comparison_progress(self.build, statuses, 1))
         summary, problems = results.evaluate(self.build, "success", "unused", "fixture", rounds=statuses)
         self.assertEqual([], problems)
         self.assertIn("**Diagnostic checks failed**", summary)
+        self.assertIn("Gradle device output: diagnostics/api-34/comparison-1/gradle-device.txt", summary)
         self.assertIn("**PASSED**", summary)
         self.assertEqual(2, summary.count("**Not run**"))
 

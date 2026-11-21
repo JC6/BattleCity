@@ -146,13 +146,14 @@ boot_logcat_status=0
 adb logcat -b all -d -v threadtime > "$diagnostics/boot-logcat.txt" 2>&1 || boot_logcat_status=$?
 printf 'Boot logcat exit status: %s\n' "$boot_logcat_status" >> "$diagnostics/preflight.txt"
 adb logcat -c
-command=(bash ./gradlew connectedDebugAndroidTest --stacktrace \
+command=(bash ./gradlew connectedDebugAndroidTest --stacktrace --console=plain \
   "-Pandroid.testInstrumentationRunnerArguments.battlecityEngineDiagnostics=$engine_diagnostics" \
   "-Pandroid.testInstrumentationRunnerArguments.battlecityVboMode=$vbo_mode")
 if [[ -n "$round" ]]; then
-  timeout --kill-after=30s 20m "${command[@]}" \
-    -x compileDebugJavaWithJavac -x compileDebugAndroidTestJavaWithJavac \
-    -x packageDebug -x packageDebugAndroidTest
-else
-  "${command[@]}"
+  command=(timeout --kill-after=30s 20m "${command[@]}")
 fi
+"${command[@]}" 2>&1 | tee "$diagnostics/gradle-device.txt" || {
+  pipeline_status=("${PIPESTATUS[@]}")
+  if (( pipeline_status[0] != 0 )); then exit "${pipeline_status[0]}"; fi
+  exit "${pipeline_status[1]}"
+}

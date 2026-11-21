@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -68,6 +69,8 @@ test ! -f build/outputs/androidTest-results/connected/TEST-stale.xml
 mkdir -p build/outputs/androidTest-results/connected build/reports/androidTests/connected
 echo '<testsuite tests="1"><testcase name="fresh"/></testsuite>' > build/outputs/androidTest-results/connected/TEST-new.xml
 echo 'fresh HTML report' > build/reports/androidTests/connected/index.html
+echo "fixture Gradle output (exit $FAKE_EXIT)"
+if [[ "$FAKE_EXIT" != 0 ]]; then echo 'fixture Gradle exception' >&2; fi
 if [[ -n "$FAKE_MUTATE_APK" ]]; then printf 'changed' > "$FAKE_MUTATE_APK"; fi
 exit "$FAKE_EXIT"
 """)
@@ -308,23 +311,46 @@ exit "$FAKE_EXIT"
     def test_failed_baseline_is_archived_before_the_comparison_reuses_the_apks(self):
         manifest = self.build_fixture_apks()
         self.env["FAKE_EXIT"] = "7"
-        self.assertEqual(7, self.run_script("34", "baseline").returncode)
+        baseline = self.run_script("34", "baseline")
+        self.assertEqual(7, baseline.returncode)
+        self.assertIn("fixture Gradle exception", baseline.stdout)
         self.assertIn("-Pandroid.testInstrumentationRunnerArguments.battlecityVboMode=default", self.arguments.read_text())
         self.env["FAKE_EXIT"] = "0"
         run = self.run_script("34", "comparison-1")
         self.assertEqual(0, run.returncode, run.stdout + run.stderr)
         args = self.arguments.read_text().splitlines()
         self.assertIn("-Pandroid.testInstrumentationRunnerArguments.battlecityVboMode=disabled", args)
-        for task in ("compileDebugJavaWithJavac", "compileDebugAndroidTestJavaWithJavac",
-                     "packageDebug", "packageDebugAndroidTest"):
-            self.assertEqual("-x", args[args.index(task) - 1])
+        self.assertNotIn("-x", args)
+        self.assertNotIn("--exclude-task", args)
+        self.assertIn("--console=plain", args)
         for name, status in (("baseline", "7"), ("comparison-1", "0")):
             diagnostics = self.root / "build/diagnostics/api-34" / name
             self.assertIn(f"Runner exit status: {status}", (diagnostics / "preflight.txt").read_text())
+            gradle_log = (diagnostics / "gradle-device.txt").read_text()
+            self.assertIn(f"fixture Gradle output (exit {status})", gradle_log)
+            self.assertEqual(status == "7", "fixture Gradle exception" in gradle_log)
             for phase in ("before", "after"):
                 self.assertEqual(manifest, (diagnostics / f"apks-{phase}.sha256").read_bytes())
             self.assertTrue((self.root / "build/outputs/androidTest-results/api-34" / name / "TEST-new.xml").is_file())
             self.assertTrue((self.root / "build/reports/androidTests/api-34" / name / "index.html").is_file())
+
+    def test_gradle_log_io_failure_preserves_a_failing_gradle_exit(self):
+        fake_tee = self.root / "bin/tee"
+        fake_tee.write_text("""#!/usr/bin/env bash
+if [[ "$1" == */gradle-device.txt ]]; then
+  cat > /dev/null
+  exit 23
+fi
+exec "$REAL_TEE" "$@"
+""")
+        fake_tee.chmod(0o755)
+        self.env["REAL_TEE"] = shutil.which("tee")
+        for status, expected in (("0", 23), ("7", 7)):
+            with self.subTest(status=status):
+                self.env["FAKE_EXIT"] = status
+                self.assertEqual(expected, self.run_script("34").returncode)
+                preflight = self.root / "build/diagnostics/api-34/preflight.txt"
+                self.assertIn(f"Runner exit status: {expected}", preflight.read_text())
 
     def test_changed_apk_fails_round_and_blocks_later_execution(self):
         manifest = self.build_fixture_apks()
@@ -351,6 +377,12 @@ exit "$FAKE_EXIT"
 
 
 class EmulatorMetadataTest(unittest.TestCase):
+    def test_workflow_prepares_sdk_and_adb_before_the_first_build(self):
+        before_build, _ = WORKFLOW.read_text().split("      - name: Build, unit tests and lint\n", 1)
+        self.assertIn("bash tools/prepare-android-tv.sh authorize", before_build)
+        self.assertIn("'platforms;android-34' 'build-tools;37.0.0'", before_build)
+        self.assertIn("platform-tools emulator 'system-images;android-34;android-tv;x86'", before_build)
+
     def test_watch_records_unauthorized_transport_before_the_runner_starts(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

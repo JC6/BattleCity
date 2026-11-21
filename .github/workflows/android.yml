@@ -50,9 +50,12 @@ jobs:
             ln -s "$installed_tools" "$latest_tools"
           fi
           "$latest_tools/bin/sdkmanager" --version
-          "$latest_tools/bin/sdkmanager" 'platforms;android-34'
+          "$latest_tools/bin/sdkmanager" --install --channel=0 'platforms;android-34' 'build-tools;37.0.0' \
+            platform-tools emulator 'system-images;android-34;android-tv;x86'
       - name: Check acceptance report validation
         run: python3 -m unittest discover -s tests/ci -v
+      - name: Initialize runner ADB authentication
+        run: bash tools/prepare-android-tv.sh authorize
       - name: Build, unit tests and lint
         id: checks
         run: |
@@ -76,8 +79,6 @@ jobs:
             ls -l /dev/kvm || exit "$?"
             python3 -c 'import os; fd = os.open("/dev/kvm", os.O_RDWR); os.close(fd); print("KVM device opened for read/write")'
           } 2>&1 | tee build/diagnostics/kvm/setup.txt
-      - name: Initialize runner ADB authentication
-        run: bash tools/prepare-android-tv.sh authorize
       - name: API 34 TV production baseline
         id: baseline
         continue-on-error: true
