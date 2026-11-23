@@ -208,7 +208,7 @@ Switch 英文实机录像可核对系统菜单的 Save、Load、四个横排存�
 
 较高播放量的录像显示了本作在合集中的入口，另一段在《坦克大战》结束后直接打开了系统菜单，可看清每个槽位。[任天堂产品页](https://www.nintendo.com/us/store/products/namco-museum-archives-vol-2-switch/) · [合集入口与战场，约 3 分钟](https://www.youtube.com/watch?v=uc_If5fksfA&t=180s) · [本作系统菜单，约 11 分钟](https://www.youtube.com/watch?v=S26lUv598_o&t=659s) · [显示和壁纸选项，约 1 分钟](https://www.youtube.com/watch?v=S26lUv598_o&t=65s)
 
-Android TV 已在 Android SDK 的 API 34 电视镜像上通过验收。两支独立的内核手柄分别移动和开火，右肩键回退，第二支断开重连后继续控制玩家二。两辆坦克的位置、双人模式与暂停状态在进程重启读档后恢复。测试还覆盖了存档写保护、切回前台和游戏音频，并保存了 48 kHz PCM 录音及屏幕截图。首次双人游玩请先连接两支手柄，再打开游戏。[电视任务和原始附件](https://github.com/JC6/BattleCity/actions/runs/45106009654) · [设备验收工作流](../../.github/workflows/mame-runtime.yml)
+Android TV 已在 Android SDK 的 API 34 电视镜像上通过验收。两支独立的内核手柄分别移动和开火，右肩键回退，第二支断开重连后继续控制玩家二。两辆坦克的位置、双人模式与暂停状态在进程重启读档后恢复。测试还覆盖了存档写保护和游戏音频，并保存了 48 kHz PCM 录音及屏幕截图。前台恢复会额外核对进程、暂停状态和战场像素，存档菜单会核对第一槽实际显示的砖墙像素。首次双人游玩请先连接两支手柄，再打开游戏。[电视任务和原始附件](https://github.com/JC6/BattleCity/actions/runs/45106009654) · [设备验收工作流](../../.github/workflows/mame-runtime.yml)
 
 Switch 录像没有同步手柄输入。输入到画面的延迟、回退的精确跨度、逐帧音画同步以及实体电视的手柄与音响表现仍待实机测量。
 

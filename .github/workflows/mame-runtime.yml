@@ -240,6 +240,10 @@ jobs:
           ANDROID_SERIAL: emulator-5554
         run: |
           exec > >(tee "$RUNNER_TEMP/battlecity-test.log") 2>&1
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
           bash tests/nes/television-avd.sh deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result
       - name: Report the failed build or device check
         if: failure()

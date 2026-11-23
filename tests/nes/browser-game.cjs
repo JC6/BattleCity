@@ -448,6 +448,21 @@ async function verify(engine, suite) {
         assert.equal(await slotDigest(page, 1), firstSlot, 'cancel changed slot one');
         const fourthSlot = await slotDigest(page, 4);
         await menu(page, ['Escape','Home','Enter','Home','Delete'], 'Slot lock saved.');
+        await page.waitForFunction(() => {
+            const canvas = document.querySelector('canvas');
+            const sample = document.createElement('canvas');
+            sample.width = 32;
+            sample.height = 24;
+            const ctx = sample.getContext('2d');
+            ctx.drawImage(canvas, canvas.width * .135, canvas.height * .415,
+                canvas.width * .14, canvas.height * .215, 0, 0, 32, 24);
+            const pixels = ctx.getImageData(0, 0, 32, 24).data;
+            let bricks = 0;
+            for (let i = 0; i < pixels.length; i += 4) {
+                if (pixels[i] > 85 && pixels[i] > 1.3 * pixels[i+1] && pixels[i+1] > 1.3 * pixels[i+2]) bricks++;
+            }
+            return bricks >= 12;
+        }, null, {timeout: 15000});
         // Selecting a protected slot must leave the cursor here. Move to slot four
         // and cancel its overwrite to verify the protected state was untouched.
         await menu(page, ['Enter','ArrowLeft','Enter','Home','Enter']);

@@ -32,7 +32,8 @@ def wait(read, predicate, description):
         if predicate(last):
             return last
         time.sleep(.15)
-    raise RuntimeError(f'{description}: timed out, last observation {str(last)[:220]}')
+    observed = f'{len(last)} bytes' if isinstance(last, bytes) else str(last)[:220]
+    raise RuntimeError(f'{description}: timed out, last observation {observed}')
 
 
 class Pad:
@@ -161,6 +162,23 @@ def capture_audio(results):
         output.writeframes(audio)
 
 
+def shows_brick(image, bounds):
+    # Sample the composited TV screen, including the thumbnail in the first slot.
+    rgb = subprocess.run(['ffmpeg', '-loglevel', 'error', '-i', 'pipe:0', '-vf',
+                          'scale=160:90:flags=neighbor', '-frames:v', '1', '-threads', '1',
+                          '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'],
+                         input=image, capture_output=True, check=True).stdout
+    assert len(rgb) == 160 * 90 * 3
+    left, top, right, bottom = bounds
+    count = 0
+    for y in range(top, bottom):
+        for x in range(left, right):
+            i = (160 * y + x) * 3
+            r, g, b = rgb[i:i+3]
+            count += r > 85 and r > 1.3 * g and g > 1.3 * b
+    return count >= 12
+
+
 def launch():
     private('rm','-f','files/tv-observation')
     adb('shell','am','start','-W','-a','android.intent.action.MAIN',
@@ -191,8 +209,10 @@ def run(apk, labels, results):
         if private('cat', 'files/'+name) != data:
             raise RuntimeError('Failed to stage '+name)
     pads=[]
-    def capture(name):
-        image=adb('exec-out','screencap','-p')
+    def capture(name, bounds=None):
+        def screen(): return adb('exec-out','screencap','-p')
+        image = screen() if bounds is None else wait(
+            screen, lambda data: shows_brick(data, bounds), 'visible game pixels in '+name)
         assert image.startswith(b'\x89PNG') and len(image)>1000
         (results/(name+'.png')).write_bytes(image)
     try:
@@ -234,7 +254,7 @@ def run(apk, labels, results):
             two.tap(SOUTH)
             check(lambda s:min(s['fire1'],s['fire2'])>=start,'both tanks fired')
             capture_audio(results)
-            capture('battle')
+            capture('battle', (40,21,116,72))
             one.tap(START)
             saved=check(lambda s:s['mode']==5,'paused battle')
             one.tap(MENU)
@@ -254,7 +274,7 @@ def run(apk, labels, results):
                  lambda name: name==(slot+'.lock').encode(), 'slot overwrite protection')
             one.tap(SOUTH)
             check(lambda s:s['menu'],'protected slot keeps the picker open')
-            capture('protected-slot')
+            capture('protected-slot', (22,37,44,58))
             adb('shell','am','force-stop',PACKAGE)
             launch()
             one.tap(MENU)
@@ -278,14 +298,21 @@ def run(apk, labels, results):
             two.direction(-1)
             check(lambda s:s['y2']<old-3,'reconnected player 2')
             two.direction(0)
-            # Leave via the OS, then return through the TV launcher activity.
+            # Switch away from a paused field so the exact positions must survive.
+            one.tap(START)
+            background=check(lambda s:s['mode']==5 and s['players']==2,'pause before Home')
             adb('shell','input','keyevent','KEYCODE_HOME')
-            adb('shell','am','start','-W','-n',PACKAGE+'/.GameActivity')
-            current=state()['frame']
-            check(lambda s:s['frame']>current+6 and s['players']==2,'foreground resume')
+            adb('shell','am','start','-W','-a','android.intent.action.MAIN',
+                '-c','android.intent.category.LEANBACK_LAUNCHER','-n',PACKAGE+'/.GameActivity')
+            assert adb('shell','pidof','-s',PACKAGE).decode().strip()==pid, 'foreground return restarted SDL'
+            resumed=check(lambda s:s['frame']>background['frame']+6 and s['mode']==5 and s['players']==2,
+                          'foreground resume')
+            for key in ('stage','y1','y2'):
+                assert resumed[key]==background[key], key
             (results/'audio.txt').write_bytes(adb('shell','dumpsys','media.audio_flinger'))
-            capture('restored')
-            (results/'result.json').write_text(json.dumps({'saved':saved,'restored':restored,'result':'passed'},indent=2))
+            capture('restored', (40,21,116,72))
+            (results/'result.json').write_text(json.dumps(
+                {'saved':saved,'restored':restored,'background':background,'resumed':resumed,'result':'passed'},indent=2))
     except Exception:
         # The system log identifies early SDL, linker and Java failures even
         # when the game never reaches the cartridge observer.

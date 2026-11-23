@@ -6,7 +6,7 @@
         android:icon="@drawable/game_icon" android:appCategory="game"
         android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
         <activity android:name=".GameActivity" android:exported="true"
-            android:screenOrientation="landscape"
+            android:launchMode="singleInstance" android:screenOrientation="landscape"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|navigation">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>

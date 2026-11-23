@@ -105,7 +105,9 @@ public:
                     card.date=date;
             }
             emu_file preview(search ? search : "", OPEN_FLAG_READ);
-            if (!preview.open(path+".png") && render_load_png(card.bitmap,preview) && card.bitmap.valid()) {
+            if (!preview.open(path+".png"))
+                render_load_png(card.bitmap,preview); // Returns transparency, including false for a valid opaque PNG.
+            if (card.bitmap.valid()) {
                 card.texture=m_machine.render().texture_alloc();
                 card.texture->set_bitmap(card.bitmap,card.bitmap.cliprect(),TEXFORMAT_ARGB32);
             }
