@@ -240,25 +240,7 @@ jobs:
           ANDROID_SERIAL: emulator-5554
         run: |
           exec > >(tee "$RUNNER_TEMP/battlecity-test.log") 2>&1
-          image='system-images;android-34;android-tv;x86'
-          sdk_tools="$ANDROID_HOME/cmdline-tools/latest/bin"
-          "$sdk_tools/sdkmanager" "platform-tools" "emulator" "$image"
-          echo no | "$sdk_tools/avdmanager" create avd -n BattleCity -k "$image" -d tv_1080p
-          mkdir -p build/tv-result
-          adb start-server
-          "$ANDROID_HOME/emulator/emulator" -avd BattleCity -port 5554 -accel on \
-            -no-window -no-snapshot -no-boot-anim -gpu swiftshader >build/tv-result/emulator.log 2>&1 &
-          emulator_pid=$!
-          trap 'kill "$emulator_pid" 2>/dev/null || true' EXIT
-          deadline=$((SECONDS+360))
-          until [[ "$(timeout 5 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == 1 ]]; do
-            if ! kill -0 "$emulator_pid" 2>/dev/null || (( SECONDS >= deadline )); then
-              tail -50 build/tv-result/emulator.log
-              exit 1
-            fi
-            sleep 2
-          done
-          python3 tests/nes/television.py deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result
+          bash tests/nes/television-avd.sh deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result
       - name: Report the failed build or device check
         if: failure()
         shell: python
