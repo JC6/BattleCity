@@ -47,6 +47,7 @@ done
 if ! cmp -s "$repo/runtime/wallpaper-previews.h" "$tree/src/frontend/mame/ui/wallpaper-previews.h"; then
     cp "$repo/runtime/wallpaper-previews.h" "$tree/src/frontend/mame/ui/wallpaper-previews.h"
 fi
+cp "$repo/runtime/staff-roll.inc" "$tree/src/frontend/mame/ui/staff-roll.inc"
 if ! cmp -s "$repo/runtime/mainmenu.cpp" "$tree/src/frontend/mame/ui/mainmenu.cpp"; then
     cp "$repo/runtime/mainmenu.cpp" "$tree/src/frontend/mame/ui/mainmenu.cpp"
 fi

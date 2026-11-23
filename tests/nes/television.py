@@ -225,6 +225,25 @@ def run(apk, labels, results):
             one,two=pads
             launch()
             capture('title')
+            one.tap(MENU)
+            one.down()
+            one.down()
+            one.tap(SOUTH)
+            for _ in range(3):
+                one.down()
+            one.tap(SOUTH)
+            def credits_visible(image):
+                rgb = subprocess.run(['ffmpeg','-loglevel','error','-i','pipe:0',
+                                      '-vf','scale=192:108','-frames:v','1','-threads','1',
+                                      '-f','rawvideo','-pix_fmt','rgb24','pipe:1'],
+                                     input=image,capture_output=True,check=True).stdout
+                if sum(rgb[:3])>15: return False
+                return sum(g-r>35 and b>g and g>48 for r,g,b in struct.iter_unpack('BBB',rgb))>12
+            credit_image=wait(lambda: adb('exec-out','screencap','-p'),credits_visible,'scrolling English credits')
+            (results/'staff-credits.png').write_bytes(credit_image)
+            for _ in range(3):
+                one.tap(EAST)
+            check(lambda s:not s['menu'],'return from staff credits to the title')
             one.tap(START)
             check(lambda s:s['mode']==6,'solo stage selection')
             one.tap(START)
@@ -260,6 +279,9 @@ def run(apk, labels, results):
             one.tap(MENU)
             check(lambda s:s['menu'],'save menu')
             one.tap(SOUTH)
+            one.tap(SOUTH)
+            check(lambda s:s['menu'],'pending save confirmation')
+            capture('save-confirmation')
             one.tap(SOUTH)
             check(lambda s:not s['menu'],'saved and resumed')
             wait(lambda: private('ls',slot,check=False).strip(),

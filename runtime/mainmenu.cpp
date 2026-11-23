@@ -7,10 +7,14 @@
 #include "rendutil.h"
 #include "video.h"
 #include <atomic>
+#include <chrono>
 #include <ctime>
 #include <sys/stat.h>
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+struct SDL_Window;
+extern "C" SDL_Window *SDL_GetKeyboardFocus();
+extern "C" bool SDL_SetWindowSize(SDL_Window *,int,int);
 #elif defined(__ANDROID__)
 #include <jni.h>
 extern "C" void *SDL_GetAndroidJNIEnv();
@@ -23,6 +27,7 @@ void battlecity_menu_visible(bool visible)
     if (previous==visible) return;
     previous=visible;
 #ifdef __EMSCRIPTEN__
+    if (auto *window=SDL_GetKeyboardFocus()) SDL_SetWindowSize(window,visible ? 960 : 320,visible ? 540 : 240);
     EM_ASM({ document.getElementById("display").dataset.menu=String($0); }, int(visible));
 #elif defined(__ANDROID__)
     auto *env=static_cast<JNIEnv *>(SDL_GetAndroidJNIEnv());
@@ -65,17 +70,79 @@ namespace ui {
 namespace {
 enum action : uintptr_t { save = 1, load, settings, reset_game, resume };
 
-void panel(render_container &c, float x, float y, float w, float h, bool focused = false)
+constexpr auto blend = PRIMFLAG_BLENDMODE(BLENDMODE_ALPHA);
+const rgb_t blue(3, 50, 120), navy(2, 15, 48), cyan(88, 191, 255);
+
+void box(render_container &c, float x, float y, float w, float h, rgb_t color)
 {
-    c.add_rect(x, y, x+w, y+h, focused ? rgb_t(166,201,255) : rgb_t(25,63,120), PRIMFLAG_BLENDMODE(BLENDMODE_ALPHA));
-    c.add_rect(x+.004f, y+.005f, x+w-.004f, y+h-.005f, rgb_t(255,4,9,20), PRIMFLAG_BLENDMODE(BLENDMODE_ALPHA));
+    c.add_rect(x,y,x+w,y+h,color,blend);
 }
 
-void label(mame_ui_manager &ui, render_target &target, std::string_view value, float x, float y, float w, float size)
+void brackets(render_container &c, float x, float y, float w, float h)
+{
+    for (int right=0; right<2; ++right) for (int bottom=0; bottom<2; ++bottom) {
+        float a=right ? x+w+.004f : x-.004f, b=bottom ? y+h+.008f : y-.008f;
+        box(c,right ? a-.013f : a,b,.013f,.005f,cyan);
+        box(c,a,bottom ? b-.018f : b,.003f,.021f,cyan);
+    }
+}
+
+void panel(render_container &c, float x, float y, float w, float h, bool focused = false)
+{
+    box(c,x,y,w,h,blue);
+    box(c,x+.005f,y+.006f,w-.010f,h-.012f,rgb_t::black());
+    if (focused) brackets(c,x,y,w,h);
+}
+
+void chamfer(render_container &c,float x,float y,float w,float h,float cut,rgb_t color)
+{
+    constexpr int bands=8;
+    for (int i=0;i<bands;++i) {
+        float inset=cut*std::abs((2*i+1-bands)/float(bands));
+        box(c,x+inset,y+i*h/bands,w-2*inset,h/bands,color);
+    }
+}
+
+void label(mame_ui_manager &ui, render_target &target, std::string_view value, float x, float y,
+           float w, float size, rgb_t color=rgb_t::white())
 {
     ui.draw_text_full(target, value, x, y, w, text_layout::text_justify::CENTER,
-        text_layout::word_wrapping::TRUNCATE, mame_ui_manager::NORMAL, rgb_t::white(),
+        text_layout::word_wrapping::TRUNCATE, mame_ui_manager::NORMAL, color,
         rgb_t(0,0,0,0), nullptr, nullptr, size);
+}
+
+void header(mame_ui_manager &ui, render_target &t, std::string_view title,float y=.05f,float bottom=.885f)
+{
+    auto &c=*t.ui_container();
+    box(c,.074f,y,.852f,bottom-y,navy);
+    box(c,.079f,y+.007f,.842f,bottom-y-.014f,rgb_t(243,0,0,0));
+    chamfer(c,.210f,y+.006f,.580f,.073f,.042f,navy);
+    label(ui,t,title,.20f,y+.014f,.60f,.051f);
+}
+
+void button(mame_ui_manager &ui,render_target &t,std::string_view text,float x,float y,float w,bool focused)
+{
+    auto &c=*t.ui_container();
+    chamfer(c,x,y,w,.061f,.013f,blue);
+    chamfer(c,x+.012f,y+.005f,w-.024f,.051f,.010f,rgb_t::black());
+    label(ui,t,text,x,y+.003f,w,.043f);
+    if (focused) brackets(c,x,y,w,.061f);
+}
+
+void footer(mame_ui_manager &ui,render_target &t,bool slots=false)
+{
+    auto &c=*t.ui_container();
+    const float width=slots ? .58f : .36f;
+    chamfer(c,-.037f,.933f,width+.037f,.100f,.034f,rgb_t(200,0,17));
+    chamfer(c,-.044f,.940f,width+.035f,.095f,.029f,rgb_t::black());
+#ifdef __ANDROID__
+    std::string text="D-pad  Move    A  Confirm    B  Cancel";
+    if (slots) text+="    X  Lock";
+#else
+    std::string text="Arrows  Move    Enter  Confirm    Backspace  Cancel";
+    if (slots) text+="    Del  Lock";
+#endif
+    label(ui,t,text,.006f,.945f,width-.035f,.031f);
 }
 
 } // anonymous namespace
@@ -138,11 +205,21 @@ public:
             float x=.125f+.195f*i;
             auto const &card=m_cards[i];
             panel(c,x,.366f,.166f,.285f,int(i)==selected);
-            label(ui,target,card.date+"   "+std::to_string(i+1)+(card.locked ? "  [L]" : ""),x,.369f,.166f,.027f);
+            box(c,x,.366f,.124f,.041f,blue);
+            label(ui,target,occupied(i) ? card.date : "------------",x+.003f,.367f,.098f,.028f);
+            label(ui,target,std::to_string(i+1),x+.096f,.367f,.034f,.032f);
+            auto lock_color=card.locked ? cyan : rgb_t(53,57,65);
+            panel(c,x+.148f,.372f,.009f,.017f);
+            box(c,x+.146f,.382f,.013f,.011f,lock_color);
             if (card.texture)
-                c.add_quad(x+.007f,.405f,x+.159f,.642f,rgb_t::white(),card.texture,PRIMFLAG_BLENDMODE(BLENDMODE_ALPHA));
-            else
-                label(ui,target,occupied(i) ? "Saved" : "Empty",x,.505f,.166f,.034f);
+                c.add_quad(x+.007f,.405f,x+.159f,.642f,rgb_t::white(),card.texture,blend);
+            else if (occupied(i))
+                label(ui,target,"Saved",x,.505f,.166f,.034f);
+            else {
+                box(c,x+.032f,.510f,.102f,.032f,rgb_t(102,24,37));
+                label(ui,target,"NAMCO MUSEUM",x+.033f,.507f,.10f,.021f);
+                label(ui,target,"ARCHIVES",x+.034f,.527f,.070f,.019f);
+            }
         }
     }
 private:
@@ -193,8 +270,10 @@ private:
     virtual void choose(uintptr_t value) = 0;
     virtual void horizontally(int delta) {}
     virtual void auxiliary(int key) {}
+    virtual bool advance() { return false; }
     bool handle(event const *ev) override
     {
+        if (advance()) return true;
         if (ev && (ev->iptkey == IPT_UI_LEFT || ev->iptkey == IPT_UI_RIGHT)) {
             horizontally(ev->iptkey == IPT_UI_LEFT ? -1 : 1);
             return true;
@@ -212,25 +291,61 @@ private:
     uintptr_t pending = 0;
 };
 
-class overwrite_menu : public choice_menu
+void system_screen(mame_ui_manager &ui,render_target &t,battle_slots const &cards,
+                   uintptr_t active,int slot=-1)
+{
+    header(ui,t,"System Menu");
+    button(ui,t,"Save",.389f,.164f,.222f,active==save);
+    button(ui,t,"Load",.389f,.253f,.222f,active==load);
+    cards.draw(ui,t,slot);
+    button(ui,t,"Settings",.262f,.702f,.221f,active==settings);
+    button(ui,t,"Game Reset",.518f,.702f,.221f,active==reset_game);
+    button(ui,t,"Return to Main Menu",.360f,.792f,.280f,active==resume);
+    footer(ui,t,true);
+}
+
+class confirmation_menu : public choice_menu
 {
 public:
-    overwrite_menu(mame_ui_manager &ui, render_target &target, uintptr_t slot)
-        : choice_menu(ui, target, "Overwrite Slot " + std::to_string(slot) + "?"), slot(slot) {}
+    confirmation_menu(mame_ui_manager &ui,render_target &target,action command,unsigned slot=0)
+        : choice_menu(ui,target,"Confirm"),command(command),slot(slot),cards(machine())
+    {
+        set_needs_prev_menu_item(false);
+        set_process_flags(PROCESS_LR_ALWAYS);
+        cards.refresh();
+    }
 private:
-    uintptr_t slot;
+    action command;
+    unsigned slot;
+    battle_slots cards;
     void populate() override
     {
-        item_append("Cancel", 0, reinterpret_cast<void *>(1));
-        item_append("Overwrite", 0, reinterpret_cast<void *>(2));
+        item_append("Yes",0,reinterpret_cast<void *>(1));
+        item_append("No",0,reinterpret_cast<void *>(2));
+    }
+    void horizontally(int) override { set_selected_index(1-selected_index()); }
+    void draw(uint32_t) override
+    {
+        system_screen(ui(),target(),cards,command,slot ? int(slot)-1 : -1);
+        auto &c=container();
+        box(c,.251f,.334f,.498f,.296f,rgb_t(3,24,78));
+        std::string question;
+        if (command==save) {
+            question=cards.occupied(slot-1) ? "Overwrite Save Data " : "Saving current play state to Save Data ";
+            question+=std::to_string(slot)+(cards.occupied(slot-1) ? "?" : "...");
+        } else if (command==resume) question="Do you really want to close the game and return to";
+        else question="Do you really want to reset the game?";
+        label(ui(),target(),question,.255f,.359f,.490f,.031f);
+        if (command==resume) label(ui(),target(),"the Main Menu?",.26f,.389f,.48f,.031f);
+        label(ui(),target(),"Yes",.407f,.55f,.077f,.035f,selected_index()==0 ? cyan : rgb_t::white());
+        label(ui(),target(),"No",.498f,.55f,.077f,.035f,selected_index()==1 ? cyan : rgb_t::white());
     }
     void choose(uintptr_t value) override
     {
-        if (value == 1) stack_pop();
-        else {
-            machine().schedule_save(std::to_string(slot));
-            stack_reset();
-        }
+        if (value==2) { stack_pop(); return; }
+        if (command==save) machine().schedule_save(std::to_string(slot));
+        else machine().schedule_soft_reset();
+        stack_reset();
     }
 };
 
@@ -260,24 +375,16 @@ private:
     void horizontally(int delta) override { set_selected_index((selected_index()+delta+4)%4); }
     void draw(uint32_t) override
     {
-        panel(container(),.045f,.12f,.91f,.70f);
-        label(ui(),target(),saving ? "Save" : "Load",.2f,.19f,.6f,.052f);
-        cards.draw(ui(),target(),selected_index());
-#ifdef __ANDROID__
-        label(ui(),target(),"West button: Lock / Unlock",.2f,.715f,.6f,.033f);
-#else
-        label(ui(),target(),"Delete: Lock / Unlock",.2f,.715f,.6f,.033f);
-#endif
+        system_screen(ui(),target(),cards,saving ? save : load,selected_index());
     }
     void choose(uintptr_t slot) override
     {
         if ((!saving && !exists(slot)) || (saving && cards.locked(slot-1))) return;
-        if (saving && exists(slot)) {
-            stack_push<overwrite_menu>(ui(), target(), slot);
+        if (saving) {
+            stack_push<confirmation_menu>(ui(),target(),save,unsigned(slot));
             return;
         }
-        if (saving) machine().schedule_save(std::to_string(slot));
-        else machine().schedule_load(std::to_string(slot));
+        machine().schedule_load(std::to_string(slot));
         stack_reset();
     }
 };
@@ -360,60 +467,93 @@ private:
     }
     void draw(uint32_t) override
     {
-        panel(container(),.025f,.055f,.95f,.875f);
-        label(ui(),target(),wallpaper ? "Wallpaper Settings" : "Screen Settings",.1f,.095f,.8f,.053f);
+        header(ui(),target(),wallpaper ? "Wallpaper Settings" : "Screen Settings");
         int current=preference(wallpaper,-1);
-        panel(container(),.33f,.21f,.34f,.27f);
-        preview(current,.34f,.219f,.32f,.252f);
+        panel(container(),.383f,.184f,.234f,.240f);
+        preview(current,.389f,.191f,.222f,.226f);
         for (int i=0;i<4;++i) {
-            float x=.06f+.223f*i;
-            panel(container(),x,.56f,.21f,.115f,selected_index()==i);
-            preview(i,x+.006f,.566f,.198f,.103f);
-            label(ui(),target(),wallpaper ? (current==i ? "On" : "") : screens[i],x,.69f,.21f,.036f);
+            float x=.170f+.173f*i;
+            panel(container(),x,.496f,.141f,.147f,selected_index()==i);
+            if (current==i) {
+                box(container(),x,.496f,.141f,.147f,rgb_t(125,168,229));
+                box(container(),x+.006f,.503f,.129f,.133f,rgb_t::black());
+            }
+            preview(i,x+.008f,.505f,.125f,.129f);
+            if (!wallpaper) label(ui(),target(),screens[i],x-.012f,.656f,.165f,.036f);
         }
         if (!wallpaper) {
             int picture=battlecity_picture(-1);
             for (int i=0;i<2;++i) {
-                float y=.255f+.085f*i;
-                panel(container(),.697f,y,.245f,.066f,selected_index()==i+4);
+                float y=.195f+.060f*i;
                 std::string name=i ? "Scan Lines" : "Anti-Aliasing";
-                label(ui(),target(),name+(picture & (1<<i) ? "  On" : "  Off"),.697f,y+.012f,.245f,.034f);
+                box(container(),.628f,y+.008f,.017f,.025f,picture & (1<<i) ? cyan : blue);
+                label(ui(),target(),name,.649f,y,.147f,.032f);
+                if (selected_index()==i+4) brackets(container(),.625f,y,.169f,.041f);
             }
         }
-        panel(container(),.29f,.805f,.42f,.072f,selected_index()==(wallpaper ? 4 : 6));
-        label(ui(),target(),"Return to Settings",.29f,.818f,.42f,.040f);
+        button(ui(),target(),"Return to Settings",.369f,.770f,.262f,selected_index()==(wallpaper ? 4 : 6));
+        footer(ui(),target());
     }
 };
 
-class reset_menu : public choice_menu
+struct staff_line { unsigned y; unsigned height; char const *text; };
+constexpr staff_line staff[] = {
+#include "staff-roll.inc"
+};
+
+class credits_menu : public choice_menu
 {
 public:
-    reset_menu(mame_ui_manager &ui, render_target &target) : choice_menu(ui,target,"Reset Battle City?") {}
+    credits_menu(mame_ui_manager &ui,render_target &target) : choice_menu(ui,target,"Staff Credits")
+    { set_needs_prev_menu_item(false); }
 private:
-    void populate() override
+    using clock=std::chrono::steady_clock;
+    clock::time_point previous=clock::now();
+    float distance=0;
+    float final_seconds=0;
+    void populate() override { item_append("Staff Credits",0,reinterpret_cast<void *>(1)); }
+    void choose(uintptr_t) override { stack_pop(); }
+    bool advance() override
     {
-        item_append("Cancel",0,reinterpret_cast<void *>(1));
-        item_append("Game Reset",0,reinterpret_cast<void *>(2));
+        auto now=clock::now();
+        float elapsed=std::min(.25f,std::chrono::duration<float>(now-previous).count());
+        previous=now;
+        // The recording shows 80 and 640 pixels/second on a 720-line image.
+        float const stop=staff[std::size(staff)-1].y+360.f;
+        distance=std::min(stop,distance+elapsed*(machine().ioport().type_pressed(IPT_UI_DOWN) ? 640.f : 80.f));
+        if (distance<stop) return false;
+        final_seconds+=elapsed;
+        if (final_seconds<4.f) return false;
+        stack_pop();
+        return true;
     }
-    void choose(uintptr_t value) override
+    void draw(uint32_t) override
     {
-        if (value==2) { machine().schedule_soft_reset(); stack_reset(); }
-        else stack_pop();
+        box(container(),0,0,1,1,rgb_t::black());
+        float top=distance-720.f;
+        auto line=std::lower_bound(std::begin(staff),std::end(staff),top-36.f,
+                       [](staff_line const &line,float y) { return line.y<y; });
+        for (;line!=std::end(staff) && line->y<=distance;++line) {
+            float y=(line->y-top)/720.f;
+            float intensity=std::clamp(std::min(y,1.f-y)*14.f,0.f,1.f);
+            auto shade=uint8_t(255*intensity);
+            rgb_t color=line==staff ? rgb_t(0,uint8_t(180*intensity),uint8_t(217*intensity)) : rgb_t(shade,shade,shade);
+            label(ui(),target(),line->text,.04f,y-line->height/1440.f,.92f,line->height/720.f,color);
+        }
     }
 };
 
 class information_menu : public choice_menu
 {
 public:
-    information_menu(mame_ui_manager &ui, render_target &target, bool controls)
-        : choice_menu(ui,target,controls ? "Controller Settings" : "Staff Credits"), controls(controls)
+    information_menu(mame_ui_manager &ui, render_target &target)
+        : choice_menu(ui,target,"Controller Settings")
     { set_needs_prev_menu_item(false); }
 private:
-    bool controls;
     void populate() override
     {
 #ifdef __ANDROID__
-        if (controls) item_append("Pair Gamepads",0,reinterpret_cast<void *>(2));
+        item_append("Pair Gamepads",0,reinterpret_cast<void *>(2));
 #endif
         item_append("Return to Settings",0,reinterpret_cast<void *>(1));
     }
@@ -436,14 +576,8 @@ private:
     }
     void draw(uint32_t) override
     {
-        panel(container(),.08f,.11f,.84f,.76f);
-        label(ui(),target(),controls ? "Controller Settings" : "Staff Credits",.15f,.17f,.7f,.055f);
-        char const *const credits[]={
-            "Battle City (1985)     NAMCO",
-            "Switch collection     M2 / Bandai Namco Entertainment",
-            "Recreation     Battle City project",
-            "NES runtime     MAME / SDL"
-        };
+        header(ui(),target(),"Controller Settings");
+        footer(ui(),target());
 #ifdef __ANDROID__
         char const *const keys[]={"Player 1 and Player 2 use separate gamepads",
             "D-pad  Move       A / B  Fire","Select  Choose mode       Start  Start / Pause",
@@ -453,10 +587,10 @@ private:
             "Player 2    Arrow keys  Move       N / M  Fire",
             "Right Shift  Choose mode       Enter  Start / Pause","Esc  Menu       R  Rewind"};
 #endif
-        for (int i=0;i<4;++i) label(ui(),target(),controls ? keys[i] : credits[i],.12f,.30f+i*.085f,.76f,.035f);
+        for (int i=0;i<4;++i) label(ui(),target(),keys[i],.12f,.30f+i*.085f,.76f,.035f);
         auto const selected=reinterpret_cast<uintptr_t>(get_selection_ref());
 #ifdef __ANDROID__
-        if (controls) {
+        {
             panel(container(),.33f,.65f,.34f,.061f,selected==2);
             label(ui(),target(),"Pair Gamepads",.33f,.658f,.34f,.035f);
         }
@@ -489,19 +623,40 @@ private:
     {
         if (value==5) stack_pop();
         else if (value<=2) stack_push<display_menu>(ui(),target(),value==2);
-        else stack_push<information_menu>(ui(),target(),value==3);
+        else if (value==3) stack_push<information_menu>(ui(),target());
+        else stack_push<credits_menu>(ui(),target());
     }
     void draw(uint32_t) override
     {
-        panel(container(),.08f,.15f,.84f,.69f);
-        label(ui(),target(),"Settings",.20f,.20f,.60f,.055f);
+        header(ui(),target(),"Settings",.13f,.805f);
         for (int i=0;i<4;++i) {
-            float x=.10f+.20f*i;
-            panel(container(),x,.39f,.19f,.22f,selected_index()==i);
-            label(ui(),target(),items[i],x,.48f,.19f,.035f);
+            float x=.106f+.203f*i, cy=.433f, cx=x+.090f;
+            panel(container(),x,.350f,.180f,.215f,selected_index()==i);
+            auto line=[&](float ax,float ay,float bx,float by) {
+                container().add_line(cx+ax,cy+ay,cx+bx,cy+by,.004f,rgb_t(99,158,218),blend);
+            };
+            if (i==0) {
+                panel(container(),cx-.044f,cy-.050f,.071f,.068f);
+                panel(container(),cx-.023f,cy-.026f,.071f,.068f);
+            } else if (i==1) {
+                line(-.045f,-.031f,-.015f,-.045f); line(-.015f,-.045f,.028f,-.017f);
+                line(.028f,-.017f,.014f,.037f); line(.014f,.037f,-.032f,.009f);
+                line(-.032f,.009f,-.045f,.031f); line(-.045f,.031f,-.045f,-.031f);
+            } else if (i==2) {
+                line(-.048f,.036f,-.036f,-.027f); line(-.036f,-.027f,.034f,-.027f);
+                line(.034f,-.027f,.048f,.036f); line(.048f,.036f,.014f,.009f);
+                line(.014f,.009f,-.014f,.009f); line(-.014f,.009f,-.048f,.036f);
+                line(-.026f,-.004f,-.010f,-.004f); line(-.018f,-.014f,-.018f,.006f);
+                line(.018f,-.003f,.023f,-.003f);
+            } else {
+                line(-.040f,-.031f,-.025f,.034f); line(-.025f,.034f,-.006f,-.031f);
+                line(-.006f,-.031f,-.040f,-.031f); line(.007f,-.031f,.035f,.034f);
+                line(.035f,-.031f,.007f,.034f);
+            }
+            label(ui(),target(),items[i],x,.499f,.18f,.032f);
         }
-        panel(container(),.33f,.731f,.34f,.064f,selected_index()==4);
-        label(ui(),target(),"Return to Menu",.33f,.74f,.34f,.035f);
+        button(ui(),target(),"Return to Menu",.367f,.691f,.266f,selected_index()==4);
+        footer(ui(),target());
     }
 };
 } // anonymous namespace
@@ -527,24 +682,11 @@ void menu_main::populate()
         item_append("Settings",0,reinterpret_cast<void *>(settings));
         item_append("Game Reset",0,reinterpret_cast<void *>(reset_game));
     }
-    item_append("Return to Game",0,reinterpret_cast<void *>(resume));
+    item_append("Return to Main Menu",0,reinterpret_cast<void *>(resume));
 }
 void menu_main::draw(uint32_t)
 {
-    panel(container(),.075f,.049f,.85f,.841f);
-    label(ui(),target(),"System Menu",.15f,.085f,.7f,.058f);
-    auto button=[this](action id,std::string_view name,float x,float y,float width) {
-        panel(container(),x,y,width,.067f,get_selection_ref()==reinterpret_cast<void *>(id));
-        label(ui(),target(),name,x,y+.011f,width,.043f);
-    };
-    if (m_phase==machine_phase::RUNNING) {
-        button(save,"Save",.389f,.163f,.222f);
-        button(load,"Load",.389f,.251f,.222f);
-        m_slots->draw(ui(),target(),-1);
-        button(settings,"Settings",.263f,.700f,.220f);
-        button(reset_game,"Game Reset",.518f,.700f,.220f);
-    }
-    button(resume,"Return to Game",.35f,.79f,.30f);
+    system_screen(ui(),target(),*m_slots,reinterpret_cast<uintptr_t>(get_selection_ref()));
 }
 bool menu_main::handle(event const *ev)
 {
@@ -561,8 +703,7 @@ bool menu_main::handle(event const *ev)
     switch (selected) {
     case save: case load: stack_push<slots_menu>(ui(),target(),selected==save); break;
     case settings: stack_push<settings_menu>(ui(),target()); break;
-    case reset_game: stack_push<reset_menu>(ui(),target()); break;
-    case resume: stack_pop(); break;
+    case reset_game: case resume: stack_push<confirmation_menu>(ui(),target(),action(selected)); break;
     }
     return false;
 }

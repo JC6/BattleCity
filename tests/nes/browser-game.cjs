@@ -15,8 +15,8 @@ const reads = fields.map(([name, offset = 0]) => {
     assert.ok(Number.isInteger(addresses[name]), name);
     return 'ram:read_u8(' + (addresses[name] + offset) + ')';
 });
-const menuKeys = ['Escape', 'Home', 'End', 'ArrowUp', 'ArrowDown', 'Enter', 'r', 'ArrowLeft', 'ArrowRight', 'Delete'];
-const menuCodes = ['ESC', 'HOME', 'END', 'UP', 'DOWN', 'ENTER', 'R', 'LEFT', 'RIGHT', 'DEL'];
+const menuKeys = ['Escape', 'Home', 'End', 'ArrowUp', 'ArrowDown', 'Enter', 'r', 'ArrowLeft', 'ArrowRight', 'Delete', 'Backspace'];
+const menuCodes = ['ESC', 'HOME', 'END', 'UP', 'DOWN', 'ENTER', 'R', 'LEFT', 'RIGHT', 'DEL', 'BACKSPACE'];
 const observer = `local ram=manager.machine.devices[":maincpu"].spaces.program
 game_observer=emu.add_machine_frame_notifier(function()
     print("GAME_STATE "..table.concat({${reads.join(',')}},","))
@@ -362,6 +362,26 @@ async function verify(engine, suite) {
         await menu(page, ['Home','ArrowRight','ArrowRight','Enter']);
         await capture(page, 'controller-settings');
         await menu(page, ['Home','Enter','Home','ArrowLeft','Enter']);
+        // Detect the cyan collection title on black and measure its upward travel.
+        await page.evaluate(() => {
+            const sample=document.createElement('canvas');
+            sample.width=320; sample.height=180;
+            const ctx=sample.getContext('2d', {willReadFrequently:true});
+            window.creditTitleY=()=>{
+                ctx.drawImage(Module.canvas,0,0,320,180);
+                const p=ctx.getImageData(0,0,320,180).data;
+                if (p[0]+p[1]+p[2]>15) return -1;
+                let sum=0,hits=0;
+                for(let y=4;y<178;y++) for(let x=66;x<254;x++) {
+                    const i=(320*y+x)*4;
+                    if(p[i+1]>48 && p[i+2]>p[i+1] && p[i+1]-p[i]>35) { sum+=y; ++hits; }
+                }
+                return hits>20 ? sum/hits : -1;
+            };
+        });
+        await page.waitForFunction(() => creditTitleY()>55 && creditTitleY()<122);
+        const titleY=await page.evaluate(() => creditTitleY());
+        await page.waitForFunction(y => creditTitleY()>0 && creditTitleY()<y-12,titleY);
         await capture(page, 'staff-credits');
         await menu(page, ['Home','Enter','Home','ArrowDown','Enter','Home','ArrowLeft','Enter']);
         await capture(page, 'wallpaper-settings');
@@ -370,8 +390,8 @@ async function verify(engine, suite) {
             copy.width=canvas.width; copy.height=canvas.height;
             const ctx=copy.getContext('2d'); ctx.drawImage(canvas,0,0);
             return [0,1,2,3].map(i => {
-                const x=canvas.width*(.07+i*.223), y=canvas.height*.575;
-                const data=ctx.getImageData(x,y,canvas.width*.175,canvas.height*.078).data;
+                const x=canvas.width*(.183+i*.173), y=canvas.height*.518;
+                const data=ctx.getImageData(x,y,canvas.width*.110,canvas.height*.096).data;
                 let range=0;
                 for (let j=0;j<data.length;j+=4)
                     range=Math.max(range,Math.max(data[j],data[j+1],data[j+2])-Math.min(data[j],data[j+1],data[j+2]));
@@ -381,7 +401,7 @@ async function verify(engine, suite) {
         assert.ok(previewRanges.slice(0,3).every(n => n>20) && previewRanges[3]<5,
             'wallpaper previews should show the three images and solid black: '+previewRanges);
         await page.waitForFunction(() => document.querySelector('main').dataset.wallpaper === '3');
-        await menu(page, ['Home','Enter','End','Enter','End','Enter','End','Enter']);
+        await menu(page, ['Home','Enter','End','Enter','End','Enter','Backspace']);
         await checkScreenMode(page, '0');
         await page.waitForFunction(() => document.querySelector('#display').dataset.menu === '0');
         const scanRows = await page.evaluate(() => {
@@ -440,11 +460,15 @@ async function verify(engine, suite) {
         // Save the paused co-op match, then restore it from a new document.
         await press(page, 'Enter', () => gameState.mode === 5);
         const saved = await page.evaluate(() => [gameState.stage, gameState.y1, gameState.y2]);
-        await menu(page, ['Escape','Home','Enter','Home','Enter'], 'Game saved.');
+        await menu(page, ['Escape','Home','Enter','Home','Enter']);
+        await capture(page, 'save-confirmation');
+        const slotPath=await page.evaluate(() => Module.arguments[Module.arguments.indexOf('-state_directory')+1]+'/nes/1.sta');
+        assert.equal(await page.evaluate(p => FS.analyzePath(p).exists,slotPath),false);
+        await menu(page, ['Enter'], 'Game saved.');
         const firstSlot = await slotDigest(page, 1);
         // Cancel an overwrite of slot one, then create slot four with the same controls.
-        await menu(page, ['Escape','Home','Enter','Home','Enter','Home','Enter',
-            'Home','ArrowLeft','Enter'], 'Game saved.');
+        await menu(page, ['Escape','Home','Enter','Home','Enter','Backspace',
+            'Home','ArrowLeft','Enter','Enter'], 'Game saved.');
         assert.equal(await slotDigest(page, 1), firstSlot, 'cancel changed slot one');
         const fourthSlot = await slotDigest(page, 4);
         await menu(page, ['Escape','Home','Enter','Home','Delete'], 'Slot lock saved.');
@@ -477,7 +501,7 @@ async function verify(engine, suite) {
         assert.ok(counts.black > 200 && counts.bright > 12, 'Missing on-screen save thumbnail: '+JSON.stringify(counts));
         // Selecting a protected slot must leave the cursor here. Move to slot four
         // and cancel its overwrite to verify the protected state was untouched.
-        await menu(page, ['Enter','ArrowLeft','Enter','Home','Enter']);
+        await menu(page, ['Enter','ArrowLeft','Enter','End','Enter']);
         await start(page);
         assert.equal(await slotDigest(page, 4), fourthSlot, 'slot four changed after reload');
         assert.equal(await page.evaluate(() => Module.canvas.dataset.picture), '3', 'picture settings did not survive reload');
@@ -489,12 +513,14 @@ async function verify(engine, suite) {
         assert.deepEqual(await page.evaluate(() => [gameState.stage, gameState.y1, gameState.y2]), saved);
         await menu(page, ['Escape','Home','Enter','Home','Delete'], 'Slot lock saved.');
         assert.equal(await page.evaluate(p => FS.analyzePath(p).exists, lockPath), false, 'slot remained locked');
-        await menu(page, ['Home','Enter','Home','ArrowDown','Enter'], 'Game saved.');
+        await menu(page, ['Home','Enter','Home','Enter'], 'Game saved.');
         await press(page, 'Enter', () => gameState.mode === 1);
         await page.keyboard.down('ArrowDown');
         try {
             await page.waitForFunction(y => gameState.y2 > y, saved[2]);
         } finally { await page.keyboard.up('ArrowDown'); }
+        await menu(page,['Escape','End','Enter','Enter']);
+        await page.waitForFunction(() => gameState.mode===0 && !gameState.titleScroll && !window.menuActive);
         assert.deepEqual(errors, []);
         console.log(engine.name() + ' passed 720p/1080p viewport, solo, stage selection, Construction, co-op, shooting, pause, rewind and persistent save/load');
         if (engine === chromium && suite !== 'controls') {

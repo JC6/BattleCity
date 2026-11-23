@@ -204,7 +204,7 @@ python3 tests/nes/verify_stages.py build/battlecity/game.nes --suite loop --repo
 python3 tests/nes/verify_stages.py build/battlecity/game.nes --suite attract --report attract.csv
 ```
 
-Switch 英文实机录像可核对系统菜单的 Save、Load、四个横排存档槽、Settings 和 Game Reset。已有存档有日期及画面预览，锁定槽位可防止误覆盖。Screen Settings 显示 4:3、Zoom、Dot-by-Dot、Full Screen。两端按 16:9 展开系统菜单，退出时恢复游戏原有的显示比例。壁纸页显示四种预览图。Controller Settings 在 Web 上显示双人键盘，在电视上可打开系统蓝牙配对。Staff Credits 按原作、合集和本项目列出署名。[合集开发方 M2 的作品记录](https://www.mtwo.co.jp/development/)
+Switch 英文实机录像可核对系统菜单的 Save、Load、四个横排存档槽、Settings 和 Game Reset。已有存档有日期及画面预览，锁定槽位可防止误覆盖。Screen Settings 显示 4:3、Zoom、Dot-by-Dot、Full Screen。两端按 16:9 展开系统菜单，退出时恢复游戏原有的显示比例。壁纸页显示四种预览图。Controller Settings 在 Web 上显示双人键盘，在电视上可打开系统蓝牙配对。Staff Credits 按英文 Switch 画面滚动显示制作名单。写入空槽和覆盖旧存档都需确认。Return to Main Menu 经确认后回到本作标题，取消系统菜单即可续玩。[实机片尾](https://www.youtube.com/watch?v=S26lUv598_o&t=4309s) · [菜单、署名和音频对照](switch-comparison.md)
 
 较高播放量的录像显示了本作在合集中的入口，另一段在《坦克大战》结束后直接打开了系统菜单，可看清每个槽位。[任天堂产品页](https://www.nintendo.com/us/store/products/namco-museum-archives-vol-2-switch/) · [合集入口与战场，约 3 分钟](https://www.youtube.com/watch?v=uc_If5fksfA&t=180s) · [本作系统菜单，约 11 分钟](https://www.youtube.com/watch?v=S26lUv598_o&t=659s) · [显示和壁纸选项，约 1 分钟](https://www.youtube.com/watch?v=S26lUv598_o&t=65s)
 

@@ -106,7 +106,7 @@ async function verify(browserType, url) {
         await page.keyboard.down('j');
         await expectPitch(page, 1);
         await page.keyboard.up('j');
-        await pressMenuKeys(page, ['Escape', 'Home', 'Enter', 'Home', 'Enter']);
+        await pressMenuKeys(page, ['Escape', 'Home', 'Enter', 'Home', 'Enter', 'Enter']);
         await page.waitForFunction(() => document.querySelector('output').textContent === 'Game saved.');
         await page.reload();
         await page.keyboard.press('Enter');
