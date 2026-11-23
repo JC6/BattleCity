@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   group: pages-${{ github.ref }}
-  cancel-in-progress: ${{ startsWith(github.ref, 'refs/heads/validation/switch-parity-') }}
+  cancel-in-progress: false
 
 jobs:
   runtime:

@@ -24,7 +24,7 @@ jobs:
           run-id: 45097880547
           name: cartridge
           path: build/shared
-      - name: Verify the verified cartridge and exercise both gamepads
+      - name: Verify the cartridge and exercise both gamepads
         run: |
           echo 'd0cf0118f70514d674c17b699cf1c3463acdf439070d64b697bab31a125bf35f  build/shared/game.nes' | sha256sum -c -
           python3 tests/nes/package.py deliverable/tv-emulator.apk build/shared/game.nes --abi x86
