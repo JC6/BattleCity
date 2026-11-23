@@ -271,9 +271,11 @@ def run(apk, labels, results):
     except Exception:
         # The system log identifies early SDL, linker and Java failures even
         # when the game never reaches the cartridge observer.
-        diagnostic = adb('logcat', '-d', '-s', 'SDL:V', 'SDL/APP:V', 'AndroidRuntime:E',
+        diagnostic = adb('logcat', '-d', '-s', 'SDL:V', 'SDL/APP:V', 'MAME:V', 'AndroidRuntime:E',
                          'linker:E', 'libc:F', 'DEBUG:F', check=False)
         (results/'application.log').write_bytes(diagnostic)
+        (results/'app-files.txt').write_bytes(private('ls','-lR','files',check=False))
+        (results/'observation.txt').write_bytes(private('cat','files/tv-observation',check=False))
         capture('failure')
         lines = diagnostic.decode(errors='replace').splitlines()
         for line in lines[-30:]:

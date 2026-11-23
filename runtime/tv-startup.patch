@@ -1,0 +1,14 @@
+--- a/src/frontend/mame/ui/ui.cpp
++++ b/src/frontend/mame/ui/ui.cpp
+@@ -674,6 +674,11 @@
+ 	// also disable for the JavaScript port since the startup screens do not run asynchronously
+ 	show_gameinfo = show_warnings = false;
+ #endif
++#if defined(__ANDROID__)
++	// The dedicated TV player boots one bundled NES cartridge. Keep serious
++	// driver and media errors visible while starting directly at its title.
++	show_warnings = show_warnings && (machine_info().has_severe_warnings() || machine().rom_load().warnings());
++#endif
+ 
+ 	// set up event handlers
+ 	switch_code_poller poller(machine().input());

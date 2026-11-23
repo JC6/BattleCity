@@ -190,13 +190,13 @@ CSV 记录卡带 SHA-256、关卡、人数、参考更新总数、是否通过�
 
 ## 当前验证范围
 
-整轮回放从开机开始，仅向手柄端口发送按键。玩家依次打过第 1 至 70 关，回到第 1 关后继续 90 次战斗更新。对红白机参考程序与复刻卡带分别执行 6502 指令，记录到的 274,114 次更新全部匹配，包括显示帧号、坦克与炮弹的位置和方向、残机、武器、防护、得分、击破数、基地与地形。最后一次更新位于显示帧 316,277，得分 409,600。未压缩观测记录的 SHA-256 为 `8336186c7e44314be205aef3812e8d8aa34e786dbd90825796048a57f2a06ea7`。可用下列命令在原生 MAME 0.285 从开机重放同一组输入。[控制器录像](../../tests/nes/fixtures/stages/loop.pads.gz) · [逐次更新基准](../../tests/nes/fixtures/stages/loop.csv.gz) · [逐关 CPU 对照](../../build/battlecity/Loop-CPU.csv)
+整轮回放从开机开始，仅向手柄端口发送按键。玩家依次打过第 1 至 70 关，回到第 1 关后继续 90 次战斗更新。对红白机参考程序与复刻卡带分别执行 6502 指令，记录到的 274,114 次更新全部匹配，包括显示帧号、坦克与炮弹的位置和方向、残机、武器、防护、得分、击破数、基地与地形。最后一次更新位于显示帧 316,277，得分 409,600。未压缩观测记录的 SHA-256 为 `8336186c7e44314be205aef3812e8d8aa34e786dbd90825796048a57f2a06ea7`。GitHub Actions 从源码重建卡带后，在原生 MAME 0.285 从开机重放同一组输入，全部 274,114 次更新通过。[原生 MAME 运行记录](https://github.com/JC6/BattleCity/actions/runs/45097880547/job/137441844596) · [控制器录像](../../tests/nes/fixtures/stages/loop.pads.gz) · [逐次更新基准](../../tests/nes/fixtures/stages/loop.csv.gz) · [逐关 CPU 对照](../../build/battlecity/Loop-CPU.csv)
 
 ```sh
 python3 tests/nes/verify_stages.py build/battlecity/game.nes --suite loop --report loop.csv
 ```
 
-35 份单人参考录像覆盖 175,335 次更新，另有一份双人第一关录像覆盖 4,131 次更新。各场分别从开机开始，便于在不运行整轮的情况下复现某一关的问题。每场都核对至下一关的前 90 次更新。[逐场回放报告](../../build/battlecity/Stage-Replays.csv) · [开局显存报告](../../build/battlecity/Stage-Fields.csv)
+35 份单人参考录像覆盖 175,335 次更新，另有一份双人第一关录像覆盖 4,131 次更新。各场分别从开机开始，便于在不运行整轮的情况下复现某一关的问题。五组原生 MAME 任务都已通过，每场都核对至下一关的前 90 次更新。下列本地 CSV 附有每组的远端任务链接。[逐场回放报告](../../build/battlecity/Stage-Replays.csv) · [开局显存报告](../../build/battlecity/Stage-Fields.csv)
 
 空闲演示的首帧为 881。红白机和复刻程序都在第 4,083 帧离开演示，在第 4,327 帧重新接受标题选择。3,203 次战斗更新均已逐次核对，覆盖两辆玩家坦克、敌车、炮弹、时钟、演示手柄输入和 10,060 次随机取值。BATTLE 和 CITY 分别由 143 和 84 块可破坏的 4×4 像素砖组成，演示结束时共减少 176 块。[完整演示对照](../../tests/nes/fixtures/stages/attract.csv.gz) · [计帧及砖块验证](../../tests/nes/attract.lua)
 
@@ -204,8 +204,12 @@ python3 tests/nes/verify_stages.py build/battlecity/game.nes --suite loop --repo
 python3 tests/nes/verify_stages.py build/battlecity/game.nes --suite attract --report attract.csv
 ```
 
-Switch 英文实机录像可核对系统菜单的 Save、Load、四个横排存档槽、Settings 和 Game Reset。已有存档有日期及画面预览，锁定槽位可防止误覆盖。Screen Settings 显示 4:3、Zoom、Dot-by-Dot、Full Screen。两端按 16:9 展开系统菜单，退出时恢复游戏原有的显示比例。壁纸页显示四种预览图。Controller Settings 在 Web 上显示双人键盘，在电视上可打开系统蓝牙配对。Staff Credits 按原作、合集和本项目列出署名。[合集开发方 M2 的作品记录](https://www.mtwo.co.jp/development/)较高播放量的录像显示了本作在合集中的入口，另一段在《坦克大战》结束后直接打开了系统菜单，可看清每个槽位。[任天堂产品页](https://www.nintendo.com/us/store/products/namco-museum-archives-vol-2-switch/) · [合集入口与战场，约 3 分钟](https://www.youtube.com/watch?v=uc_If5fksfA&t=180s) · [本作系统菜单，约 11 分钟](https://www.youtube.com/watch?v=S26lUv598_o&t=659s) · [显示和壁纸选项，约 1 分钟](https://www.youtube.com/watch?v=S26lUv598_o&t=65s)
+Switch 英文实机录像可核对系统菜单的 Save、Load、四个横排存档槽、Settings 和 Game Reset。已有存档有日期及画面预览，锁定槽位可防止误覆盖。Screen Settings 显示 4:3、Zoom、Dot-by-Dot、Full Screen。两端按 16:9 展开系统菜单，退出时恢复游戏原有的显示比例。壁纸页显示四种预览图。Controller Settings 在 Web 上显示双人键盘，在电视上可打开系统蓝牙配对。Staff Credits 按原作、合集和本项目列出署名。[合集开发方 M2 的作品记录](https://www.mtwo.co.jp/development/)
+
+较高播放量的录像显示了本作在合集中的入口，另一段在《坦克大战》结束后直接打开了系统菜单，可看清每个槽位。[任天堂产品页](https://www.nintendo.com/us/store/products/namco-museum-archives-vol-2-switch/) · [合集入口与战场，约 3 分钟](https://www.youtube.com/watch?v=uc_If5fksfA&t=180s) · [本作系统菜单，约 11 分钟](https://www.youtube.com/watch?v=S26lUv598_o&t=659s) · [显示和壁纸选项，约 1 分钟](https://www.youtube.com/watch?v=S26lUv598_o&t=65s)
 
 上述录像没有同步手柄输入，Switch 输入到画面的延迟、回退的精确跨度和逐帧音画同步仍待测量。本地未发现已连接的 Android TV，当前内核没有 KVM。官方 API 34 电视工作流会启动加速模拟器，用两支独立手柄操作安装后的 APK 并保存屏幕、声音和重启读档记录。[设备验收工作流](../../.github/workflows/mame-runtime.yml)
+
+最终 Web 包在 Chromium 和 WebKit 均已通过键盘测试，覆盖 720p 与 1080p、单人和双人、选关、Construction、系统菜单、回退、存档保护以及刷新后的读档。[键盘端到端测试](../../tests/nes/browser-game.cjs)
 
 两端按内置卡带的 SHA-256 隔离即时存档。Web 使用 IndexedDB，Android 使用应用私有目录。每个版本的四个存档槽都在该版本的目录下。

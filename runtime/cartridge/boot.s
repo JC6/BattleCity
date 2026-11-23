@@ -1077,7 +1077,7 @@ _snapshot_occupancy:
     ora mask_row
     sta _field_high,x
     ; Mark the centre once. An aligned tank also occupies the left or
-    ; upper neighbour on that axis. All three writes use the same row base.
+    ; upper neighbour. Reuse the centre bit above and the row offset on the left.
     lda tank_y
     clc
     adc #8
