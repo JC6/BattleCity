@@ -66,4 +66,8 @@ node tests/nes/browser-replay.cjs http://127.0.0.1:8000/
 
 In a disposable Chromium profile, a simulated IndexedDB flush failure preserved the previous committed slot byte-for-byte after restart. An invalid in-memory slot header did not report a successful load, and the intact persistent slot loaded on restart.
 
-The APK passed v2 signature verification, cartridge digest verification, and inspection of all three arm64-v8a libraries. ADB reported no attached devices during this run. TV installation, physical gamepad handling, lifecycle behavior and sound output require a target-device run. The gameplay acceptance record links the available official Switch screenshot and records the remaining reference gaps.
+The diagnostic APK passed v2 signature verification, cartridge digest verification and inspection of all three ARM64 libraries.
+
+## Playable Android TV build
+
+Connect both gamepads before launching a two-player session. The official Android TV API 34 image exercised the installed x86 build with two independent kernel gamepads. It passed cold start, individual movement and firing, shoulder rewind, slot protection, loading a paused game after process restart, second-player reconnection and foreground resume. The job archived screen captures and a one-second, 48 kHz PCM recording. Physical TV controller latency and speaker output still require measurement. [Device run and artifacts](https://github.com/JC6/BattleCity/actions/runs/45106009654)

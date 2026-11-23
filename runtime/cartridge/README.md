@@ -208,7 +208,9 @@ Switch 英文实机录像可核对系统菜单的 Save、Load、四个横排存�
 
 较高播放量的录像显示了本作在合集中的入口，另一段在《坦克大战》结束后直接打开了系统菜单，可看清每个槽位。[任天堂产品页](https://www.nintendo.com/us/store/products/namco-museum-archives-vol-2-switch/) · [合集入口与战场，约 3 分钟](https://www.youtube.com/watch?v=uc_If5fksfA&t=180s) · [本作系统菜单，约 11 分钟](https://www.youtube.com/watch?v=S26lUv598_o&t=659s) · [显示和壁纸选项，约 1 分钟](https://www.youtube.com/watch?v=S26lUv598_o&t=65s)
 
-上述录像没有同步手柄输入，Switch 输入到画面的延迟、回退的精确跨度和逐帧音画同步仍待测量。本地未发现已连接的 Android TV，当前内核没有 KVM。官方 API 34 电视工作流会启动加速模拟器，用两支独立手柄操作安装后的 APK 并保存屏幕、声音和重启读档记录。[设备验收工作流](../../.github/workflows/mame-runtime.yml)
+Android TV 已在 Android SDK 的 API 34 电视镜像上通过验收。两支独立的内核手柄分别移动和开火，右肩键回退，第二支断开重连后继续控制玩家二。两辆坦克的位置、双人模式与暂停状态在进程重启读档后恢复。测试还覆盖了存档写保护、切回前台和游戏音频，并保存了 48 kHz PCM 录音及屏幕截图。首次双人游玩请先连接两支手柄，再打开游戏。[电视任务和原始附件](https://github.com/JC6/BattleCity/actions/runs/45106009654) · [设备验收工作流](../../.github/workflows/mame-runtime.yml)
+
+Switch 录像没有同步手柄输入。输入到画面的延迟、回退的精确跨度、逐帧音画同步以及实体电视的手柄与音响表现仍待实机测量。
 
 最终 Web 包在 Chromium 和 WebKit 均已通过键盘测试，覆盖 720p 与 1080p、单人和双人、选关、Construction、系统菜单、回退、存档保护以及刷新后的读档。[键盘端到端测试](../../tests/nes/browser-game.cjs)
 
