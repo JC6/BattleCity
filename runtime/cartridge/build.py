@@ -51,7 +51,9 @@ def art(logo_map):
                 for value in bytes.fromhex(glyph)]
         tile(ord(char), rows + ['00000000'])
     font_source=assets.split('export const FONT:',1)[1].split('};',1)[0]
+    font={}
     for ch, rows in re.findall(r""""(.)": glyph\('([01 ]+)'\)""",font_source):
+        font[ch]=rows.split()
         if ord(ch)<96 or ch=="©":
             tile(169 if ch=="©" else ord(ch), colors(rows.split(),{'1':'3'}))
     tile(ord('<'),colors(bitmap('ARROW'),{'1':'3','.':'0'}))
@@ -89,7 +91,9 @@ def art(logo_map):
     for line in ('BATTLE','CITY','GAME','OVER','HISCORE','0123456789'):
         for tile_y in range(4):
             for tile_x in range(4*len(line)):
-                glyph = bytes.fromhex(LETTERS[line[tile_x//4]])
+                char=line[tile_x//4]
+                screen_word=line in ('BATTLE','CITY','GAME','OVER')
+                glyph=bytes.fromhex(LETTERS[char])
                 rows = []
                 for j in range(8):
                     y = tile_y*8+j
@@ -97,6 +101,15 @@ def art(logo_map):
                     for i in range(8):
                         x = (tile_x%4)*8+i
                         col = x//5
+                        if screen_word:
+                            # Each regular glyph pixel becomes a 4x4 piece of brickwork.
+                            offset=0 if line=='BATTLE' else 4
+                            col=(x+offset)//4
+                            gy=y-(4 if line=='OVER' else 0)
+                            ink=gy>=0 and col<8 and font[char][gy//4][col]=='1'
+                            mortar=(x+offset+4*(gy//4))%8==4 or gy%4==3
+                            row+=('3' if mortar else '2') if ink else '0'
+                            continue
                         if col>=5 or y>=28 or not glyph[y//4] & (16>>col):
                             row += '0'
                         elif y%4==3 or (x+4*((y//4)%2))%8==7:

@@ -612,7 +612,7 @@ static void game_over_page(void) {
   begin_screen();
   mode = GAME_OVER_PAGE;
   brick_word(8, 9, large_letters + WORD_GAME, 16, 16);
-  brick_word(8, 16, large_letters + WORD_OVER, 16, 16);
+  brick_word(8, 15, large_letters + WORD_OVER, 16, 16);
   end_screen();
   battle_ticks = 0;
   PLAY_CUE(OVER_PULSE1);

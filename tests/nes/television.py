@@ -237,7 +237,8 @@ def run(apk, labels, results):
                                       '-vf','scale=192:108','-frames:v','1','-threads','1',
                                       '-f','rawvideo','-pix_fmt','rgb24','pipe:1'],
                                      input=image,capture_output=True,check=True).stdout
-                if sum(rgb[:3])>15: return False
+                corner=(192*3+12)*3
+                if sum(rgb[corner:corner+3])>15: return False
                 return sum(g-r>35 and b>g and g>48 for r,g,b in struct.iter_unpack('BBB',rgb))>12
             credit_image=wait(lambda: adb('exec-out','screencap','-p'),credits_visible,'scrolling English credits')
             (results/'staff-credits.png').write_bytes(credit_image)

@@ -190,7 +190,8 @@ async function menu(page, keys, message) {
                 window.menuSample = () => {
                     if (!(window.menuKeysHeld & bit)) return;
                     if (key === 'Escape' && !window.menuActive) return;
-                    if (key === 'Enter' && (!window.uiSelectPressed || ++frames < 6)) return;
+                    if (key === 'Enter' && !window.uiSelectPressed) return;
+                    if ((key === 'Enter' || key === 'Backspace') && ++frames < 6) return;
                     clearTimeout(timer);
                     window.menuSample = null;
                     resolve(true);
@@ -370,7 +371,8 @@ async function verify(engine, suite) {
             window.creditTitleY=()=>{
                 ctx.drawImage(Module.canvas,0,0,320,180);
                 const p=ctx.getImageData(0,0,320,180).data;
-                if (p[0]+p[1]+p[2]>15) return -1;
+                const corner=(320*4+20)*4;
+                if (p[corner]+p[corner+1]+p[corner+2]>15) return -1;
                 let sum=0,hits=0;
                 for(let y=4;y<178;y++) for(let x=66;x<254;x++) {
                     const i=(320*y+x)*4;
