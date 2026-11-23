@@ -133,8 +133,8 @@ jobs:
           - { target: tv, platform: android, abi: arm64-v8a }
           - { target: tv-emulator, platform: android, abi: x86 }
     env:
-      PLATFORM: ${{ matrix.platform }}
-      TARGET: ${{ matrix.target }}
+      PACKAGE_PLATFORM: ${{ matrix.platform }}
+      PACKAGE_TARGET: ${{ matrix.target }}
       BATTLECITY_ANDROID_ABI: ${{ matrix.abi }}
       CARTRIDGE: ${{ inputs.cartridge }}
     steps:
@@ -218,11 +218,11 @@ jobs:
       - name: Verify the packaged cartridge ${{ needs.cartridge.outputs.sha256 }}
         run: |
           mkdir -p deliverable
-          if [[ "$PLATFORM" == web ]]; then
+          if [[ "$PACKAGE_PLATFORM" == web ]]; then
             cp build/mame-runtime/web/battlecity-web.zip deliverable/BattleCity-Web.zip
             python3 tests/nes/package.py deliverable/BattleCity-Web.zip "build/shared/$CARTRIDGE.nes"
           else
-            apk="deliverable/$TARGET.apk"
+            apk="deliverable/$PACKAGE_TARGET.apk"
             outputs=runtime/android/build
             if [[ "$BATTLECITY_ANDROID_ABI" == x86 ]]; then outputs="$outputs/x86"; fi
             cp "$outputs/outputs/apk/debug/BattleCityRuntime-debug.apk" "$apk"

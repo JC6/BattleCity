@@ -51,7 +51,7 @@ if ! cmp -s "$repo/runtime/mainmenu.cpp" "$tree/src/frontend/mame/ui/mainmenu.cp
     cp "$repo/runtime/mainmenu.cpp" "$tree/src/frontend/mame/ui/mainmenu.cpp"
 fi
 
-flags=(SUBTARGET=battlecity SOURCES=src/mame/nintendo/nes.cpp OSD=sdl3 -j"${BUILD_JOBS:-2}")
+flags=(TARGET=mame SUBTARGET=battlecity SOURCES=src/mame/nintendo/nes.cpp OSD=sdl3 -j"${BUILD_JOBS:-2}")
 if [[ "$platform" == android ]]; then
     abi=${BATTLECITY_ANDROID_ABI:-arm64-v8a}
     case "$abi" in
