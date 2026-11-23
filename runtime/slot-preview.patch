@@ -1,0 +1,32 @@
+--- a/src/emu/machine.cpp
++++ b/src/emu/machine.cpp
+@@ -21,6 +21,7 @@
+ #include "dirtc.h"
+ #include "emuopts.h"
+ #include "fileio.h"
++#include "screen.h"
+ #include "http.h"
+ #include "image.h"
+ #include "input.h"
+@@ -1026,6 +1027,21 @@
+ 						std::remove(temporary.c_str());
+ 						saverr = STATERR_WRITE_ERROR;
+ 					}
++					else if (saverr == STATERR_NONE)
++					{
++						// Preview images are optional for existing states and failed captures.
++						auto const path = temporary.substr(0, temporary.size() - 4) + ".png";
++						std::remove(path.c_str());
++						auto *screen = screen_device_enumerator(root_device()).first();
++						emu_file preview(OPEN_FLAG_WRITE | OPEN_FLAG_CREATE);
++						if (screen && !preview.open(path + ".tmp"))
++						{
++							video().save_snapshot(screen, preview);
++							preview.close();
++							if (std::rename((path + ".tmp").c_str(), path.c_str()))
++								std::remove((path + ".tmp").c_str());
++						}
++					}
+ 				}
+ 
+ 				// handle the result

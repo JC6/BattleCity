@@ -1,0 +1,29 @@
+--- a/src/osd/modules/sound/js_sound.js
++++ b/src/osd/modules/sound/js_sound.js
+@@ -28,7 +28,10 @@
+ 		//Return if already created:
+ 		return;
+ 	}
+-	if (typeof AudioContext != "undefined") {
++	if (Module.gameAudioContext) {
++		context = Module.gameAudioContext;
++	}
++	else if (typeof AudioContext != "undefined") {
+ 		//Standard context creation:
+ 		context = new AudioContext();
+ 	}
+@@ -152,10 +155,11 @@
+ 		}
+ 	}
+ 	//Pad with latest if we're underrunning:
+-	var idx = (index == 0 ? bufferSize : index) - 1;
++	var left = index ? buffers[0][index - 1] : 0;
++	var right = index ? buffers[1][index - 1] : 0;
+ 	while (index < 4096) {
+-		buffers[0][index] = buffers[0][idx];
+-		buffers[1][index++] = buffers[1][idx];
++		buffers[0][index] = left;
++		buffers[1][index++] = right;
+ 	}
+ 	//Deep inside the bowels of vendors bugs,
+ 	//we're using watchdog for a firefox bug,

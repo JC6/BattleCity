@@ -1,0 +1,125 @@
+package org.jiangc.bc.runtime;
+
+import android.graphics.Rect;
+import android.os.Bundle;
+import android.widget.RelativeLayout;
+import org.libsdl.app.SDLActivity;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+
+public final class GameActivity extends SDLActivity {
+    private boolean showingMenu;
+
+    @Override
+    protected void onCreate(Bundle state) {
+        super.onCreate(state);
+        if (mLayout == null || mSurface == null) return;
+        applyWallpaper(wallpaperMode(-1));
+        mLayout.addOnLayoutChangeListener((view, l, t, r, b, oldL, oldT, oldR, oldB) ->
+                resizeSurface(r - l, b - t));
+    }
+
+    // Called on the emulation thread by the shared player menu.
+    public int screenMode(int requested) {
+        android.content.SharedPreferences prefs = getSharedPreferences("display", MODE_PRIVATE);
+        if (requested >= 0 && requested <= 3) {
+            prefs.edit().putInt("mode", requested).apply();
+            runOnUiThread(() -> resizeSurface(mLayout.getWidth(), mLayout.getHeight()));
+        }
+        return prefs.getInt("mode", 0);
+    }
+
+    public int pictureMode(int requested) {
+        android.content.SharedPreferences prefs = getSharedPreferences("display", MODE_PRIVATE);
+        if (requested >= 0 && requested <= 3) prefs.edit().putInt("picture", requested).apply();
+        return prefs.getInt("picture", 0);
+    }
+
+    public int wallpaperMode(int requested) {
+        android.content.SharedPreferences prefs = getSharedPreferences("display", MODE_PRIVATE);
+        if (requested >= 0 && requested <= 3) {
+            prefs.edit().putInt("wallpaper", requested).apply();
+            runOnUiThread(() -> applyWallpaper(requested));
+        }
+        return prefs.getInt("wallpaper", 0);
+    }
+
+    private void applyWallpaper(int mode) {
+        if (mode == 3) {
+            mLayout.setBackgroundColor(android.graphics.Color.BLACK);
+        } else {
+            int image = mode == 1 ? R.drawable.battle_stars : mode == 2 ? R.drawable.battle_symbols : R.drawable.battle_surround;
+            android.graphics.drawable.BitmapDrawable background =
+                    (android.graphics.drawable.BitmapDrawable) getDrawable(image).mutate();
+            background.setGravity(android.view.Gravity.FILL);
+            background.setFilterBitmap(true);
+            mLayout.setBackground(background);
+        }
+    }
+
+    public void pairGamepads() {
+        runOnUiThread(() -> {
+            try {
+                startActivity(new android.content.Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS));
+            } catch (android.content.ActivityNotFoundException unavailable) {
+                android.widget.Toast.makeText(this, "Open Bluetooth settings on your TV to pair a gamepad.",
+                        android.widget.Toast.LENGTH_LONG).show();
+            }
+        });
+    }
+
+    public void showSystemMenu(boolean visible) {
+        runOnUiThread(() -> {
+            showingMenu = visible;
+            resizeSurface(mLayout.getWidth(), mLayout.getHeight());
+        });
+    }
+
+    private void resizeSurface(int width, int height) {
+        if (width <= 0 || height <= 0) return;
+        int mode = screenMode(-1);
+        float aspect = mode == 2 ? 256f / 224 : 4f / 3;
+        int screenWidth = mode == 3 ? width :
+                Math.min(width, Math.round(height * (mode == 1 ? 1f : 0.83f) * aspect));
+        int visible = mode == 3 ? height : Math.round(screenWidth / aspect);
+        int full = Math.round(visible * 240f / 224);
+        if (showingMenu) {
+            screenWidth = Math.min(width, Math.round(height * 16f / 9));
+            visible = full = Math.round(screenWidth * 9f / 16);
+        }
+        RelativeLayout.LayoutParams size = (RelativeLayout.LayoutParams) mSurface.getLayoutParams();
+        if (size.width != screenWidth || size.height != full) {
+            size.width = screenWidth;
+            size.height = full;
+            size.addRule(RelativeLayout.CENTER_IN_PARENT);
+            mSurface.setLayoutParams(size);
+        }
+        int crop = (full - visible) / 2;
+        mSurface.setClipBounds(new Rect(0, crop, screenWidth, crop + visible));
+    }
+
+    @Override
+    protected String[] getLibraries() {
+        return new String[] {"SDL3", "main"};
+    }
+
+    @Override
+    protected String[] getArguments() {
+        File root = getFilesDir();
+        File game = new File(root, "game.nes");
+        String cartridgeId;
+        try (InputStream id = getAssets().open("cartridge.id");
+             InputStream stream = getAssets().open("game.nes")) {
+            cartridgeId = new String(id.readAllBytes(), java.nio.charset.StandardCharsets.US_ASCII);
+            Files.copy(stream, game.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException error) {
+            throw new IllegalStateException("Cannot prepare the bundled cartridge", error);
+        }
+        return new String[] {"nes", "-cart", game.getPath(), "-skip_gameinfo", "-inipath", root.getPath(),
+            "-video", "soft", "-nokeepaspect", "-joystick", "-rewind", "-state_directory", new File(root, "states/" + cartridgeId).getPath(),
+            "-cfg_directory", new File(root, "cfg").getPath()};
+    }
+}

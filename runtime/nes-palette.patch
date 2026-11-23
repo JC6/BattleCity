@@ -1,0 +1,17 @@
+--- a/src/devices/video/ppu2c0x.cpp
++++ b/src/devices/video/ppu2c0x.cpp
+@@ -459,6 +459,14 @@
+ 			}
+ 		}
+ 	}
++	// Flat regions of Nintendo's Battle City Switch screenshot, with emphasis off.
++	if (!is_pal)
++	{
++		set_pen_color(0x00, 98, 98, 98);   // border and brick mortar
++		set_pen_color(0x06, 93, 0, 0);     // brick shadow
++		set_pen_color(0x10, 165, 165, 165); // steel
++		set_pen_color(0x17, 147, 64, 0);   // brick face
++	}
+ }
+ 
+ void ppu2c0x_rgb_device::init_palette_tables()

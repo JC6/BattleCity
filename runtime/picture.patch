@@ -1,0 +1,118 @@
+--- a/src/emu/rendersw.hxx
++++ b/src/emu/rendersw.hxx
+@@ -1744,7 +1744,32 @@
+ 	//-------------------------------------------------
+ 
+ public:
+-	static void draw_primitives(render_primitive_list const &primlist, void *dstdata, u32 width, u32 height, u32 pitch)
++	// The player can filter the game image without filtering UI cards or text.
++	static void draw_game_quad(render_primitive const &prim, PixelType *pixels, u32 width, u32 height, u32 pitch, u8 picture)
++	{
++		setup_and_draw_textured_quad(prim, pixels, width, height, pitch);
++		if (!(picture & 2)) return;
++		int const x0 = std::clamp<int>(round_nearest(prim.bounds.x0), 0, int(width));
++		int const x1 = std::clamp<int>(round_nearest(prim.bounds.x1), 0, int(width));
++		int const y0 = std::clamp<int>(round_nearest(prim.bounds.y0), 0, int(height));
++		int const y1 = std::clamp<int>(round_nearest(prim.bounds.y1), 0, int(height));
++		int const span = y1 - y0;
++		int const bands = std::min(int(prim.texture.height) * 2, span);
++		for (int y = y0; y < y1; ++y)
++		{
++			if (!(((y-y0) * bands / span) & 1)) continue;
++			auto *row = pixels + y * pitch;
++			for (int x = x0; x < x1; ++x)
++			{
++				auto const p = row[x];
++				auto const colour = dest_assemble_rgb(dest_r(p)*3/4, dest_g(p)*3/4, dest_b(p)*3/4);
++				row[x] = (p & ~dest_rgb_to_pixel(255, 255, 255)) | colour;
++			}
++		}
++	}
++
++	template <bool PictureOptions = false>
++	static void draw_primitives(render_primitive_list const &primlist, void *dstdata, u32 width, u32 height, u32 pitch, u8 picture = 0)
+ 	{
+ 		// loop over the list and render each element
+ 		for (render_primitive const *prim = primlist.first(); prim != nullptr; prim = prim->next())
+@@ -1757,6 +1782,20 @@
+ 				case render_primitive::QUAD:
+ 					if (!prim->texture.base)
+ 						draw_rect(*prim, reinterpret_cast<PixelType *>(dstdata), width, height, pitch);
++					else if constexpr (PictureOptions)
++					{
++						auto *pixels = reinterpret_cast<PixelType *>(dstdata);
++						if (picture && PRIMFLAG_GET_SCREENTEX(prim->flags))
++						{
++							using filtered = software_renderer<PixelType, SrcShiftR, SrcShiftG, SrcShiftB, DstShiftR, DstShiftG, DstShiftB, NoDestRead, true>;
++							if (picture & 1)
++								filtered::draw_game_quad(*prim, pixels, width, height, pitch, picture);
++							else
++								draw_game_quad(*prim, pixels, width, height, pitch, picture);
++						}
++						else
++							setup_and_draw_textured_quad(*prim, pixels, width, height, pitch);
++					}
+ 					else
+ 						setup_and_draw_textured_quad(*prim, reinterpret_cast<PixelType *>(dstdata), width, height, pitch);
+ 					break;
+--- a/src/osd/modules/render/drawsdl3soft.cpp
++++ b/src/osd/modules/render/drawsdl3soft.cpp
+@@ -35,6 +35,8 @@
+ #include <cstdio>
+ #include <memory>
+ 
++
++extern int battlecity_picture(int requested);
+ 
+ namespace osd {
+ 
+@@ -349,33 +351,34 @@
+ 		prim.bounds.y1 = floor(fh * prim.bounds.y1 + 0.5f);
+ 	}
+ 
++	u8 const picture = battlecity_picture(-1);
+ 	// render to it
+ 	if (!m_scale_mode.is_yuv)
+ 	{
+ 		switch (rmask)
+ 		{
+ 			case 0xff000000:
+-				software_renderer<uint32_t, 0,0,0, 24,16,8>::draw_primitives(*window().m_primlist, surfptr, mamewidth, mameheight, pitch / 4);
++				software_renderer<uint32_t, 0,0,0, 24,16,8>::draw_primitives<true>(*window().m_primlist, surfptr, mamewidth, mameheight, pitch / 4, picture);
+ 				break;
+ 
+ 			case 0x0000ff00:
+-				software_renderer<uint32_t, 0,0,0, 8,16,24>::draw_primitives(*window().m_primlist, surfptr, mamewidth, mameheight, pitch / 4);
++				software_renderer<uint32_t, 0,0,0, 8,16,24>::draw_primitives<true>(*window().m_primlist, surfptr, mamewidth, mameheight, pitch / 4, picture);
+ 				break;
+ 
+ 			case 0x00ff0000:
+-				software_renderer<uint32_t, 0,0,0, 16,8,0>::draw_primitives(*window().m_primlist, surfptr, mamewidth, mameheight, pitch / 4);
++				software_renderer<uint32_t, 0,0,0, 16,8,0>::draw_primitives<true>(*window().m_primlist, surfptr, mamewidth, mameheight, pitch / 4, picture);
+ 				break;
+ 
+ 			case 0x000000ff:
+-				software_renderer<uint32_t, 0,0,0, 0,8,16>::draw_primitives(*window().m_primlist, surfptr, mamewidth, mameheight, pitch / 4);
++				software_renderer<uint32_t, 0,0,0, 0,8,16>::draw_primitives<true>(*window().m_primlist, surfptr, mamewidth, mameheight, pitch / 4, picture);
+ 				break;
+ 
+ 			case 0xf800:
+-				software_renderer<uint16_t, 3,2,3, 11,5,0>::draw_primitives(*window().m_primlist, surfptr, mamewidth, mameheight, pitch / 2);
++				software_renderer<uint16_t, 3,2,3, 11,5,0>::draw_primitives<true>(*window().m_primlist, surfptr, mamewidth, mameheight, pitch / 2, picture);
+ 				break;
+ 
+ 			case 0x7c00:
+-				software_renderer<uint16_t, 3,3,3, 10,5,0>::draw_primitives(*window().m_primlist, surfptr, mamewidth, mameheight, pitch / 2);
++				software_renderer<uint16_t, 3,3,3, 10,5,0>::draw_primitives<true>(*window().m_primlist, surfptr, mamewidth, mameheight, pitch / 2, picture);
+ 				break;
+ 
+ 			default:
+@@ -387,7 +390,7 @@
+ 	{
+ 		assert (m_yuv_bitmap != nullptr);
+ 		assert (surfptr != nullptr);
+-		software_renderer<uint16_t, 3,3,3, 10,5,0>::draw_primitives(*window().m_primlist, m_yuv_bitmap.get(), mamewidth, mameheight, mamewidth);
++		software_renderer<uint16_t, 3,3,3, 10,5,0>::draw_primitives<true>(*window().m_primlist, m_yuv_bitmap.get(), mamewidth, mameheight, mamewidth, picture);
+ 		m_scale_mode.yuv_blit(m_yuv_bitmap.get(), surfptr, pitch, m_yuv_lookup.get(), mamewidth, mameheight);
+ 	}
+ 

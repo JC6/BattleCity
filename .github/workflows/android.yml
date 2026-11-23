@@ -1,10 +1,6 @@
-name: BattleCity Android
+name: Legacy Android diagnostics
 
 on:
-  push:
-    branches: [master]
-  pull_request:
-    branches: [master]
   workflow_dispatch:
     inputs:
       engine_diagnostics:

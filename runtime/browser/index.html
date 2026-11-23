@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,"><title>Battle City</title><style>
+html,body{height:100%;margin:0;background:#000;color:white}main{height:100%;display:grid;place-items:center;background:#171613 url("battle_surround.jpg") center/100% 100% no-repeat}
+main[data-wallpaper="1"]{background-image:url("battle_stars.jpg")}main[data-wallpaper="2"]{background-image:url("battle_symbols.jpg")}main[data-wallpaper="3"]{background:#000}
+output{position:fixed;bottom:1rem;left:1rem;background:#111;color:#fff;padding:.5em}#display{width:min(100vw,110.667vh);aspect-ratio:4/3;overflow:hidden;position:relative}
+#display[data-mode="1"]{width:min(100vw,133.3333vh)}
+#display[data-mode="2"]{aspect-ratio:256/224;width:min(100vw,94.85714vh)}
+#display[data-mode="3"]{width:100vw;height:100vh}
+#display[data-menu="1"]{width:min(100vw,177.7778vh);height:auto;aspect-ratio:16/9}
+#display[data-menu="1"] canvas{transform:none}
+canvas{position:absolute;inset:0;width:100%;height:100%;transform:scaleY(1.07142857);outline:0;image-rendering:pixelated}button{font:inherit;padding:.7em 2em}
+</style><main><button id="start">Start</button><div id="display" hidden><canvas width="320" height="240" hidden id="canvas" tabindex="0"></canvas></div><output id="status" hidden></output></main>
+<script>
+const screenElement = document.querySelector("canvas");
+const statusElement = document.querySelector("output");
+function report(message) {
+  statusElement.hidden = !message;
+  statusElement.textContent = message;
+}
+var Module = {
+  screenMode(requested) {
+    const display = document.getElementById("display");
+    if (requested >= 0 && requested <= 3) {
+      display.dataset.mode = String(requested);
+      try { localStorage.setItem("battlecity-display", String(requested)); } catch {}
+    }
+    return Number(display.dataset.mode || 0);
+  },
+  pictureMode(requested) {
+    if (requested >= 0 && requested <= 3) {
+      screenElement.dataset.picture = String(requested);
+      try { localStorage.setItem("battlecity-picture", String(requested)); } catch {}
+    }
+    const mode = Number(screenElement.dataset.picture || 0);
+    screenElement.style.imageRendering = mode & 1 ? "auto" : "pixelated";
+    return mode;
+  },
+  wallpaperMode(requested) {
+    const surround = document.querySelector("main");
+    if (Number.isInteger(requested) && requested >= 0 && requested <= 3) {
+      surround.dataset.wallpaper = String(requested);
+      try { localStorage.setItem("battlecity-wallpaper", String(requested)); } catch {}
+    }
+    return Number(surround.dataset.wallpaper || 0);
+  },
+  canvas: screenElement,
+  arguments: ["nes","-nokeepaspect","-window","-nomaximize","-resolution0","320x240","-nothrottle","-nomouse","-cart","/game.nes","-video","soft","-sound","js","-ctrlrpath","/","-ctrlr","keyboard","-rewind",
+              "-state_directory","/local/states/@CARTRIDGE_SHA256@","-cfg_directory","/local/cfg","-skip_gameinfo"],
+  onAbort: () => report("The game could not start.")
+};
+try {
+  const picture = Number(localStorage.getItem("battlecity-picture"));
+  if (Number.isInteger(picture) && picture >= 0 && picture <= 3)
+    screenElement.dataset.picture = String(picture);
+  const wallpaper = Number(localStorage.getItem("battlecity-wallpaper"));
+  if (Number.isInteger(wallpaper) && wallpaper >= 0 && wallpaper <= 3)
+    document.querySelector("main").dataset.wallpaper = String(wallpaper);
+  const saved = Number(localStorage.getItem("battlecity-display"));
+  if (Number.isInteger(saved) && saved >= 0 && saved <= 3)
+    document.getElementById("display").dataset.mode = String(saved);
+} catch {}
+const startButton = document.querySelector("button");
+startButton.focus();
+startButton.onclick = function () {
+  const Audio = window.AudioContext || window.webkitAudioContext;
+  if (Audio) {
+    Module.gameAudioContext = new Audio();
+    Module.arguments.push("-samplerate", String(Module.gameAudioContext.sampleRate));
+    Module.gameAudioContext.resume().catch(() => report("Audio could not start."));
+  }
+  this.hidden = true;
+  document.getElementById("display").hidden = false;
+  screenElement.hidden = false;
+  screenElement.focus();
+  const script = document.createElement("script");
+  script.src = "battlecity.js";
+  script.onerror = () => report("Could not load the game engine.");
+  document.head.appendChild(script);
+};
+</script></html>

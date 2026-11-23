@@ -1,0 +1,23 @@
+--- a/src/emu/save.cpp
++++ b/src/emu/save.cpp
+@@ -968,7 +968,8 @@
+ 			const char *const opnamed = (operation == rewind_operation::LOAD) ? "loaded" : "captured";
+ 
+ 			// for rewinding outside of debugger, give some indication that rewind has worked, as screen doesn't update
+-			m_save.machine().popmessage("Rewind state %i %s.\n%s", m_current_index + 1, opnamed, warning);
++			if (operation == rewind_operation::LOAD)
++				m_save.machine().popmessage("Rewind state %i %s.\n%s", m_current_index + 1, opnamed, warning);
+ 			if (m_first_time_warning && operation == rewind_operation::LOAD && !supported)
+ 			{
+ 				m_save.machine().logerror(warning);
+--- a/src/frontend/mame/ui/ui.cpp
++++ b/src/frontend/mame/ui/ui.cpp
+@@ -1735,7 +1735,7 @@
+ 	if (inp.pressed(IPT_UI_MENU))
+ 	{
+ 		m_ui_target = &current_ui_target();
+-		if (!machine().paused() && options().menu_pause())
++		if (!machine().paused())
+ 		{
+ 			machine().pause();
+ 			m_paused_for_menu = true;

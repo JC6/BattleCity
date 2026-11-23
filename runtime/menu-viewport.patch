@@ -1,0 +1,19 @@
+--- a/src/frontend/mame/ui/ui.cpp
++++ b/src/frontend/mame/ui/ui.cpp
+@@ -930,6 +930,8 @@
+ //  render it; called by video.c
+ //-------------------------------------------------
+ 
++extern void battlecity_menu_visible(bool visible);
++
+ bool mame_ui_manager::update_and_render(render_target &target)
+ {
+ 	// always start clean
+@@ -968,6 +970,7 @@
+ 	// call the current UI handler
+ 	machine().ui_input().check_ui_inputs();
+ 	uint32_t const handler_result = m_handler_callback();
++	battlecity_menu_visible(is_menu_active());
+ 
+ 	// display any popup messages
+ 	if (osd_ticks() < m_popup_text_end)

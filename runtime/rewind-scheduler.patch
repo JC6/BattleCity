@@ -1,0 +1,36 @@
+--- a/src/emu/machine.cpp
++++ b/src/emu/machine.cpp
+@@ -361,6 +361,15 @@
+ //  run - execute the machine
+ //-------------------------------------------------
+ 
++static void run_timeslice(running_machine &machine)
++{
++	auto &scheduler = machine.scheduler();
++	auto const previous_second = scheduler.time().seconds();
++	scheduler.timeslice();
++	if (scheduler.time().seconds() != previous_second && machine.save().rewind()->enabled() && scheduler.can_save())
++		machine.rewind_capture();
++}
++
+ int running_machine::run(bool quiet)
+ {
+ 	int error = EMU_ERR_NONE;
+@@ -440,7 +449,7 @@
+ 
+ 			// execute CPUs if not paused
+ 			if (!m_paused)
+-				m_scheduler.timeslice();
++				run_timeslice(*this);
+ 			// otherwise, just pump video updates and sound mapping updates through
+ 			else
+ 			{
+@@ -1440,7 +1449,7 @@
+ 
+ 		while (!machine->m_paused && !machine->scheduled_event_pending() && scheduler->time() < stoptime)
+ 		{
+-			scheduler->timeslice();
++			run_timeslice(*machine);
+ 			// handle save/load
+ 			if (machine->m_saveload_schedule != saveload_schedule::NONE)
+ 			{

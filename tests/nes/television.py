@@ -1,0 +1,279 @@
+"""Run the installed SDL/MAME TV app with two Android kernel gamepads (dedicated test device)."""
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import struct
+import subprocess
+import time
+import wave
+from zipfile import ZipFile
+
+PACKAGE = 'org.jiangc.bc.runtime'
+ADB = os.environ.get('ADB', 'adb')
+SOUTH, EAST, WEST, MENU, REWIND, SELECT, START = 304, 305, 307, 310, 311, 314, 315
+TIMEOUT = int(os.environ.get('BATTLECITY_DEVICE_TIMEOUT', '90'))
+
+
+def adb(*args, data=None, check=True):
+    return subprocess.run([ADB, *args], input=data, capture_output=True, check=check, timeout=max(35, TIMEOUT)).stdout
+
+
+def private(*args, **kwargs):
+    return adb('exec-out', 'run-as', PACKAGE, *args, **kwargs)
+
+
+def wait(read, predicate, description):
+    deadline = time.monotonic() + TIMEOUT
+    last = None
+    while time.monotonic() < deadline:
+        last = read()
+        if predicate(last):
+            return last
+        time.sleep(.15)
+    raise RuntimeError(f'{description}: timed out, last observation {str(last)[:220]}')
+
+
+class Pad:
+    def __init__(self, number, events):
+        self.number = number
+        self.events = events
+        self.proc = subprocess.Popen([ADB, 'shell', '-T', 'uinput', '-'], stdin=subprocess.PIPE)
+        name = f'Battle City Test Pad {number}'
+        self.send({'command': 'register', 'name': name, 'vid': 0x045e, 'pid': 0x028e,
+                   'bus': 'usb', 'port': f'usb/battlecity/{number}',
+                   'configuration': [{'type': 100, 'data': [1, 3]},
+                                     {'type': 101, 'data': [304,305,307,308,310,311,314,315]},
+                                     {'type': 103, 'data': [0,1,16,17]}],
+                   'abs_info': [{'code': n, 'info': {'minimum': -v, 'maximum': v}}
+                                for n,v in [(0,32767),(1,32767),(16,1),(17,1)]]})
+        wait(lambda: adb('shell','dumpsys','input').decode(errors='replace'),
+             lambda s: name in s, name)
+
+    def send(self, event):
+        event['id'] = self.number
+        self.events.write(json.dumps(event)+'\n')
+        self.events.flush()
+        self.proc.stdin.write((json.dumps(event)+'\n').encode())
+        self.proc.stdin.flush()
+
+    def event(self, kind, code, value):
+        self.send({'command':'inject', 'events':[kind, code, value, 0, 0, 0]})
+
+    def tap(self, code):
+        self.event(1, code, 1)
+        try:
+            presented(3)
+        finally:
+            self.event(1, code, 0)
+        presented(4)
+
+    def direction(self, y):
+        self.event(3, 17, y)
+
+    def down(self):
+        self.direction(1)
+        try:
+            presented(3)
+        finally:
+            self.direction(0)
+        presented(4)
+
+    def close(self):
+        if self.proc.stdin and not self.proc.stdin.closed:
+            self.proc.stdin.close()
+            self.proc.wait(timeout=10)
+
+
+def observer(labels, directory):
+    addresses = {name: int(value, 16) for value, name in
+                 re.findall(r'^al (\w+) \._(\w+)$', labels.read_text(), re.M)}
+    fields = [('mode',0),('players',0),('selection',0),('stage',0),('title_scroll',0),
+              ('tanks',1),('tanks',14),('shots',3),('shots',7),('battle_ticks',1)]
+    reads = ','.join(f'ram:read_u8({addresses[key]+offset})' for key,offset in fields)
+    # Observe the game through its CPU bus. Publishing between rendered frames
+    # also works while the emulated CPU is paused in the native player menu.
+    return f"""
+local ram=manager.machine.devices[":maincpu"].spaces.program
+local tick,p1,p2=0,0,0
+emu.register_frame_done(function()
+  tick=tick+1
+  if ram:read_u8({addresses['shots']+3})==1 then p1=tick end
+  if ram:read_u8({addresses['shots']+7})==1 then p2=tick end
+  if tick%3~=0 then return end
+  local file=assert(io.open("{directory}/tv-observation.tmp","w"))
+  file:write(table.concat({{{reads},manager.ui.menu_active and 1 or 0,p1,p2,tick}},','))
+  file:close()
+  assert(os.rename("{directory}/tv-observation.tmp","{directory}/tv-observation"))
+end)
+"""
+
+
+def state():
+    raw = private('cat','files/tv-observation',check=False).strip()
+    if not re.fullmatch(rb'[0-9]+(,[0-9]+){13}', raw):
+        return {}
+    keys = 'mode players selection stage scroll y1 y2 shot1 shot2 ready menu fire1 fire2 frame'.split()
+    return dict(zip(keys,map(int,raw.split(b','))))
+
+
+def check(predicate, description):
+    return wait(state, lambda row: row and predicate(row), description)
+
+
+def presented(count):
+    first = check(lambda s: True, 'display frame')['frame']
+    check(lambda s: s['frame'] >= first + count, 'controller sampling')
+
+
+def capture_audio(results):
+    # The core writes signed 16-bit PCM. A live WAV can still have
+    # placeholder chunk sizes until the emulator closes the stream.
+    header = private('head', '-c', '44', 'files/tv-audio.wav')
+    if (header[:4], header[8:12], header[36:40]) != (b'RIFF', b'WAVE', b'data'):
+        raise ValueError('Missing PCM WAV header from the installed core')
+    fmt, channels, rate = struct.unpack_from('<HHI', header, 20)
+    bits, = struct.unpack_from('<H', header, 34)
+    assert fmt == 1 and channels in (1, 2) and bits == 16 and rate > 0
+    size = rate * channels * 2
+    audio = private('tail', '-c', str(size), 'files/tv-audio.wav')
+    assert len(audio) == size, 'less than one second of PCM'
+    samples = [value for value, in struct.iter_unpack('<h', audio)]
+    assert max(samples) - min(samples) > 128, 'silent game audio'
+    with wave.open(str(results/'game.wav'), 'wb') as output:
+        output.setparams((channels, bits//8, rate, 0, 'NONE', 'not compressed'))
+        output.writeframes(audio)
+
+
+def launch():
+    private('rm','-f','files/tv-observation')
+    adb('shell','am','start','-W','-a','android.intent.action.MAIN',
+        '-c','android.intent.category.LEANBACK_LAUNCHER','-n',PACKAGE+'/.GameActivity')
+    check(lambda s:s['mode']==0 and not s['scroll'] and s['ready'], 'cold title')
+
+
+def run(apk, labels, results):
+    results.mkdir(parents=True,exist_ok=True)
+    adb('install','-r',str(apk))
+    directory = private('pwd').decode().strip()+'/files'
+    private('mkdir','-p','files')
+    with ZipFile(apk) as package:
+        digest = package.read('assets/cartridge.id').decode('ascii')
+    if not re.fullmatch(r'[a-f0-9]{64}', digest):
+        raise ValueError('Invalid bundled cartridge identity')
+    slot = f'files/states/{digest}/nes/1.sta'
+    # Leave existing player files intact. A completed run removes its own slot.
+    test_files = ['files/'+name for name in ('nes.ini','tv-observer.lua','tv-observation',
+                                               'tv-observation.tmp','tv-audio.wav')]
+    test_files.extend((slot,slot+'.png',slot+'.lock'))
+    for name in test_files:
+        if private('ls','-d',name,check=False).strip()==name.encode():
+            raise RuntimeError('Use a clean TV test profile: found '+name)
+    def write_private(name, content):
+        adb('shell','-T','run-as',PACKAGE,'sh','-c',f"'cat > files/{name}'",data=content.encode())
+    pads=[]
+    def capture(name):
+        image=adb('exec-out','screencap','-p')
+        assert image.startswith(b'\x89PNG') and len(image)>1000
+        (results/(name+'.png')).write_bytes(image)
+    try:
+        write_private('tv-observer.lua',observer(labels,directory))
+        write_private('nes.ini',f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\nwavwrite {directory}/tv-audio.wav\n')
+        (results/'device.txt').write_bytes(adb('shell','getprop'))
+        with (results/'gamepads.jsonl').open('w') as events:
+            for n in (1,2):
+                pads.append(Pad(n,events))
+            one,two=pads
+            launch()
+            capture('title')
+            one.tap(START)
+            check(lambda s:s['mode']==6,'solo stage selection')
+            one.tap(START)
+            check(lambda s:s['mode']==1 and s['players']==1,'solo battlefield')
+            settled=check(lambda s:s['y1']==192,'solo spawn')
+            check(lambda s:s['frame']>=settled['frame']+150,'rewind history')
+            one.direction(-1)
+            advanced=check(lambda s:s['y1']<=152,'travel before rewind')
+            one.direction(0)
+            one.tap(REWIND)
+            check(lambda s:s['y1']>advanced['y1'] and not s['menu'],'direct shoulder rewind')
+            adb('shell','am','force-stop',PACKAGE)
+            launch()
+            one.tap(SELECT)
+            check(lambda s:s['selection']==1,'two players selected')
+            one.tap(START)
+            check(lambda s:s['mode']==6,'co-op stage selection')
+            one.tap(START)
+            check(lambda s:s['mode']==1 and s['players']==2,'co-op field')
+            one.direction(-1)
+            two.direction(-1)
+            check(lambda s:s['y1']<188 and s['y2']<188,'independent movement')
+            one.direction(0)
+            two.direction(0)
+            start=state()['frame']
+            one.tap(SOUTH)
+            two.tap(SOUTH)
+            check(lambda s:min(s['fire1'],s['fire2'])>=start,'both tanks fired')
+            capture_audio(results)
+            capture('battle')
+            one.tap(START)
+            saved=check(lambda s:s['mode']==5,'paused battle')
+            one.tap(MENU)
+            check(lambda s:s['menu'],'save menu')
+            one.tap(SOUTH)
+            one.tap(SOUTH)
+            check(lambda s:not s['menu'],'saved and resumed')
+            wait(lambda: private('ls',slot,check=False).strip(),
+                 lambda name: name==slot.encode(), 'first slot on disk')
+            preview = private('cat',slot+'.png')
+            assert preview.startswith(b'\x89PNG\r\n\x1a\n'), 'missing game frame preview'
+            (results/'slot-1.png').write_bytes(preview)
+            one.tap(MENU)
+            one.tap(SOUTH)
+            one.tap(WEST)
+            wait(lambda: private('ls',slot+'.lock',check=False).strip(),
+                 lambda name: name==(slot+'.lock').encode(), 'slot overwrite protection')
+            one.tap(SOUTH)
+            check(lambda s:s['menu'],'protected slot keeps the picker open')
+            capture('protected-slot')
+            adb('shell','am','force-stop',PACKAGE)
+            launch()
+            one.tap(MENU)
+            check(lambda s:s['menu'],'load menu')
+            one.down()
+            one.tap(SOUTH)
+            one.tap(SOUTH)
+            restored=check(lambda s:not s['menu'] and s['mode']==5,'restored paused game')
+            for key in ('players','stage','y1','y2'):
+                assert saved[key]==restored[key],key
+            one.tap(START)
+            two.direction(1)
+            check(lambda s:s['y2']>saved['y2'],'changed P2 input after load')
+            two.direction(0)
+            two.close()
+            pads[1]=two=Pad(2,events)
+            old=state()['y2']
+            two.direction(-1)
+            check(lambda s:s['y2']<old-3,'reconnected player 2')
+            two.direction(0)
+            # Leave via the OS, then return through the TV launcher activity.
+            adb('shell','input','keyevent','KEYCODE_HOME')
+            adb('shell','am','start','-W','-n',PACKAGE+'/.GameActivity')
+            current=state()['frame']
+            check(lambda s:s['frame']>current+6 and s['players']==2,'foreground resume')
+            (results/'audio.txt').write_bytes(adb('shell','dumpsys','media.audio_flinger'))
+            capture('restored')
+            (results/'result.json').write_text(json.dumps({'saved':saved,'restored':restored,'result':'passed'},indent=2))
+    finally:
+        for pad in pads: pad.close()
+        (results/'logcat.txt').write_bytes(adb('logcat','-d','-t','2500'))
+        adb('shell','am','force-stop',PACKAGE)
+        private('rm','-f',*test_files)
+
+
+if __name__=='__main__':
+    parser=argparse.ArgumentParser(description=__doc__)
+    for name in ('apk','labels','results'): parser.add_argument(name,type=Path)
+    args=parser.parse_args()
+    run(args.apk,args.labels,args.results)

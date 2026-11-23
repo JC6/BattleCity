@@ -1,0 +1,65 @@
+--- a/src/emu/machine.cpp
++++ b/src/emu/machine.cpp
+@@ -9,6 +9,9 @@
+ ***************************************************************************/
+ 
+ #include "emu.h"
++#ifdef __EMSCRIPTEN__
++#include <emscripten.h>
++#endif
+ 
+ #include "config.h"
+ #include "crsshair.h"
+@@ -991,11 +994,25 @@
+ 
+ 			// open the file
+ 			emu_file file(m_saveload_searchpath ? m_saveload_searchpath : "", openflags);
+-			auto const filerr = file.open(m_saveload_pending_file);
++			bool const saving = m_saveload_schedule == saveload_schedule::SAVE;
++			auto const filerr = file.open(saving ? m_saveload_pending_file + ".tmp" : m_saveload_pending_file);
+ 			if (!filerr)
+ 			{
+ 				// read/write the save state
+ 				save_error saverr = (m_saveload_schedule == saveload_schedule::LOAD) ? m_save.read_file(file) : m_save.write_file(file);
++
++				if (saving)
++				{
++					std::string const temporary(file.fullpath());
++					if (saverr != STATERR_NONE)
++						file.remove_on_close();
++					file.close();
++					if ((saverr == STATERR_NONE) && std::rename(temporary.c_str(), temporary.substr(0, temporary.size() - 4).c_str()))
++					{
++						std::remove(temporary.c_str());
++						saverr = STATERR_WRITE_ERROR;
++					}
++				}
+ 
+ 				// handle the result
+ 				switch (saverr)
+@@ -1014,6 +1031,14 @@
+ 
+ 				case STATERR_NONE:
+ 				{
++#ifdef __EMSCRIPTEN__
++					if (saving)
++					{
++						EM_ASM({ Module.persistGameState(); });
++						break;
++					}
++					EM_ASM({ Module.stateLoaded(); });
++#endif
+ 					const char *const opnamed = (m_saveload_schedule == saveload_schedule::LOAD) ? "Loaded" : "Saved";
+ 					if (!m_save.supported())
+ 						popmessage("%s state %s %s.\nWarning: Save states are not officially supported for this system.", opnamed, preposname, m_saveload_pending_file);
+@@ -1027,9 +1051,7 @@
+ 					break;
+ 				}
+ 
+-				// close and perhaps delete the file
+-				if (saverr != STATERR_NONE && m_saveload_schedule == saveload_schedule::SAVE)
+-					file.remove_on_close();
++
+ 			}
+ 			else if ((openflags == OPEN_FLAG_READ) && (std::errc::no_such_file_or_directory == filerr))
+ 			{

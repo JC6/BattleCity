@@ -1,0 +1,259 @@
+name: Battle City NES runtime
+on:
+  workflow_call:
+    inputs:
+      cartridge:
+        type: string
+        default: game
+  workflow_dispatch:
+    inputs:
+      cartridge:
+        type: choice
+        description: Cartridge to package
+        options: [game, probe]
+        default: game
+permissions:
+  contents: read
+
+jobs:
+  cartridge:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build the shared cartridge
+        env:
+          CARTRIDGE: ${{ inputs.cartridge }}
+        run: |
+          mkdir -p build/shared
+          if [[ "$CARTRIDGE" == game ]]; then
+            sudo apt-get update && sudo apt-get install -y cc65
+            python3 runtime/cartridge/build.py build/shared/game.nes --labels build/shared/game.lbl
+            python3 tests/nes/catalogue.py build/shared/game.nes --labels build/shared/game.lbl
+          else
+            python3 tests/nes/probe.py build/shared/probe.nes
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cartridge
+          path: build/shared
+          if-no-files-found: error
+
+  stage-replays:
+    if: inputs.cartridge == 'game'
+    needs: cartridge
+    runs-on: ubuntu-24.04
+    container: ubuntu:26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        stages: ['1 2 3 4 5 6 7', '8 9 10 11 12 13 14', '15 16 17 18 19 20 21', '22 23 24 25 26 27 28', '29 30 31 32 33 34 35']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: cartridge
+          path: build/shared
+      - name: Install the native NES reference runner
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends mame python3
+          /usr/games/mame -version | head -1 | grep -E '^0[.]285([ .(]|$)'
+      - name: Compare the rendered field and every recorded battle update
+        shell: bash
+        env:
+          STAGES: ${{ matrix.stages }}
+          MAME: /usr/games/mame
+        run: |
+          set -o pipefail
+          read -ra stages <<< "$STAGES"
+          python3 tests/nes/verify_stages.py build/shared/game.nes --stages "${stages[@]}" --report stages.csv | tee stages.log
+      - name: Compare the two-player victory
+        if: always() && startsWith(matrix.stages, '1 ')
+        env:
+          MAME: /usr/games/mame
+        run: python3 tests/nes/verify_stages.py build/shared/game.nes --suite battle --players 2 --stages 1 --report coop.csv
+      - name: Compare the entire idle demonstration
+        if: always() && startsWith(matrix.stages, '1 ')
+        env:
+          MAME: /usr/games/mame
+        run: python3 tests/nes/verify_stages.py build/shared/game.nes --suite attract --report attract.csv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stage-replay-${{ strategy.job-index }}
+          path: |
+            stages.log
+            stages.csv
+            coop.csv
+            attract.csv
+
+  campaign-loop:
+    if: inputs.cartridge == 'game'
+    needs: cartridge
+    runs-on: ubuntu-24.04
+    container: ubuntu:26.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: cartridge
+          path: build/shared
+      - name: Replay one uninterrupted run through all seventy victories
+        env:
+          MAME: /usr/games/mame
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends mame python3
+          /usr/games/mame -version | head -1 | grep -E '^0[.]285([ .(]|$)'
+          python3 tests/nes/verify_stages.py build/shared/game.nes --suite loop --report loop.csv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: campaign-loop
+          path: loop.csv
+
+  package:
+    needs: cartridge
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: web, platform: web }
+          - { target: tv, platform: android, abi: arm64-v8a }
+          - { target: tv-emulator, platform: android, abi: x86 }
+    env:
+      PLATFORM: ${{ matrix.platform }}
+      TARGET: ${{ matrix.target }}
+      BATTLECITY_ANDROID_ABI: ${{ matrix.abi }}
+      CARTRIDGE: ${{ inputs.cartridge }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: cartridge
+          path: build/shared
+      - name: Build Web
+        if: matrix.platform == 'web'
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install 6.0.2
+          "$RUNNER_TEMP/emsdk/emsdk" activate 6.0.2
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          bash tools/build-mame-runtime.sh web "build/shared/$CARTRIDGE.nes"
+      - uses: actions/setup-java@v4
+        if: matrix.platform == 'android'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        if: matrix.platform == 'android'
+        with:
+          gradle-version: '8.7'
+      - name: Build Android TV
+        if: matrix.platform == 'android'
+        run: |
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;28.2.13676358"
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
+          export SDL_INSTALL_ROOT="$RUNNER_TEMP/sdl3"
+          mkdir -p "$SDL_INSTALL_ROOT/lib/pkgconfig"
+          curl -fLSs --retry 3 https://github.com/libsdl-org/SDL/releases/download/release-3.4.12/SDL3-devel-3.4.12-android.zip -o "$RUNNER_TEMP/sdl.zip"
+          unzip -p "$RUNNER_TEMP/sdl.zip" SDL3-3.4.12.aar > "$RUNNER_TEMP/sdl.aar"
+          unzip -q "$RUNNER_TEMP/sdl.aar" 'prefab/modules/SDL3-shared/*' 'prefab/modules/SDL3-Headers/*' -d "$RUNNER_TEMP/aar"
+          cp -R "$RUNNER_TEMP/aar/prefab/modules/SDL3-Headers/include" "$SDL_INSTALL_ROOT/"
+          cp "$RUNNER_TEMP/aar/prefab/modules/SDL3-shared/libs/android.$BATTLECITY_ANDROID_ABI/libSDL3.so" "$SDL_INSTALL_ROOT/lib/"
+          cat > "$SDL_INSTALL_ROOT/lib/pkgconfig/sdl3.pc" <<PC
+          Name: sdl3
+          Description: SDL3 Android
+          Version: 3.4.12
+          Libs: -L$SDL_INSTALL_ROOT/lib -lSDL3
+          Cflags: -I$SDL_INSTALL_ROOT/include
+          PC
+          bash tools/build-mame-runtime.sh android "build/shared/$CARTRIDGE.nes"
+      - uses: actions/setup-node@v6
+        if: matrix.platform == 'web'
+        with:
+          node-version: '24'
+      - name: Exercise the packaged site
+        if: matrix.platform == 'web'
+        run: |
+          npm ci --prefix web
+          (cd web && npx playwright install --with-deps chromium webkit)
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory build/mame-runtime/web/site &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          curl --retry 8 --retry-connrefused -fsS http://127.0.0.1:8765/ -o /dev/null
+          if [[ "$CARTRIDGE" == probe ]]; then
+            node tests/nes/browser.cjs http://127.0.0.1:8765/
+            node tests/nes/browser-replay.cjs http://127.0.0.1:8765/
+          else
+            node tests/nes/browser-game.cjs http://127.0.0.1:8765/ build/shared/game.lbl
+          fi
+      - name: Check the cartridge inside each final package
+        run: |
+          mkdir -p deliverable
+          if [[ "$PLATFORM" == web ]]; then
+            cp build/mame-runtime/web/battlecity-web.zip deliverable/BattleCity-Web.zip
+            python3 tests/nes/package.py deliverable/BattleCity-Web.zip "build/shared/$CARTRIDGE.nes"
+          else
+            apk="deliverable/$TARGET.apk"
+            outputs=runtime/android/build
+            if [[ "$BATTLECITY_ANDROID_ABI" == x86 ]]; then outputs="$outputs/x86"; fi
+            cp "$outputs/outputs/apk/debug/BattleCityRuntime-debug.apk" "$apk"
+            "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$apk"
+            python3 tests/nes/package.py "$apk" "build/shared/$CARTRIDGE.nes" --abi "$BATTLECITY_ANDROID_ABI"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.cartridge }}-${{ matrix.target }}
+          path: deliverable/
+          if-no-files-found: error
+
+  television:
+    if: inputs.cartridge == 'game'
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: game-tv-emulator
+          path: build/avd
+      - uses: actions/download-artifact@v4
+        with:
+          name: cartridge
+          path: build/shared
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Boot the Android SDK television image and test both gamepads
+        env:
+          ANDROID_SERIAL: emulator-5554
+        run: |
+          image='system-images;android-34;android-tv;x86'
+          sdk_tools="$ANDROID_HOME/cmdline-tools/latest/bin"
+          "$sdk_tools/sdkmanager" "platform-tools" "emulator" "$image"
+          echo no | "$sdk_tools/avdmanager" create avd -n BattleCity -k "$image" -d tv_1080p
+          mkdir -p build/tv-result
+          adb start-server
+          "$ANDROID_HOME/emulator/emulator" -avd BattleCity -port 5554 -accel on \
+            -no-window -no-snapshot -no-boot-anim -gpu swiftshader >build/tv-result/emulator.log 2>&1 &
+          emulator_pid=$!
+          trap 'kill "$emulator_pid" 2>/dev/null || true' EXIT
+          deadline=$((SECONDS+360))
+          until [[ "$(timeout 5 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == 1 ]]; do
+            if ! kill -0 "$emulator_pid" 2>/dev/null || (( SECONDS >= deadline )); then
+              tail -50 build/tv-result/emulator.log
+              exit 1
+            fi
+            sleep 2
+          done
+          python3 tests/nes/television.py build/avd/tv-emulator.apk build/shared/game.lbl build/tv-result
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tv-device-results
+          path: build/tv-result/

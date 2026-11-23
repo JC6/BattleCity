@@ -1,0 +1,23 @@
+--- a/src/frontend/mame/ui/mainmenu.h
++++ b/src/frontend/mame/ui/mainmenu.h
+@@ -31,6 +31,9 @@
+ 	virtual void populate() override;
+ 	virtual bool handle(event const *ev) override;
+ 
++	void draw(uint32_t flags) override;
++	std::unique_ptr<class battle_slots> m_slots;
++	uintptr_t m_pending_action = 0;
+ 	machine_phase m_phase;
+ };
+ 
+--- a/src/osd/modules/input/input_sdl3.cpp
++++ b/src/osd/modules/input/input_sdl3.cpp
+@@ -1635,7 +1635,7 @@
+ 		// add assignments for buttons with fixed functions
+ 		add_button_assignment(assignments, IPT_SELECT,  { buttonitems[SDL_GAMEPAD_BUTTON_BACK] });
+ 		add_button_assignment(assignments, IPT_START,   { buttonitems[SDL_GAMEPAD_BUTTON_START] });
+-		add_button_assignment(assignments, IPT_UI_MENU, { buttonitems[SDL_GAMEPAD_BUTTON_GUIDE] });
++		add_button_assignment(assignments, IPT_UI_MENU, { buttonitems[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER], buttonitems[SDL_GAMEPAD_BUTTON_GUIDE] });
+ 
+ 		// the first button is always UI select
+ 		if (add_button_assignment(assignments, IPT_UI_SELECT, { std::get<0>(numberedbuttons[0]) }))

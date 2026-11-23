@@ -1,0 +1,22 @@
+--- a/src/emu/machine.cpp
++++ b/src/emu/machine.cpp
+@@ -787,5 +787,10 @@
+ bool running_machine::rewind_step()
+ {
+-	return m_save.rewind()->step();
++	bool const loaded = m_save.rewind()->step();
++#ifdef __EMSCRIPTEN__
++	if (loaded)
++		EM_ASM({ Module.stateRewound(); });
++#endif
++	return loaded;
+ }
+ 
+--- a/src/osd/modules/input/input_sdl3.cpp
++++ b/src/osd/modules/input/input_sdl3.cpp
+@@ -1636,4 +1636,5 @@
+ 		add_button_assignment(assignments, IPT_SELECT,  { buttonitems[SDL_GAMEPAD_BUTTON_BACK] });
+ 		add_button_assignment(assignments, IPT_START,   { buttonitems[SDL_GAMEPAD_BUTTON_START] });
+ 		add_button_assignment(assignments, IPT_UI_MENU, { buttonitems[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER], buttonitems[SDL_GAMEPAD_BUTTON_GUIDE] });
++		add_button_assignment(assignments, IPT_UI_REWIND_SINGLE, { buttonitems[SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER] });
+ 

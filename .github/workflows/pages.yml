@@ -2,7 +2,7 @@ name: BattleCity Web
 
 on:
   push:
-    branches: [master]
+    branches: [master, 'validation/switch-parity-*']
   pull_request:
     branches: [master]
   workflow_dispatch:
@@ -11,46 +11,30 @@ permissions:
   contents: read
 
 concurrency:
-  group: pages-${{ github.event_name == 'pull_request' && github.ref || 'production' }}
+  group: pages-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  runtime:
+    uses: ./.github/workflows/mame-runtime.yml
+
   build:
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    needs: runtime
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pages: read
-    defaults:
-      run:
-        working-directory: web
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/download-artifact@v4
         with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium webkit
-      - name: Validate desktop
-        run: npm run validate:desktop
-      - name: Keep desktop browser reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-browser-reports
-          path: |
-            web/playwright-report/
-            web/test-results/e2e/
-            web/test-results/production/
-          if-no-files-found: ignore
-          retention-days: 7
+          name: game-web
+          path: package
+      - run: unzip -q package/BattleCity-Web.zip -d site
       - uses: actions/configure-pages@v5
-        if: github.event_name != 'pull_request'
       - uses: actions/upload-pages-artifact@v4
-        if: github.event_name != 'pull_request'
         with:
-          path: web/dist
+          path: site
 
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'

@@ -1,0 +1,62 @@
+plugins { id 'com.android.application' version '8.6.1' }
+
+def tree = file(providers.gradleProperty('mameTree').get())
+def abi = providers.gradleProperty('runtimeAbi').getOrElse('arm64-v8a')
+if (abi != 'arm64-v8a') {
+    layout.buildDirectory.set(file("build/" + abi))
+}
+def nativeDir = new File(tree, 'android-project/app/src/main/libs')
+def rom = file(providers.gradleProperty('cartridge').get())
+def validateRuntime = tasks.register('validateRuntime') {
+    doLast {
+        if (!rom.isFile()) throw new GradleException("Missing cartridge: " + rom)
+        for (name in ['libmain.so', 'libSDL3.so', 'libc++_shared.so']) {
+            if (!new File(nativeDir, abi + "/" + name).isFile())
+                throw new GradleException("Missing " + abi + " runtime: " + name)
+        }
+    }
+}
+
+def stage = tasks.register('stageCartridge', Copy) {
+    dependsOn validateRuntime
+    from(rootProject.file('../../LICENSE')) { into 'licenses' }
+    from(rootProject.file('../cartridge/NOTICE')) { into 'licenses' }
+    from rom
+    filesMatching(rom.name) { name = 'game.nes' }
+    from(new File(tree, 'COPYING')) { into 'licenses/MAME' }
+    from(new File(tree, 'docs/legal')) { into 'licenses/MAME' }
+    into layout.buildDirectory.dir('generated/cartridge')
+    doLast {
+        def digest = java.security.MessageDigest.getInstance('SHA-256').digest(rom.bytes)
+        new File(destinationDir, 'cartridge.id').text = digest.encodeHex().toString()
+    }
+}
+
+android {
+    namespace 'org.jiangc.bc.runtime'
+    compileSdk 34
+    ndkVersion '28.2.13676358'
+    if (System.getenv('ANDROID_NDK_HOME')) {
+        ndkPath System.getenv('ANDROID_NDK_HOME')
+    }
+    defaultConfig {
+        applicationId 'org.jiangc.bc.runtime'
+        minSdk 34
+        targetSdk 34
+        versionCode 1
+        versionName '0.1'
+        ndk { abiFilters abi }
+    }
+    sourceSets.main {
+        java.srcDir new File(tree, 'android-project/app/src/main/java')
+        java.exclude 'org/mamedev/**'
+        jniLibs.srcDir nativeDir
+        assets.srcDir layout.buildDirectory.dir('generated/cartridge')
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name.startsWith('merge') && task.name.endsWith('Assets')) {
+        task.dependsOn stage
+    }
+}

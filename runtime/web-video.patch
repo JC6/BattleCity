@@ -1,0 +1,27 @@
+--- a/src/osd/modules/lib/osdobj_common.cpp
++++ b/src/osd/modules/lib/osdobj_common.cpp
+@@ -243,9 +243,7 @@
+ #endif
+ #ifdef SDLMAME_SDL3
+ 	REGISTER_MODULE(m_mod_man, RENDERER_SDL3ACCEL);
+-#if !defined(SDLMAME_EMSCRIPTEN)
+ 	REGISTER_MODULE(m_mod_man, RENDERER_SDL3SOFT);
+-#endif
+ #else
+ 	REGISTER_MODULE(m_mod_man, RENDERER_SDL2);
+ #if !defined(SDLMAME_EMSCRIPTEN)
+--- a/scripts/genie.lua
++++ b/scripts/genie.lua
+@@ -1147,10 +1147,9 @@
+ 	}
+ 	if _OPTIONS["OPTIMIZE"]~=nil then
+ 		if _OPTIONS["OPTIMIZE"]=="3" then
+-			-- emcc's link-time -O3 is very slow, max out at -O2 for now
+-			-- we should still be getting the benefit of -O3 on the individual object files
++			-- Keep the diagnostic JS glue readable and the native objects optimized.
+ 			linkoptions {
+-				"-O2",
++				"-O1",
+ 			}
+ 		else
+ 			linkoptions {

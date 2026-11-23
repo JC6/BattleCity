@@ -1,0 +1,46 @@
+Battle City homebrew cartridge implementation. Project code is under GPL-2.0.
+Battle City (1985) is a NAMCO title. Stage layouts and enemy queues are
+compiled from the repository's web/src/data/original.ts catalogue.
+Sound cue data is compiled from the repository's web/src/platform/audio-cues.ts
+catalogue, transcribed from the Battle City sound bank as attributed there.
+The NES APU playback code is implemented in this project. Combat behaviour
+was measured with scripted controller input against the Famicom program.
+Stage-one graphic shapes and colours were compared with Nintendo's public
+NAMCO MUSEUM ARCHIVES Volume 2 Switch screenshot, image 01. The graphics
+are assembled by this project's tile generator. Research cartridge images
+are not part of the distribution.
+The build uses cc65's runtime library. Its license is reproduced below.
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: cc65
+Source: https://github.com/cc65/cc65
+
+Files: *
+Copyright: 2004-     Oliver Schmidt <ol.sc@web.de>,
+ 1999-2015 Ullrich von Bassewitz <uz@cc65.org>,
+ 1989 John R. Dunning <jrd@jrd.org>
+License: BSD-3-zlib
+
+Files: testcode/lib/tinyshell.c
+Copyright: 2013-2016 Christian Groessler <chris@groessler.org>
+License: BSD-3-zlib
+
+Files: debian/*
+Copyright: 2017- Laszlo Boszormenyi (GCS) <gcs@debian.org>
+License: BSD-3-zlib
+
+License: BSD-3-zlib
+ This software is provided 'as-is', without any express or implied
+ warranty.  In no event will the authors be held liable for any damages
+ arising from the use of this software.
+ .
+ Permission is granted to anyone to use this software for any purpose,
+ including commercial applications, and to alter it and redistribute it
+ freely, subject to the following restrictions:
+ .
+ 1. The origin of this software must not be misrepresented; you must not
+    claim that you wrote the original software. If you use this software
+    in a product, an acknowledgment in the product documentation would be
+    appreciated but is not required.
+ 2. Altered source versions must be plainly marked as such, and must not be
+    misrepresented as being the original software.
+ 3. This notice may not be removed or altered from any source distribution.
