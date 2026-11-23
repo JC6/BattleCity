@@ -146,6 +146,7 @@ jobs:
       - name: Build Web
         if: matrix.platform == 'web'
         run: |
+          exec > >(tee "$RUNNER_TEMP/battlecity-build.log") 2>&1
           git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
           "$RUNNER_TEMP/emsdk/emsdk" install 6.0.2
           "$RUNNER_TEMP/emsdk/emsdk" activate 6.0.2
@@ -163,6 +164,7 @@ jobs:
       - name: Build Android TV
         if: matrix.platform == 'android'
         run: |
+          exec > >(tee "$RUNNER_TEMP/battlecity-build.log") 2>&1
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" "ndk;28.2.13676358"
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
           export SDL_INSTALL_ROOT="$RUNNER_TEMP/sdl3"
@@ -180,6 +182,20 @@ jobs:
           Cflags: -I$SDL_INSTALL_ROOT/include
           PC
           bash tools/build-mame-runtime.sh android "build/shared/$CARTRIDGE.nes"
+      - name: Report compiler and SDK errors
+        if: failure()
+        shell: python
+        run: |
+          import os
+          import re
+          from pathlib import Path
+          log = Path(os.environ['RUNNER_TEMP']) / 'battlecity-build.log'
+          if log.is_file():
+              lines = log.read_text(errors='replace').splitlines()
+              errors = [line for line in lines if re.search(
+                  r'error|fatal|failed|no space|not found|no such|exception|make.*\*\*\*', line, re.I)]
+              for line in (errors or lines)[-10:]:
+                  print('::error::' + line[-500:].replace('%', '%25'))
       - uses: actions/setup-node@v6
         if: matrix.platform == 'web'
         with:
