@@ -1,0 +1,21 @@
+--- a/android-project/app/src/main/java/org/libsdl/app/SDLControllerManager.java
++++ b/android-project/app/src/main/java/org/libsdl/app/SDLControllerManager.java
+@@ -130,7 +130,7 @@
+         InputDevice device = InputDevice.getDevice(deviceId);
+         // We cannot use InputDevice.isVirtual before API 16, so let's accept
+         // only nonnegative device ids (VIRTUAL_KEYBOARD equals -1)
+-        if ((device == null) || (deviceId < 0)) {
++        if ((device == null) || (deviceId < 0) || "virtual-search".equals(device.getName())) {
+             return false;
+         }
+         int sources = device.getSources();
+@@ -148,8 +148,8 @@
+         }
+         */
+ 
++        // D-pad-only TV remotes must not take a player slot ahead of a gamepad.
+         return ((sources & InputDevice.SOURCE_CLASS_JOYSTICK) != 0 ||
+-                ((sources & InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD) ||
+                 ((sources & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD)
+         );
+     }

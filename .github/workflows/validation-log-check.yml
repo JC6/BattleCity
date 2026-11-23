@@ -2,7 +2,7 @@ name: Validate the packaged TV build
 on:
   push:
     branches: [validation/switch-parity-20261123]
-    paths: [.github/workflows/validation-log-check.yml, tests/nes/television.py, tests/nes/television-avd.sh]
+    paths: [.github/workflows/validation-log-check.yml, tests/nes/television.py, tests/nes/television-avd.sh, runtime/tv-gamepads.patch]
 permissions:
   contents: read
   actions: read
@@ -24,6 +24,29 @@ jobs:
           run-id: 45097880547
           name: cartridge
           path: build/shared
+      - uses: actions/checkout@v6
+        with:
+          repository: mamedev/mame
+          ref: ce8812e6a1dcafc97fbafc6d48b0c8184984845f
+          path: mame
+          sparse-checkout: |
+            android-project/app/src/main/java
+            docs/legal
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Package the updated Android gamepad adapter with the verified native libraries
+        run: |
+          git -C mame apply "$PWD/runtime/tv-gamepads.patch"
+          mkdir -p mame/android-project/app/src/main/libs
+          unzip -q deliverable/tv-emulator.apk 'lib/x86/*' -d native
+          cp -R native/lib/x86 mame/android-project/app/src/main/libs/
+          gradle -p runtime/android -PruntimeAbi=x86 -PmameTree="$PWD/mame" -Pcartridge="$PWD/build/shared/game.nes" assembleDebug
+          cp runtime/android/build/x86/outputs/apk/debug/*.apk deliverable/tv-emulator.apk
       - name: Verify the cartridge and exercise both gamepads
         run: |
           echo 'd0cf0118f70514d674c17b699cf1c3463acdf439070d64b697bab31a125bf35f  build/shared/game.nes' | sha256sum -c -
