@@ -190,7 +190,7 @@ CSV 记录卡带 SHA-256、关卡、人数、参考更新总数、是否通过�
 
 ## 当前验证范围
 
-整轮回放从开机开始，仅向手柄端口发送按键。玩家依次打过第 1 至 70 关，回到第 1 关后继续 90 次战斗更新。对红白机参考程序与复刻卡带分别执行 6502 指令，记录到的 274,114 次更新全部匹配，包括显示帧号、坦克与炮弹的位置和方向、残机、武器、防护、得分、击破数、基地与地形。最后一次更新位于显示帧 316,277，得分 409,600。未压缩观测记录的 SHA-256 为 `8336186c7e44314be205aef3812e8d8aa34e786dbd90825796048a57f2a06ea7`。GitHub Actions 从源码重建卡带后，在原生 MAME 0.285 从开机重放同一组输入，全部 274,114 次更新通过。[原生 MAME 运行记录](https://github.com/JC6/BattleCity/actions/runs/45097880547/job/137441844596) · [控制器录像](../../tests/nes/fixtures/stages/loop.pads.gz) · [逐次更新基准](../../tests/nes/fixtures/stages/loop.csv.gz) · [逐关 CPU 对照](../../build/battlecity/Loop-CPU.csv)
+整轮回放从开机开始，仅向手柄端口发送按键。玩家依次打过第 1 至 70 关，回到第 1 关后继续 90 次战斗更新。对红白机参考程序与复刻卡带分别执行 6502 指令，记录到的 274,114 次更新全部匹配，包括显示帧号、坦克与炮弹的位置和方向、残机、武器、防护、得分、击破数、基地与地形。最后一次更新位于显示帧 316,277，得分 409,600。未压缩观测记录的 SHA-256 为 `8336186c7e44314be205aef3812e8d8aa34e786dbd90825796048a57f2a06ea7`。原生 MAME 0.285 分别从开机回放红白机参考程序和从源码重建的复刻卡带，两者全部 274,114 次更新通过。第 316,188 帧从第 70 关回到第 1 关。[双程序核对报告](../../build/battlecity/Campaign-Reference.csv) · [原生 MAME 运行记录](https://github.com/JC6/BattleCity/actions/runs/45097880547/job/137441844596) · [控制器录像](../../tests/nes/fixtures/stages/loop.pads.gz) · [逐次更新基准](../../tests/nes/fixtures/stages/loop.csv.gz) · [逐关 CPU 对照](../../build/battlecity/Loop-CPU.csv)
 
 ```sh
 python3 tests/nes/verify_stages.py build/battlecity/game.nes --suite loop --report loop.csv

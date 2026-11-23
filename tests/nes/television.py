@@ -127,6 +127,14 @@ def presented(count):
     check(lambda s: s['frame'] >= first + count, 'controller sampling')
 
 
+def wait_gamepad_change(pid, action):
+    # Android publishes the input device before SDL's next enumeration. A
+    # button edge sent during that interval cannot reach the reconnected pad.
+    pattern = re.compile(rb'Game Controller: [^\n]+\] ' + action + rb'\s*$', re.M)
+    wait(lambda: adb('logcat', '-d', '--pid', pid, '-s', 'MAME:V'),
+         lambda log: pattern.search(log), 'SDL gamepad ' + action.decode())
+
+
 def capture_audio(results):
     # The core writes signed 16-bit PCM. A live WAV can still have
     # placeholder chunk sizes until the emulator closes the stream.
@@ -261,8 +269,11 @@ def run(apk, labels, results):
             two.direction(1)
             check(lambda s:s['y2']>saved['y2'],'changed P2 input after load')
             two.direction(0)
+            pid=adb('shell','pidof','-s',PACKAGE).decode().strip()
             two.close()
+            wait_gamepad_change(pid, b'disconnected')
             pads[1]=two=Pad(2,events)
+            wait_gamepad_change(pid, b'reconnected')
             old=state()['y2']
             two.direction(-1)
             check(lambda s:s['y2']<old-3,'reconnected player 2')
