@@ -2,7 +2,7 @@
 
 项目复刻 Nintendo Switch 英文《南梦宫博物馆档案 Vol. 2》收录的《坦克大战》。从入口直接启动《坦克大战》，支持 Web 键盘和 Android TV 手柄。
 
-Web 与 Android TV 共用一张由 cc65 编译的 NES 卡带，运行在同一版本的 MAME NES 核心上。游戏包含单人、同机双人、35 张地图和 Construction 编辑器。开场、引擎、射击和爆炸由卡带的四个 NES 声道播放。本版本的还原进度、官方参考和测试结果见[复刻验收记录](runtime/cartridge/README.md)。
+Web 与 Android TV 共用一张由 cc65 编译的 NES 卡带，运行在同一版本的 MAME NES 核心上。游戏包含单人、同机双人、35 张地图和 Construction 编辑器。开场、引擎、射击和爆炸由卡带的四个 NES 声道播放。本版本的还原进度、官方参考和测试结果见[复刻验收记录](runtime/cartridge/README.md)和[英文 Switch 画面对照](runtime/cartridge/switch-comparison.md)。
 
 | 目标 | 从仓库根目录构建 | 产物 |
 | --- | --- | --- |
@@ -14,7 +14,7 @@ Web 解压后通过 HTTP 打开，按 Enter 启动。标题滚动时可按 Enter
 
 ## 复验
 
-红白机参考程序与复刻卡带从开机连续打过 70 关并回到第一关，274,114 次战斗更新逐次匹配。另有 35 场单人和 1 场双人录像，合计核对 179,466 次更新。Web 通过 Chromium 和 WebKit 键盘测试，Android TV 通过 API 34 电视镜像上的双手柄、热重连和重启读档测试。[验收记录](runtime/cartridge/README.md) · [电视截图和录音](https://github.com/JC6/BattleCity/actions/runs/45107870369)
+红白机参考程序与复刻卡带从开机连续打过 70 关并回到第一关，274,114 次战斗更新逐次匹配。另有 35 场单人和 1 场双人录像，合计核对 179,466 次更新。Web 通过 Chromium 和 WebKit 键盘测试，Android TV 通过 API 34 电视镜像上的双手柄、热重连和重启读档测试。[验收记录](runtime/cartridge/README.md) · [电视截图和录音](https://github.com/JC6/BattleCity/actions/runs/45188419656)
 
 在已安装 cc65 和 MAME 0.285 的 Linux 环境中，以下命令从同一张卡带复验战场图块、敌车编成和固定手柄输入。原生测试按第一次出现差异的战斗更新报告关卡、字段、期望值和实测值。
 

@@ -73,13 +73,16 @@ class Pad:
     def direction(self, y):
         self.event(3, 17, y)
 
-    def down(self):
-        self.direction(1)
+    def tap_hat(self, axis, value):
+        self.event(3, axis, value)
         try:
-            presented(3)
+            presented(4)
         finally:
-            self.direction(0)
-        presented(4)
+            self.event(3, axis, 0)
+        presented(5)
+
+    def down(self):
+        self.tap_hat(17, 1)
 
     def close(self):
         if self.proc.stdin and not self.proc.stdin.closed:
@@ -162,12 +165,32 @@ def capture_audio(results):
         output.writeframes(audio)
 
 
+def screen_rgb(image, size):
+    return subprocess.run(['ffmpeg', '-loglevel', 'error', '-i', 'pipe:0',
+                           '-vf', f'scale={size}', '-frames:v', '1', '-threads', '1',
+                           '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'],
+                          input=image, capture_output=True, check=True).stdout
+
+
+def credits_title_y(image):
+    # Only the collection title has saturated cyan lettering on a black page.
+    rgb = screen_rgb(image, '320:180')
+    corner = (320 * 8 + 25) * 3
+    if max(rgb[corner:corner+3]) > 12:
+        return None
+    rows = []
+    for y in range(23, 158):
+        for x in range(70, 250):
+            offset = (320*y+x)*3
+            r, g, b = rgb[offset:offset+3]
+            if g > 62 and r*4 < g < b < 2*g:
+                rows.append(y)
+    return sum(rows) / len(rows) if len(rows) >= 30 else None
+
+
 def shows_brick(image, bounds):
     # Sample the composited TV screen, including the thumbnail in the first slot.
-    rgb = subprocess.run(['ffmpeg', '-loglevel', 'error', '-i', 'pipe:0', '-vf',
-                          'scale=160:90:flags=neighbor', '-frames:v', '1', '-threads', '1',
-                          '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'],
-                         input=image, capture_output=True, check=True).stdout
+    rgb = screen_rgb(image, '160:90')
     assert len(rgb) == 160 * 90 * 3
     left, top, right, bottom = bounds
     count = 0
@@ -229,18 +252,16 @@ def run(apk, labels, results):
             one.down()
             one.down()
             one.tap(SOUTH)
-            for _ in range(3):
-                one.down()
+            # Staff Credits is one step left of Screen Settings on the four-card row.
+            one.tap_hat(16, -1)
             one.tap(SOUTH)
-            def credits_visible(image):
-                rgb = subprocess.run(['ffmpeg','-loglevel','error','-i','pipe:0',
-                                      '-vf','scale=192:108','-frames:v','1','-threads','1',
-                                      '-f','rawvideo','-pix_fmt','rgb24','pipe:1'],
-                                     input=image,capture_output=True,check=True).stdout
-                corner=(192*3+12)*3
-                if sum(rgb[corner:corner+3])>15: return False
-                return sum(g-r>35 and b>g and g>48 for r,g,b in struct.iter_unpack('BBB',rgb))>12
-            credit_image=wait(lambda: adb('exec-out','screencap','-p'),credits_visible,'scrolling English credits')
+            def read_credits():
+                image=adb('exec-out','screencap','-p')
+                return credits_title_y(image), image
+            y, _ = wait(read_credits, lambda frame: frame[0] is not None and frame[0] > 70,
+                        'cyan collection title above the bottom border')
+            _, credit_image = wait(read_credits, lambda frame: frame[0] is not None and frame[0] < y-12,
+                                   'collection title visibly moved upward')
             (results/'staff-credits.png').write_bytes(credit_image)
             for _ in range(3):
                 one.tap(EAST)
