@@ -190,7 +190,7 @@ CSV 记录卡带 SHA-256、关卡、人数、参考更新总数、是否通过�
 
 ## 当前验证范围
 
-整轮回放从开机开始，仅向手柄端口发送按键。玩家依次打过第 1 至 70 关，回到第 1 关后继续 90 次战斗更新。对红白机参考程序与复刻卡带分别执行 6502 指令，记录到的 274,114 次更新全部匹配，包括显示帧号、坦克与炮弹的位置和方向、残机、武器、防护、得分、击破数、基地与地形。最后一次更新位于显示帧 316,277，得分 409,600。未压缩观测记录的 SHA-256 为 `8336186c7e44314be205aef3812e8d8aa34e786dbd90825796048a57f2a06ea7`。原生 MAME 0.285 分别从开机回放红白机参考程序和从源码重建的复刻卡带，两者全部 274,114 次更新通过。第 316,188 帧从第 70 关回到第 1 关。[双程序核对报告](../../build/battlecity/Campaign-Reference.csv) · [原生 MAME 运行记录](https://github.com/JC6/BattleCity/actions/runs/45188419656/job/137740349580) · [控制器录像](../../tests/nes/fixtures/stages/loop.pads.gz) · [逐次更新基准](../../tests/nes/fixtures/stages/loop.csv.gz) · [逐关 CPU 对照](../../build/battlecity/Loop-CPU.csv)
+整轮回放从开机开始，仅向手柄端口发送按键。玩家依次打过第 1 至 70 关，回到第 1 关后继续 90 次战斗更新。对红白机参考程序与复刻卡带分别执行 6502 指令，记录到的 274,114 次更新全部匹配，包括显示帧号、坦克与炮弹的位置和方向、残机、武器、防护、得分、击破数、基地与地形。最后一次更新位于显示帧 316,277，得分 409,600。未压缩观测记录的 SHA-256 为 `8336186c7e44314be205aef3812e8d8aa34e786dbd90825796048a57f2a06ea7`。原生 MAME 0.285 分别从开机回放红白机参考程序和从源码重建的复刻卡带，两者全部 274,114 次更新通过。第 316,188 帧从第 70 关回到第 1 关。[双程序核对报告](../../build/battlecity/Campaign-Reference.csv) · [原生 MAME 运行记录](https://github.com/JC6/BattleCity/actions/runs/45192497635/job/137754917074) · [控制器录像](../../tests/nes/fixtures/stages/loop.pads.gz) · [逐次更新基准](../../tests/nes/fixtures/stages/loop.csv.gz) · [逐关 CPU 对照](../../build/battlecity/Loop-CPU.csv)
 
 ```sh
 python3 tests/nes/verify_stages.py build/battlecity/game.nes --suite loop --report loop.csv
@@ -208,7 +208,7 @@ Switch 英文实机录像可核对系统菜单的 Save、Load、四个横排存�
 
 较高播放量的录像显示了本作在合集中的入口，另一段在《坦克大战》结束后直接打开了系统菜单，可看清每个槽位。[任天堂产品页](https://www.nintendo.com/us/store/products/namco-museum-archives-vol-2-switch/) · [合集入口与战场，约 3 分钟](https://www.youtube.com/watch?v=uc_If5fksfA&t=180s) · [本作系统菜单，约 11 分钟](https://www.youtube.com/watch?v=S26lUv598_o&t=659s) · [显示和壁纸选项，约 1 分钟](https://www.youtube.com/watch?v=S26lUv598_o&t=65s)
 
-Android TV 已在 Android SDK 的 API 34 电视镜像上通过验收。两支独立的内核手柄分别移动和开火，右肩键回退，第二支断开重连后继续控制玩家二。两辆坦克的位置、双人模式与暂停状态在进程重启读档后恢复。测试还覆盖了存档写保护和游戏音频，并保存了 48 kHz PCM 录音及屏幕截图。从系统桌面返回后，游戏保留了同一进程、暂停状态和两辆坦克的位置。恢复后的战场以及第一槽的缩略图均已在电视截屏中核对。首次双人游玩请先连接两支手柄，再打开游戏。[电视任务和原始附件](https://github.com/JC6/BattleCity/actions/runs/45188419656) · [设备验收工作流](../../.github/workflows/mame-runtime.yml)
+Android TV 已在 Android SDK 的 API 34 电视镜像上通过验收。两支独立的内核手柄分别移动和开火，右肩键回退，第二支断开重连后继续控制玩家二。两辆坦克的位置、双人模式与暂停状态在进程重启读档后恢复。测试还覆盖了存档写保护和游戏音频，并保存了 48 kHz PCM 录音及屏幕截图。从系统桌面返回后，游戏保留了同一进程、暂停状态和两辆坦克的位置。恢复后的战场以及第一槽的缩略图均已在电视截屏中核对。首次双人游玩请先连接两支手柄，再打开游戏。[电视任务和原始附件](https://github.com/JC6/BattleCity/actions/runs/45192497635) · [设备验收工作流](../../.github/workflows/mame-runtime.yml)
 
 Switch 录像没有同步手柄输入。输入到画面的延迟、回退的精确跨度、逐帧音画同步以及实体电视的手柄与音响表现仍待实机测量。
 

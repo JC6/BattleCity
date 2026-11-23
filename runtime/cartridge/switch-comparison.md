@@ -31,4 +31,6 @@ python3 tests/nes/compare_switch_audio.py switch-5m18.mp4 opening.wav --switch-s
 
 在 30 fps 通关录像中，完整的 GAME OVER 字样连续可见 56 个采集帧，约 1.87 秒。本作基地失守用例的完整字样连续可见 117 个 NES 显示帧，约 1.95 秒。两段可见时长约差 0.08 秒。录像经过剪辑，且没有同步按键记录，这项保留为观察差异。[Switch 结局画面](https://www.youtube.com/watch?v=Xf02flMP7dc&t=2613s) · [逐帧事件用例](../../tests/nes/ending.lua)
 
-本次卡带 SHA-256 为 `3d4b221f7ccd1cab5312221efe6b0d520d5bd12e0cbb55cb6d32a4103affdfe2`。Web ZIP 和 Android TV ARM64 APK 均已核对内置卡带。[双手柄电视任务](https://github.com/JC6/BattleCity/actions/runs/45188419656/job/137740349705) · [Web 成品任务](https://github.com/JC6/BattleCity/actions/runs/45188419656/job/137740349635)
+本次卡带 SHA-256 为 `3d4b221f7ccd1cab5312221efe6b0d520d5bd12e0cbb55cb6d32a4103affdfe2`。Web ZIP 和 Android TV ARM64 APK 均已核对内置卡带。[双手柄电视任务](https://github.com/JC6/BattleCity/actions/runs/45192497635/job/137754917134) · [Web 成品任务](https://github.com/JC6/BattleCity/actions/runs/45192497635/job/137754917372)
+
+在 API 34 电视模拟器上，两次截屏均识别出黑底青色的合集标题，并确认标题向上移动超过 12 个采样像素。完整附件另含手柄事件、保存确认截图、重启后双人战场及一秒 PCM 录音。[电视验收附件](../../build/battlecity/TV-Acceptance.zip)
