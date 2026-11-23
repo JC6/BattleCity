@@ -18,6 +18,8 @@ permissions:
 jobs:
   cartridge:
     runs-on: ubuntu-24.04
+    outputs:
+      sha256: ${{ steps.digest.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v6
       - name: Build the shared cartridge
@@ -32,6 +34,14 @@ jobs:
           else
             python3 tests/nes/probe.py build/shared/probe.nes
           fi
+      - name: Record the shared cartridge digest
+        id: digest
+        env:
+          CARTRIDGE: ${{ inputs.cartridge }}
+        run: |
+          sha=$(sha256sum "build/shared/$CARTRIDGE.nes" | cut -d' ' -f1)
+          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+          echo "Cartridge SHA-256 \`$sha\`" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: cartridge
@@ -153,7 +163,7 @@ jobs:
       - name: Build Android TV
         if: matrix.platform == 'android'
         run: |
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;28.2.13676358"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" "ndk;28.2.13676358"
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
           export SDL_INSTALL_ROOT="$RUNNER_TEMP/sdl3"
           mkdir -p "$SDL_INSTALL_ROOT/lib/pkgconfig"
@@ -189,7 +199,7 @@ jobs:
           else
             node tests/nes/browser-game.cjs http://127.0.0.1:8765/ build/shared/game.lbl
           fi
-      - name: Check the cartridge inside each final package
+      - name: Verify the packaged cartridge ${{ needs.cartridge.outputs.sha256 }}
         run: |
           mkdir -p deliverable
           if [[ "$PLATFORM" == web ]]; then
@@ -209,27 +219,15 @@ jobs:
           path: deliverable/
           if-no-files-found: error
 
-  television:
-    if: inputs.cartridge == 'game'
-    needs: package
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
-        with:
-          name: game-tv-emulator
-          path: build/avd
-      - uses: actions/download-artifact@v4
-        with:
-          name: cartridge
-          path: build/shared
       - name: Enable emulator acceleration
+        if: matrix.abi == 'x86' && inputs.cartridge == 'game'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Boot the Android SDK television image and test both gamepads
+        if: matrix.abi == 'x86' && inputs.cartridge == 'game'
+        timeout-minutes: 30
         env:
           ANDROID_SERIAL: emulator-5554
         run: |
@@ -251,9 +249,9 @@ jobs:
             fi
             sleep 2
           done
-          python3 tests/nes/television.py build/avd/tv-emulator.apk build/shared/game.lbl build/tv-result
+          python3 tests/nes/television.py deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && matrix.abi == 'x86' && inputs.cartridge == 'game'
         with:
           name: tv-device-results
           path: build/tv-result/
