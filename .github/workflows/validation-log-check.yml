@@ -7,6 +7,31 @@ permissions:
   contents: read
   actions: read
 jobs:
+  previous-device:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 45100074887
+          name: tv-device-results
+          path: evidence
+      - name: Inspect the previous instrumented application launch
+        shell: python
+        run: |
+          import re
+          from pathlib import Path
+          root=Path('evidence')
+          print('::notice::Device evidence '+', '.join(p.name for p in root.rglob('*') if p.is_file()))
+          for p in root.rglob('logcat.txt'):
+              lines=p.read_text(errors='replace').splitlines()
+              def show(items):
+                  for line in items:
+                      text=line[line.find(': ')+2:][:360]
+                      if not re.search(r'password|token|credential|https?://',text,re.I):
+                          print('::notice::'+text.replace('%','%25'))
+              show([x for x in lines if re.search(r'FATAL EXCEPTION|java.lang.|UnsatisfiedLink|dlopen|Fatal signal|CANNOT LINK|Couldn.t load|SDL_main|SDLActivity|SDLThread|LUA ERROR',x,re.I)][-24:])
+              show([x for x in lines if re.search(r'\bSDL(\s|/).{0,12}:',x)][-12:])
   television:
     runs-on: ubuntu-24.04
     timeout-minutes: 30

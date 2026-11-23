@@ -171,7 +171,10 @@ def run(apk, labels, results):
         if private('ls','-d',name,check=False).strip()==name.encode():
             raise RuntimeError('Use a clean TV test profile: found '+name)
     def write_private(name, content):
-        adb('shell','-T','run-as',PACKAGE,'sh','-c',f"'cat > files/{name}'",data=content.encode())
+        data = content.encode()
+        adb('shell','-T','run-as',PACKAGE,'sh','-c',f"'cat > files/{name}'",data=data)
+        if private('cat', 'files/'+name) != data:
+            raise RuntimeError('Failed to stage '+name)
     pads=[]
     def capture(name):
         image=adb('exec-out','screencap','-p')
@@ -265,6 +268,17 @@ def run(apk, labels, results):
             (results/'audio.txt').write_bytes(adb('shell','dumpsys','media.audio_flinger'))
             capture('restored')
             (results/'result.json').write_text(json.dumps({'saved':saved,'restored':restored,'result':'passed'},indent=2))
+    except Exception:
+        # The system log identifies early SDL, linker and Java failures even
+        # when the game never reaches the cartridge observer.
+        diagnostic = adb('logcat', '-d', '-s', 'SDL:V', 'SDL/APP:V', 'AndroidRuntime:E',
+                         'linker:E', 'libc:F', 'DEBUG:F', check=False)
+        (results/'application.log').write_bytes(diagnostic)
+        capture('failure')
+        lines = diagnostic.decode(errors='replace').splitlines()
+        for line in lines[-30:]:
+            print('Device diagnostic:', line[:500], flush=True)
+        raise
     finally:
         for pad in pads: pad.close()
         (results/'logcat.txt').write_bytes(adb('logcat','-d','-t','2500'))
