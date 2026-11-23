@@ -137,8 +137,15 @@ def capture_audio(results):
     bits, = struct.unpack_from('<H', header, 34)
     assert fmt == 1 and channels in (1, 2) and bits == 16 and rate > 0
     size = rate * channels * 2
-    audio = private('tail', '-c', str(size), 'files/tv-audio.wav')
-    assert len(audio) == size, 'less than one second of PCM'
+    # The producer keeps appending while adb reads. Capture a fixed endpoint
+    # and align it to the last complete sample before selecting the clip.
+    path = 'files/tv-audio.wav'
+    end = int(private('stat', '-c', '%s', path))
+    end -= (end - len(header)) % (channels * 2)
+    assert end >= len(header) + size, f'only {end-len(header)} PCM bytes, need {size}'
+    recording = private('head', '-c', str(end), path)
+    assert len(recording) == end, f'read {len(recording)} of {end} bytes from the live WAV'
+    audio = recording[-size:]
     samples = [value for value, in struct.iter_unpack('<h', audio)]
     assert max(samples) - min(samples) > 128, 'silent game audio'
     with wave.open(str(results/'game.wav'), 'wb') as output:
