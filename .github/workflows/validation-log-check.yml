@@ -1,0 +1,35 @@
+name: Inspect previous player checks
+on:
+  push:
+    branches: [validation/switch-parity-20261123]
+    paths: [.github/workflows/validation-log-check.yml]
+permissions:
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Read the two failed acceptance checks from this repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for job in 137436309363 137436309310; do
+            gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job/logs" >"$RUNNER_TEMP/job-$job.log"
+          done
+      - name: Report application and test errors
+        shell: python
+        run: |
+          import os
+          import re
+          from pathlib import Path
+          for file in sorted(Path(os.environ['RUNNER_TEMP']).glob('job-*.log')):
+              messages = []
+              for line in file.read_text(errors='replace').splitlines():
+                  line = re.sub(r'^\S+Z\s+', '', line).strip()
+                  if len(line) > 900 or re.search(r'token|password|authorization|oauth|api[_-]?key|credential|signed url',line,re.I):
+                      continue
+                  if re.search(r'^(?:Error|RuntimeError|AssertionError|TimeoutError|TypeError|FileNotFoundError|subprocess\.CalledProcessError|AssertionError \[|Expected|actual:|expected:|npm error|- .*\+|[+-] (?:BATTLECITY|undefined)|E: |.*\.waitForFunction:|.*timed out|.*BATTLECITY_\w+_FAILED|.*CalledProcessError:|emulator: ERROR|ERROR\s+\|)',line,re.I):
+                      line = re.sub(r'https?://\S+', '[URL]',line)
+                      messages.append(line[:410])
+              for msg in list(dict.fromkeys(messages))[-10:]:
+                  print('::notice::' + file.stem + ' ' + msg.replace('%','%25'))

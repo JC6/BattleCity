@@ -1033,8 +1033,9 @@ _snapshot_occupancy:
     ldy tank_offsets,x
     lda _tanks+3,y
     cmp #1
-    bne @next
-    lda _tanks,y
+    beq :+
+    jmp @next
+:   lda _tanks,y
     sta tank_x
     clc
     adc #8
@@ -1075,47 +1076,49 @@ _snapshot_occupancy:
 :   and #$40
     ora mask_row
     sta _field_high,x
+    ; Mark the centre once. An aligned tank also occupies the left or
+    ; upper neighbour on that axis. All three writes use the same row base.
     lda tank_y
     clc
     adc #8
-    sta py
-    jsr occupy_cell
-    lda tank_x
+    lsr
+    and #$7c
+    sta row
+    ldy px
+    ora occ_column,y
+    tax
+    tya
+    and #63
+    tay
+    lda occ_bit,y
+    sta mask_row
+    ora occupancy,x
+    sta occupancy,x
+    lda tank_y
     and #7
     bne :+
-    lda tank_x
-    sta px
-    jsr occupy_cell
-:   lda tank_y
+    lda mask_row
+    ora occupancy-4,x
+    sta occupancy-4,x
+:   lda tank_x
     and #7
     bne @next
-    lda tank_x
-    clc
-    adc #8
-    sta px
-    lda tank_y
-    sta py
-    jsr occupy_cell
+    ldy tank_x
+    lda row
+    ora occ_column,y
+    tax
+    tya
+    and #63
+    tay
+    lda occ_bit,y
+    ora occupancy,x
+    sta occupancy,x
 @next:
     ldx owner
     dex
     bmi :+
     jmp @tank
 :   rts
-occupy_cell:
-    ldy px
-    lda py
-    lsr
-    and #$7c
-    ora occ_column,y
-    tax
-    lda px
-    and #63
-    tay
-    lda occ_bit,y
-    ora occupancy,x
-    sta occupancy,x
-    rts
 ; Return nonzero for the solid terrain or an occupied cell on the leading edge.
 blocked_cell:
     lda py

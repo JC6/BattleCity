@@ -87,6 +87,11 @@ jobs:
         env:
           MAME: /usr/games/mame
         run: python3 tests/nes/verify_stages.py build/shared/game.nes --suite attract --report attract.csv
+      - name: Check demo interruptions, endings and both complete matches
+        if: always() && startsWith(matrix.stages, '1 ')
+        env:
+          MAME: /usr/games/mame
+        run: python3 tests/nes/verify_match.py build/shared/game.nes
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -182,20 +187,6 @@ jobs:
           Cflags: -I$SDL_INSTALL_ROOT/include
           PC
           bash tools/build-mame-runtime.sh android "build/shared/$CARTRIDGE.nes"
-      - name: Report compiler and SDK errors
-        if: failure()
-        shell: python
-        run: |
-          import os
-          import re
-          from pathlib import Path
-          log = Path(os.environ['RUNNER_TEMP']) / 'battlecity-build.log'
-          if log.is_file():
-              lines = log.read_text(errors='replace').splitlines()
-              errors = [line for line in lines if re.search(
-                  r'error|fatal|failed|no space|not found|no such|exception|make.*\*\*\*', line, re.I)]
-              for line in (errors or lines)[-10:]:
-                  print('::error::' + line[-500:].replace('%', '%25'))
       - uses: actions/setup-node@v6
         if: matrix.platform == 'web'
         with:
@@ -203,6 +194,7 @@ jobs:
       - name: Exercise the packaged site
         if: matrix.platform == 'web'
         run: |
+          exec > >(tee "$RUNNER_TEMP/battlecity-test.log") 2>&1
           npm ci --prefix web
           (cd web && npx playwright install --with-deps chromium webkit)
           python3 -m http.server 8765 --bind 127.0.0.1 --directory build/mame-runtime/web/site &
@@ -247,6 +239,7 @@ jobs:
         env:
           ANDROID_SERIAL: emulator-5554
         run: |
+          exec > >(tee "$RUNNER_TEMP/battlecity-test.log") 2>&1
           image='system-images;android-34;android-tv;x86'
           sdk_tools="$ANDROID_HOME/cmdline-tools/latest/bin"
           "$sdk_tools/sdkmanager" "platform-tools" "emulator" "$image"
@@ -266,6 +259,23 @@ jobs:
             sleep 2
           done
           python3 tests/nes/television.py deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result
+      - name: Report the failed build or device check
+        if: failure()
+        shell: python
+        run: |
+          import os
+          import re
+          from pathlib import Path
+          temporary = Path(os.environ['RUNNER_TEMP'])
+          log = temporary / 'battlecity-test.log'
+          if not log.is_file():
+              log = temporary / 'battlecity-build.log'
+          if log.is_file():
+              lines = log.read_text(errors='replace').splitlines()
+              errors = [line for line in lines if re.search(
+                  r'error|fatal|failed|no space|not found|no such|exception|make.*\*\*\*', line, re.I)]
+              for line in (errors or lines)[-10:]:
+                  print('::error::' + line[-500:].replace('%', '%25'))
       - uses: actions/upload-artifact@v4
         if: always() && matrix.abi == 'x86' && inputs.cartridge == 'game'
         with:
