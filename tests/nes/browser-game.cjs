@@ -448,21 +448,33 @@ async function verify(engine, suite) {
         assert.equal(await slotDigest(page, 1), firstSlot, 'cancel changed slot one');
         const fourthSlot = await slotDigest(page, 4);
         await menu(page, ['Escape','Home','Enter','Home','Delete'], 'Slot lock saved.');
-        await page.waitForFunction(() => {
-            const canvas = document.querySelector('canvas');
+        // The custom battlefield is mostly empty. Check the actual compositor
+        // output for the NES background and bright game pixels in its preview.
+        await renderFrames(page, 3);
+        const viewport = await page.locator('canvas').boundingBox();
+        const clip = {x: viewport.x + viewport.width * .134, y: viewport.y + viewport.height * .408,
+            width: viewport.width * .147, height: viewport.height * .23};
+        const preview = await page.screenshot({clip});
+        const counts = await page.evaluate(async encoded => {
+            const image = new Image();
+            image.src = 'data:image/png;base64,' + encoded;
+            await image.decode();
             const sample = document.createElement('canvas');
-            sample.width = 32;
-            sample.height = 24;
+            sample.width = 64;
+            sample.height = 48;
             const ctx = sample.getContext('2d');
-            ctx.drawImage(canvas, canvas.width * .135, canvas.height * .415,
-                canvas.width * .14, canvas.height * .215, 0, 0, 32, 24);
-            const pixels = ctx.getImageData(0, 0, 32, 24).data;
-            let bricks = 0;
+            ctx.drawImage(image, 0, 0, 64, 48);
+            const pixels = ctx.getImageData(0, 0, 64, 48).data;
+            let black = 0, bright = 0;
             for (let i = 0; i < pixels.length; i += 4) {
-                if (pixels[i] > 85 && pixels[i] > 1.3 * pixels[i+1] && pixels[i+1] > 1.3 * pixels[i+2]) bricks++;
+                const max = Math.max(pixels[i], pixels[i+1], pixels[i+2]);
+                if (max < 4) black++;
+                if (max > 85) bright++;
             }
-            return bricks >= 12;
-        }, null, {timeout: 15000});
+            return {black, bright};
+        }, preview.toString('base64'));
+        await capture(page, 'protected-slot');
+        assert.ok(counts.black > 200 && counts.bright > 12, 'Missing on-screen save thumbnail: '+JSON.stringify(counts));
         // Selecting a protected slot must leave the cursor here. Move to slot four
         // and cancel its overwrite to verify the protected state was untouched.
         await menu(page, ['Enter','ArrowLeft','Enter','Home','Enter']);
