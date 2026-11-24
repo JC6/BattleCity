@@ -32,16 +32,27 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Prepare the PNG screenshot decoder
+        timeout-minutes: 12
+        run: |
+          if command -v ffmpeg >/dev/null; then exit 0; fi
+          cd "$RUNNER_TEMP"
+          curl -fLSs --retry 3 https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz -o ffmpeg-7.1.1.tar.xz
+          echo '733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1  ffmpeg-7.1.1.tar.xz' | sha256sum -c -
+          tar -xf ffmpeg-7.1.1.tar.xz
+          cd ffmpeg-7.1.1
+          ./configure --disable-everything --disable-autodetect --disable-doc --disable-debug \
+            --disable-ffplay --disable-ffprobe --disable-network --disable-x86asm --enable-zlib \
+            --enable-decoder=png --enable-demuxer=png_pipe,image2pipe --enable-protocol=pipe \
+            --enable-filter=scale,format,buffer,buffersink --enable-encoder=rawvideo --enable-muxer=rawvideo
+          make -j"$(nproc)" ffmpeg
+          echo "$PWD" >> "$GITHUB_PATH"
       - name: Boot the Android SDK television image and test both gamepads
         timeout-minutes: 30
         env:
           ANDROID_SERIAL: emulator-5554
         run: |
           exec > >(tee "$RUNNER_TEMP/battlecity-test.log") 2>&1
-          if ! command -v ffmpeg >/dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends ffmpeg
-          fi
           bash tests/nes/television-avd.sh deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result --suite controls --suite auto-frameskip
       - name: Report the failed build or device check
         if: failure()
