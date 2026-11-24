@@ -1,0 +1,67 @@
+--- a/src/emu/machine.cpp
++++ b/src/emu/machine.cpp
+@@ -1457,31 +1457,53 @@
+ 
+ 	auto profile = g_profiler.start(PROFILER_EXTRA);
+ 
+-	// execute CPUs if not paused
++	// A display callback may arrive at any refresh rate. Keep the cumulative
++	// emulation target so that rounding up a CPU timeslice cannot cause drift.
++	static double previous_ms = -1;
++	static attotime target, previous_emu;
++	double const now = emscripten_get_now();
++	double const elapsed_ms = now - previous_ms;
++	auto &scheduler = machine->scheduler();
++	bool const interrupted = previous_ms < 0 || elapsed_ms < 0 || elapsed_ms > 1000;
++	previous_ms = now;
++	if (EM_ASM_INT({ return document.hidden ? 1 : 0; }))
++	{
++		previous_ms = -1;
++		return;
++	}
++
+ 	if (!machine->m_paused)
+ 	{
+-		device_scheduler * scheduler;
+-		scheduler = &(machine->scheduler());
+-
+-		// Emscripten will call this function at 60Hz, so step the simulation
+-		// forward for the amount of time that has passed since the last frame
+-		const attotime frametime(0,HZ_TO_ATTOSECONDS(60));
+-		const attotime stoptime(scheduler->time() + frametime);
+-
+-		while (!machine->m_paused && !machine->scheduled_event_pending() && scheduler->time() < stoptime)
++		if (interrupted || scheduler.time() != previous_emu)
++			target = scheduler.time();
++		target += interrupted ? attotime::from_hz(60) : attotime::from_double(std::min(elapsed_ms, 250.0) / 1000.0);
++
++		while (!machine->m_paused && !machine->scheduled_event_pending() && scheduler.time() < target)
+ 		{
++			auto const before = scheduler.time();
+ 			run_timeslice(*machine);
+-			// handle save/load
+ 			if (machine->m_saveload_schedule != saveload_schedule::NONE)
+ 			{
+ 				machine->handle_saveload();
++				target = scheduler.time();
++				break;
++			}
++			if (scheduler.time() < before) // direct rewind changed the timeline
++			{
++				target = scheduler.time();
+ 				break;
+ 			}
+ 		}
++		previous_emu = scheduler.time();
++		if (machine->m_paused)
++			target = previous_emu;
+ 	}
+ 	// otherwise, just pump video updates through
+ 	else
++	{
++		target = previous_emu = scheduler.time();
+ 		machine->m_video->frame_update();
++	}
+ 
+ 	// cancel the emscripten loop if the system has been told to exit
+ 	if (machine->exit_pending())

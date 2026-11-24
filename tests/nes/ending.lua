@@ -24,11 +24,23 @@ local capture=os.getenv("BATTLECITY_CAPTURE_DIR")
 local record=buttons=="record"
 local record_seen=false
 local rows={}
+local finish_at
+local av_path=os.getenv("BATTLECITY_AV_TRACE")
+local av_rows={"frame,emu_s,event,value"}
+local function av(name,value)
+    if av_path then
+        av_rows[#av_rows+1]=string.format("%d,%.8f,%s,%s",frame,m.time:as_double(),name,tostring(value or ""))
+    end
+end
 local function event(name)
-    if origin and not done then rows[#rows+1]=(frame-origin)..","..name end
+    if origin and not done then rows[#rows+1]=(frame-origin)..","..name;av(name) end
 end
 local function finish()
     if record then assert(record_seen,"high-score screen did not display the reference lettering and score") end
+    if av_path then
+        local out=assert(io.open(av_path,"w"))
+        out:write(table.concat(av_rows,"\n"),"\n");out:close()
+    end
     local result=table.concat(rows,"\n").."\n"
     local out=os.getenv("BATTLECITY_TRACE")
     if out then local f=assert(io.open(out,"w"));f:write(result);f:close() end
@@ -99,7 +111,9 @@ local function oncall(addr,name)
         if (pc==addr or pc==addr+1) and origin and (name~="game-over" or score_frame) then
             event(name)
             if name=="tally" then score_frame=frame end
-            if name=="next" or name=="title" then finish() end
+            if name=="next" or name=="title" then
+                if av_path then finish_at=frame+20 else finish() end
+            end
         end
     end)
 end
@@ -114,8 +128,35 @@ for _,cue in ipairs({10,11,7,19,27}) do
         if origin and v==1 and last~=frame then last=frame;event("cue-"..cue) end
     end)
 end
+local over_at,previous_ink,previous_mode=nil,nil,nil
+if av_path then
+    for cue=24,26 do
+        tap(a.audio_commands+cue,"install_write_tap",function(_,v)
+            if origin and v==1 then over_at=over_at or frame;av("cue-"..cue) end
+        end)
+    end
+    for _,register in ipairs({0x4000,0x4002,0x4003,0x4004,0x4006,0x4007,0x4008,0x400a,0x400b}) do
+        tap(register,"install_write_tap",function(_,v)
+            if over_at and frame<=over_at+125 then av(string.format("apu-%04x",register),v) end
+        end)
+    end
+end
 ending_frames=emu.add_machine_frame_notifier(function()
     frame=frame+1
+    if av_path and origin then
+        local mode=bus:read_u8(a.mode)
+        if previous_mode~=mode then av("mode",mode);previous_mode=mode end
+        if over_at and frame<=over_at+125 then
+            local data=m.screens[":screen"]:pixels()
+            local ink=0
+            for y=72,151,2 do for x=60,195,2 do
+                local i=1+4*(256*y+x)
+                local b,g,r=data:byte(i,i+2)
+                if r>40 and r>g*1.16 and r>b*1.35 then ink=ink+1 end
+            end end
+            if ink~=previous_ink then av("word-ink",ink);previous_ink=ink end
+        end
+    end
     pads[4]:set_value(coop and frame>=300 and frame<305 and 1 or 0)
     if record and not record_seen and bus:read_u8(a.mode)==8 then
         local data=m.screens[":screen"]:pixels()
@@ -148,9 +189,11 @@ ending_frames=emu.add_machine_frame_notifier(function()
             f:write(data);f:close()
         end
     end
+    if finish_at and frame>=finish_at and not done then finish() end
     local t=score_frame and frame-score_frame or -1
     local start=frame>=330 and frame<335 or frame>=420 and frame<425
     if buttons=="tap" and t==54 or buttons=="hold" and t>=54 and t<155 then start=true end
+    if buttons=="skip-over" and over_at and frame==over_at+35 then start=true;av("start") end
     pads[8]:set_value(start and 1 or 0)
     if not done and frame>3900 then done=true;print("BATTLECITY_ENDING_FAILED timeout "..table.concat(rows," "));m:exit() end
 end)

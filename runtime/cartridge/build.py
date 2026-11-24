@@ -162,13 +162,17 @@ def art(logo_map):
                             rows[y][x],rows[y+1][x]=rows[y+1][x],rows[y][x]
             square(256+kind*16+tread*8,rows)
             square(260+kind*16+tread*8,list(zip(*rows[::-1])))
-    for phase,r in enumerate((3,6,10,15)):
-        def star(x,y):
-            dx,dy = abs(2*x-15),abs(2*y-15)
-            if max(dx,dy)>r: return '0'
-            if min(dx,dy)==1 or dx+dy<=r: return '3'
-            return '2' if dx==dy and dx<=r//2+1 else '0'
-        square(416+phase*4,[[star(x,y) for x in range(16)] for y in range(16)])
+    # White spawn flash measured at both stage-one spawn points on Switch.
+    # Each list gives the horizontal radius by distance from the middle row.
+    star_radii = ((4,1,0,0,0), (5,2,1,0,0,0),
+                  (6,3,1,1,0,0,0), (7,4,2,1,1,0,0,0))
+    for phase, radii in enumerate(star_radii):
+        rows = []
+        for y in range(16):
+            dy = abs(y-8)
+            radius = radii[dy] if dy < len(radii) else -1
+            rows.append(''.join('3' if abs(x-7) <= radius else '0' for x in range(16)))
+        square(416+phase*4, rows)
     for phase in range(2):
         def shield(x,y):
             radius=(2*x-15)**2+(2*y-15)**2

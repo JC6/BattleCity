@@ -284,10 +284,11 @@ async function verifyScenarios(page, suite, players = 1, scenario = '') {
     await page.setViewportSize({width: 640, height: 480});
     await page.goto(url);
     await page.evaluate(({script, labels, goldens, inputs, marker, players, scenario}) => {
-        // MAME advances one emulated frame per callback. Scripted fixtures use
-        // its own frame counter and NES pixel buffer, including save/load.
-        // Keep real-time canvas and audio presentation in the controls suite.
-        window.requestAnimationFrame = callback => setTimeout(() => callback(performance.now()), 0);
+        // Advance the monotonic clock alongside each scripted fixture callback.
+        // The separate release clock checks use wall time and live PCM.
+        let fixtureTime = performance.now();
+        Object.defineProperty(performance, 'now', {value: () => fixtureTime});
+        window.requestAnimationFrame = callback => setTimeout(() => callback(fixtureTime += 1000 / 60), 0);
         window.cancelAnimationFrame = clearTimeout;
         Module.arguments.push('-video', 'none', '-sound', 'none');
         Module.arguments.push('-autoboot_delay', '0', '-autoboot_script', '/suite.lua');

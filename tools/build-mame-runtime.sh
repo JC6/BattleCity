@@ -40,7 +40,7 @@ if grep -qx 'struct State' "$tree/3rdparty/residfp/State.h"; then
 }' "$tree/3rdparty/residfp/State.h"
 fi
 python3 "$tree/scripts/build/file2str.py" "$repo/runtime/menu-regular.bdc" "$tree/src/emu/battlecity-menu-font.h" battlecity_menu_font uint8_t
-for patch in "$repo/runtime/menu-font.patch" "$repo/runtime/rewind.patch" "$repo/runtime/save.patch" "$repo/runtime/web-audio.patch" "$repo/runtime/web-video.patch" "$repo/runtime/menu-input.patch" "$repo/runtime/rewind-scheduler.patch" "$repo/runtime/direct-rewind.patch" "$repo/runtime/nes-palette.patch" "$repo/runtime/slot-preview.patch" "$repo/runtime/picture.patch" "$repo/runtime/menu-viewport.patch" "$repo/runtime/tv-startup.patch" "$repo/runtime/tv-gamepads.patch"; do
+for patch in "$repo/runtime/menu-font.patch" "$repo/runtime/rewind.patch" "$repo/runtime/save.patch" "$repo/runtime/web-audio.patch" "$repo/runtime/web-video.patch" "$repo/runtime/menu-input.patch" "$repo/runtime/rewind-scheduler.patch" "$repo/runtime/direct-rewind.patch" "$repo/runtime/web-clock.patch" "$repo/runtime/nes-palette.patch" "$repo/runtime/slot-preview.patch" "$repo/runtime/picture.patch" "$repo/runtime/menu-viewport.patch" "$repo/runtime/tv-startup.patch" "$repo/runtime/tv-gamepads.patch"; do
     if ! git -C "$tree" apply --reverse --check "$patch" 2>/dev/null; then
         git -C "$tree" apply "$patch"
     fi

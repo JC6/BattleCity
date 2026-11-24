@@ -206,8 +206,20 @@ jobs:
             node tests/nes/browser.cjs http://127.0.0.1:8765/
             node tests/nes/browser-replay.cjs http://127.0.0.1:8765/
           else
+            mkdir -p build/web-observations
+            for engine in chromium webkit; do
+              for hz in native 60 120; do
+                node tests/nes/browser-clock.cjs http://127.0.0.1:8765/ "$engine" "$hz" | tee "build/web-observations/$engine-$hz.jsonl"
+              done
+            done
+            node tests/nes/browser-ending.cjs http://127.0.0.1:8765/ build/shared/game.lbl build/web-observations
             node tests/nes/browser-game.cjs http://127.0.0.1:8765/ build/shared/game.lbl
           fi
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.platform == 'web' && inputs.cartridge == 'game'
+        with:
+          name: web-clock-and-endings
+          path: build/web-observations/
       - name: Verify the packaged cartridge ${{ needs.cartridge.outputs.sha256 }}
         run: |
           mkdir -p deliverable

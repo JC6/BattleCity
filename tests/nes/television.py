@@ -107,7 +107,7 @@ emu.register_frame_done(function()
   if ram:read_u8({addresses['shots']+7})==1 then p2=tick end
   if tick%3~=0 then return end
   local file=assert(io.open("{directory}/tv-observation.tmp","w"))
-  file:write(table.concat({{{reads},manager.ui.menu_active and 1 or 0,p1,p2,tick}},','))
+  file:write(table.concat({{{reads},manager.ui.menu_active and 1 or 0,p1,p2,tick,math.floor(manager.machine.time:as_double()*1000000)}},','))
   file:close()
   assert(os.rename("{directory}/tv-observation.tmp","{directory}/tv-observation"))
 end)
@@ -116,9 +116,9 @@ end)
 
 def state():
     raw = private('cat','files/tv-observation',check=False).strip()
-    if not re.fullmatch(rb'[0-9]+(,[0-9]+){13}', raw):
+    if not re.fullmatch(rb'[0-9]+(,[0-9]+){14}', raw):
         return {}
-    keys = 'mode players selection stage scroll y1 y2 shot1 shot2 ready menu fire1 fire2 frame'.split()
+    keys = 'mode players selection stage scroll y1 y2 shot1 shot2 ready menu fire1 fire2 frame emu_us'.split()
     return dict(zip(keys,map(int,raw.split(b','))))
 
 
@@ -202,6 +202,59 @@ def shows_brick(image, bounds):
     return count >= 12
 
 
+def measure_clock(results):
+    path = 'files/tv-audio.wav'
+    header = private('head', '-c', '44', path)
+    channels, rate = struct.unpack_from('<HI', header, 22)
+    assert channels in (1, 2) and rate > 0
+
+    def sample():
+        before = time.monotonic()
+        snapshot = check(lambda row: not row['menu'], 'active TV clock')
+        size = int(private('stat', '-c', '%s', path))
+        return (before + time.monotonic()) / 2, snapshot, size
+
+    rows = []
+    wall, state_before, size = sample()
+    for run in range(1, 4):
+        time.sleep(30)
+        now, current, end_size = sample()
+        interval = now-wall
+        elapsed = (current['emu_us']-state_before['emu_us']) / 1e6
+        pcm = (end_size-size)/(2*channels*rate)
+        rows.append(dict(run=run, wall=interval, emu=elapsed, frames=current['frame']-state_before['frame'],
+                         pcm=pcm, sampleRate=rate, speed=elapsed/interval, audioSpeed=pcm/interval))
+        wall, state_before, size = now, current, end_size
+    (results/'clock.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in rows))
+    assert all(row['emu'] > 0 and abs(row['pcm']-row['emu']) < .2 for row in rows)
+
+
+def record_endings(labels, directory, results, write_private):
+    script = Path(__file__).with_name('ending.lua').read_text()
+    write_private('ending.lbl', labels.read_text())
+    for route in ('neutral', 'record', 'skip-over'):
+        adb('shell','am','force-stop',PACKAGE)
+        private('rm','-f','files/ending.csv','files/ending.wav')
+        values = {'BATTLECITY_LABELS':directory+'/ending.lbl','BATTLECITY_SCENARIO':'base',
+                  'BATTLECITY_END_INPUT':route,'BATTLECITY_AV_TRACE':directory+'/ending.csv'}
+        entries = ','.join('['+json.dumps(k)+']='+json.dumps(v) for k,v in values.items())
+        # SDL has no process environment arguments for Lua in the Leanback launcher.
+        shim = 'local getenv=os.getenv; local env={'+entries+'}; os.getenv=function(k) return env[k] or getenv(k) end\n'
+        write_private('tv-observer.lua', shim + script)
+        write_private('nes.ini',f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\nwavwrite {directory}/ending.wav\n')
+        adb('shell','am','start','-W','-a','android.intent.action.MAIN',
+            '-c','android.intent.category.LEANBACK_LAUNCHER','-n',PACKAGE+'/.GameActivity')
+        trace = wait(lambda: private('cat','files/ending.csv',check=False), lambda v: b',title,' in v,
+                     'TV ending '+route)
+        out = results/('tv-'+route)
+        out.mkdir(exist_ok=True)
+        (out/'events.csv').write_bytes(trace)
+        def finished_wav():
+            raw = private('cat','files/ending.wav',check=False)
+            return raw if len(raw)>44 and raw[:4]==b'RIFF' and struct.unpack_from('<I',raw,4)[0]==len(raw)-8 else None
+        (out/'game.wav').write_bytes(wait(finished_wav, bool, 'closed TV WAV '+route))
+
+
 def launch():
     private('rm','-f','files/tv-observation')
     adb('shell','am','start','-W','-a','android.intent.action.MAIN',
@@ -221,7 +274,7 @@ def run(apk, labels, results):
     slot = f'files/states/{digest}/nes/1.sta'
     # Leave existing player files intact. A completed run removes its own slot.
     test_files = ['files/'+name for name in ('nes.ini','tv-observer.lua','tv-observation',
-                                               'tv-observation.tmp','tv-audio.wav')]
+                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav')]
     test_files.extend((slot,slot+'.png',slot+'.lock'))
     for name in test_files:
         if private('ls','-d',name,check=False).strip()==name.encode():
@@ -393,6 +446,10 @@ def run(apk, labels, results):
             capture('restored', (40,21,116,72))
             (results/'result.json').write_text(json.dumps(
                 {'saved':saved,'restored':restored,'background':background,'resumed':resumed,'result':'passed'},indent=2))
+        adb('shell','am','force-stop',PACKAGE)
+        launch()
+        measure_clock(results)
+        record_endings(labels, directory, results, write_private)
     except Exception:
         # The system log identifies early SDL, linker and Java failures even
         # when the game never reaches the cartridge observer.
