@@ -39,7 +39,8 @@ if grep -qx 'struct State' "$tree/3rdparty/residfp/State.h"; then
     sed -i '/^struct State$/ { s/struct/class/; n; a public:
 }' "$tree/3rdparty/residfp/State.h"
 fi
-for patch in "$repo/runtime/rewind.patch" "$repo/runtime/save.patch" "$repo/runtime/web-audio.patch" "$repo/runtime/web-video.patch" "$repo/runtime/menu-input.patch" "$repo/runtime/rewind-scheduler.patch" "$repo/runtime/direct-rewind.patch" "$repo/runtime/nes-palette.patch" "$repo/runtime/slot-preview.patch" "$repo/runtime/picture.patch" "$repo/runtime/menu-viewport.patch" "$repo/runtime/tv-startup.patch" "$repo/runtime/tv-gamepads.patch"; do
+python3 "$tree/scripts/build/file2str.py" "$repo/runtime/menu-regular.bdc" "$tree/src/emu/battlecity-menu-font.h" battlecity_menu_font uint8_t
+for patch in "$repo/runtime/menu-font.patch" "$repo/runtime/rewind.patch" "$repo/runtime/save.patch" "$repo/runtime/web-audio.patch" "$repo/runtime/web-video.patch" "$repo/runtime/menu-input.patch" "$repo/runtime/rewind-scheduler.patch" "$repo/runtime/direct-rewind.patch" "$repo/runtime/nes-palette.patch" "$repo/runtime/slot-preview.patch" "$repo/runtime/picture.patch" "$repo/runtime/menu-viewport.patch" "$repo/runtime/tv-startup.patch" "$repo/runtime/tv-gamepads.patch"; do
     if ! git -C "$tree" apply --reverse --check "$patch" 2>/dev/null; then
         git -C "$tree" apply "$patch"
     fi
@@ -47,6 +48,7 @@ done
 if ! cmp -s "$repo/runtime/wallpaper-previews.h" "$tree/src/frontend/mame/ui/wallpaper-previews.h"; then
     cp "$repo/runtime/wallpaper-previews.h" "$tree/src/frontend/mame/ui/wallpaper-previews.h"
 fi
+cp "$repo/runtime/screen-preview.h" "$tree/src/frontend/mame/ui/screen-preview.h"
 cp "$repo/runtime/staff-roll.inc" "$tree/src/frontend/mame/ui/staff-roll.inc"
 if ! cmp -s "$repo/runtime/mainmenu.cpp" "$tree/src/frontend/mame/ui/mainmenu.cpp"; then
     cp "$repo/runtime/mainmenu.cpp" "$tree/src/frontend/mame/ui/mainmenu.cpp"
@@ -76,7 +78,7 @@ else
         "LDOPTS=-sGROWABLE_ARRAYBUFFERS=0 --pre-js $repo/runtime/browser/storage.js -lidbfs.js --embed-file $rom@/game.nes --embed-file $repo/runtime/browser/keyboard.cfg@/keyboard.cfg"
     mkdir -p "$out/site/licenses/MAME"
     cp "$tree/COPYING" "$tree"/docs/legal/* "$out/site/licenses/MAME/"
-    cp "$repo/LICENSE" "$repo/runtime/cartridge/NOTICE" "$out/site/licenses/"
+    cp "$repo/LICENSE" "$repo/runtime/cartridge/NOTICE" "$repo/runtime/Menu-Font-LICENSE.txt" "$out/site/licenses/"
     cp "$tree/battlecity.js" "$tree/battlecity.wasm" "$repo/runtime/android/src/main/res/drawable-nodpi/"battle_{surround,stars,symbols}.jpg "$out/site/"
     cartridge_hash=$(sha256sum < "$rom")
     sed "s/@CARTRIDGE_SHA256@/${cartridge_hash%% *}/g" "$repo/runtime/browser/index.html" > "$out/site/index.html"

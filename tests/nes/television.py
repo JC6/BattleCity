@@ -252,6 +252,24 @@ def run(apk, labels, results):
             one.down()
             one.down()
             one.tap(SOUTH)
+            one.tap(SOUTH)
+            def shooter_width():
+                image=adb('exec-out','screencap','-p')
+                rgb=screen_rgb(image,'320:180')
+                xs=[x for y in range(33,78) for x in range(122,198)
+                    if (lambda r,g,b: (r>60 and g>115 and b<65) or (35<r<90 and g<95 and b>150))(
+                        *rgb[(320*y+x)*3:(320*y+x)*3+3])]
+                return max(xs)-min(xs)+1 if xs else 0
+            # Default 4:3, Zoom, Dot-by-Dot and Full Screen have distinct widths.
+            for i,width in enumerate((36,41,31,64)):
+                if i:
+                    one.tap_hat(16,1)
+                    one.tap(SOUTH)
+                wait(shooter_width,lambda w: abs(w-width)<=3,'screen sample width '+str(width))
+            capture('screen-settings')
+            one.tap_hat(16,1)
+            one.tap(SOUTH)
+            one.tap(EAST)
             # Staff Credits is one step left of Screen Settings on the four-card row.
             one.tap_hat(16, -1)
             one.tap(SOUTH)
@@ -263,7 +281,25 @@ def run(apk, labels, results):
             _, credit_image = wait(read_credits, lambda frame: frame[0] is not None and frame[0] < y-12,
                                    'collection title visibly moved upward')
             (results/'staff-credits.png').write_bytes(credit_image)
-            for _ in range(3):
+            one.direction(1)
+            try:
+                time.sleep(21)
+                capture('staff-credits-middle')
+                time.sleep(37.5)
+                def final_card():
+                    image=adb('exec-out','screencap','-p')
+                    rgb=screen_rgb(image,'320:180')
+                    points=[(x,y) for y in range(180) for x in range(320)
+                            if min(rgb[(320*y+x)*3:(320*y+x)*3+3])>95]
+                    return image if (points and 86<=min(y for x,y in points)<=91
+                            and max(y for x,y in points)<=95 and min(x for x,y in points)<100
+                            and max(x for x,y in points)>220) else None
+                final=wait(final_card, bool, 'centered final producer card')
+                (results/'staff-credits-final.png').write_bytes(final)
+            finally:
+                one.direction(0)
+            time.sleep(4.5)
+            for _ in range(2):
                 one.tap(EAST)
             check(lambda s:not s['menu'],'return from staff credits to the title')
             one.tap(START)

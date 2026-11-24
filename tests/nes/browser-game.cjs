@@ -104,6 +104,31 @@ async function press(page, key, expected) {
     await page.waitForFunction(previous => ((gameState.frame - previous + 256) % 256) >= 3, frame);
 }
 
+async function checkShooterPreview(page, mode) {
+    const bounds = await page.evaluate(() => {
+        const sample=document.createElement('canvas');
+        sample.width=1280; sample.height=720;
+        const ctx=sample.getContext('2d');
+        ctx.drawImage(Module.canvas,0,0,1280,720);
+        const pixels=ctx.getImageData(0,0,1280,720).data;
+        return [[640,218], ...[307,529,750,972].map(x=>[x,410])].map(([cx,cy]) => {
+            const xs=[],ys=[];
+            for(let y=cy-86;y<=cy+86;++y) for(let x=cx-138;x<=cx+138;++x) {
+                const i=(y*1280+x)*4;
+                const [r,g,b]=[pixels[i],pixels[i+1],pixels[i+2]];
+                if ((r>65 && g>120 && b<50) || (r>39 && r<85 && g<91 && b>155)) {
+                    xs.push(x); ys.push(y);
+                }
+            }
+            return [Math.max(...xs)-Math.min(...xs)+1,Math.max(...ys)-Math.min(...ys)+1];
+        });
+    });
+    const sizes=[[76,56],[86,75],[65,56],[134,75]];
+    const expected=[[sizes[mode][0]*164/86,sizes[mode][1]*144/75], ...sizes];
+    bounds.forEach((actual,i) => actual.forEach((v,j) =>
+        assert.ok(Math.abs(v-expected[i][j])<6, 'preview '+i+' expected '+expected[i]+' measured '+actual)));
+}
+
 async function checkScreenMode(page, mode) {
     try {
         await page.waitForFunction(expected => document.querySelector('#display').dataset.mode === expected,
@@ -354,6 +379,16 @@ async function verify(engine, suite) {
         await menu(page, ['Home','ArrowDown','ArrowDown','Enter','Home','Enter','Home','ArrowRight','ArrowRight','Enter']);
         await capture(page, 'screen-settings');
         await checkScreenMode(page, '2');
+        for(const mode of [0,1,2,3]) {
+            await menu(page, ['Home', ...Array(mode).fill('ArrowRight'), 'Enter']);
+            await checkScreenMode(page, String(mode));
+            await checkShooterPreview(page,mode);
+        }
+        await menu(page,['ArrowLeft']);
+        await checkScreenMode(page,'3');
+        await checkShooterPreview(page,3);
+        await menu(page,['Enter']);
+        await checkScreenMode(page,'2');
         // Enable both filters, then exercise their actual effect on the saved
         // viewport after the menu is closed.
         await menu(page, ['End','ArrowUp','Enter','ArrowUp','Enter']);
@@ -385,7 +420,36 @@ async function verify(engine, suite) {
         const titleY=await page.evaluate(() => creditTitleY());
         await page.waitForFunction(y => creditTitleY()>0 && creditTitleY()<y-12,titleY);
         await capture(page, 'staff-credits');
-        await menu(page, ['Home','Enter','Home','ArrowDown','Enter','Home','ArrowLeft','Enter']);
+        // Once fast scrolling reaches the producer card there are four seconds
+        // to see it before the menu returns to the Settings page.
+        await page.keyboard.down('ArrowDown');
+        try {
+            await page.waitForTimeout(21100);
+            await capture(page,'staff-credits-middle');
+            await page.waitForTimeout(37500);
+            await page.waitForFunction(() => {
+                const canvas=document.createElement('canvas');
+                canvas.width=320; canvas.height=180;
+                const ctx=canvas.getContext('2d'); ctx.drawImage(Module.canvas,0,0,320,180);
+                const p=ctx.getImageData(0,0,320,180).data;
+                let minX=320,maxX=-1,minY=180,maxY=-1;
+                for(let y=0;y<180;++y) for(let x=0;x<320;++x) {
+                    const i=(320*y+x)*4;
+                    if(p[i]<95 || p[i+1]<95 || p[i+2]<95) continue;
+                    minX=Math.min(minX,x); maxX=Math.max(maxX,x);
+                    minY=Math.min(minY,y); maxY=Math.max(maxY,y);
+                }
+                return minY>=86 && minY<=91 && maxY<=95 && minX<100 && maxX>220;
+            },null,{polling:80,timeout:90000});
+            await capture(page,'staff-credits-final');
+        } finally { await page.keyboard.up('ArrowDown'); }
+        await page.waitForFunction(() => creditTitleY()<0 && (() => {
+            const c=document.createElement('canvas'); c.width=80; c.height=45;
+            const ctx=c.getContext('2d'); ctx.drawImage(Module.canvas,0,0,80,45);
+            const pixels=ctx.getImageData(8,15,64,11).data;
+            return pixels.some((v,i)=>i%4===2 && v>65 && v>pixels[i-2]+40);
+        })(),null,{timeout:12000});
+        await menu(page, ['Home','ArrowDown','Enter','Home','ArrowLeft','Enter']);
         await capture(page, 'wallpaper-settings');
         const previewRanges = await page.evaluate(() => {
             const canvas=Module.canvas, copy=document.createElement('canvas');

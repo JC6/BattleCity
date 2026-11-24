@@ -2,6 +2,7 @@
 #include "emu.h"
 #include "ui/mainmenu.h"
 #include "wallpaper-previews.h"
+#include "screen-preview.h"
 #include "fileio.h"
 #include "util/ioprocs.h"
 #include "rendutil.h"
@@ -87,16 +88,29 @@ void brackets(render_container &c, float x, float y, float w, float h)
     }
 }
 
+void rounded(render_container &c,float x,float y,float w,float h,float rx,float ry,rgb_t color)
+{
+    rx=std::min(rx,w/2); ry=std::min(ry,h/2);
+    box(c,x,y+ry,w,h-2*ry,color);
+    constexpr int slices=8;
+    for (int i=0;i<slices;++i) {
+        float const v=1.f-(i+.5f)/slices;
+        float const inset=rx*(1.f-std::sqrt(1.f-v*v)), band=ry/slices;
+        box(c,x+inset,y+i*band,w-2*inset,band,color);
+        box(c,x+inset,y+h-(i+1)*band,w-2*inset,band,color);
+    }
+}
+
 void panel(render_container &c, float x, float y, float w, float h, bool focused = false)
 {
-    box(c,x,y,w,h,blue);
-    box(c,x+.005f,y+.006f,w-.010f,h-.012f,rgb_t::black());
+    rounded(c,x,y,w,h,.012f,.020f,blue);
+    rounded(c,x+.006f,y+.005f,w-.012f,h-.010f,.008f,.015f,rgb_t::black());
     if (focused) brackets(c,x,y,w,h);
 }
 
 void chamfer(render_container &c,float x,float y,float w,float h,float cut,rgb_t color)
 {
-    constexpr int bands=8;
+    constexpr int bands=28;
     for (int i=0;i<bands;++i) {
         float inset=cut*std::abs((2*i+1-bands)/float(bands));
         box(c,x+inset,y+i*h/bands,w-2*inset,h/bands,color);
@@ -114,8 +128,9 @@ void label(mame_ui_manager &ui, render_target &target, std::string_view value, f
 void header(mame_ui_manager &ui, render_target &t, std::string_view title,float y=.05f,float bottom=.885f)
 {
     auto &c=*t.ui_container();
-    box(c,.074f,y,.852f,bottom-y,navy);
-    box(c,.079f,y+.007f,.842f,bottom-y-.014f,rgb_t(243,0,0,0));
+    box(c,0,0,1,1,rgb_t(212,0,0,0));
+    rounded(c,.074f,y,.852f,bottom-y,.030f,.050f,navy);
+    rounded(c,.079f,y+.007f,.842f,bottom-y-.014f,.026f,.044f,rgb_t(243,0,0,0));
     chamfer(c,.210f,y+.006f,.580f,.073f,.042f,navy);
     label(ui,t,title,.20f,y+.014f,.60f,.051f);
 }
@@ -129,10 +144,19 @@ void button(mame_ui_manager &ui,render_target &t,std::string_view text,float x,f
     if (focused) brackets(c,x,y,w,.061f);
 }
 
-void footer(mame_ui_manager &ui,render_target &t,bool slots=false)
+void footer(mame_ui_manager &ui,render_target &t,bool slots=false, bool settings_help=false)
 {
     auto &c=*t.ui_container();
-    const float width=slots ? .58f : .36f;
+    if (settings_help) {
+        using clock=std::chrono::steady_clock;
+        static auto const origin=clock::now();
+        float const phase=std::fmod(std::chrono::duration<double>(clock::now()-origin).count()*.20,1.10);
+        for (float x=-phase;x<1.f;x+=1.10f)
+            ui.draw_text_full(t,"This screen is to configure the game settings.",x,.855f,.95f,
+                text_layout::text_justify::LEFT,text_layout::word_wrapping::TRUNCATE,
+                mame_ui_manager::NORMAL,rgb_t::white(),rgb_t::transparent(),nullptr,nullptr,.047f);
+    }
+    const float width=slots ? .58f : .51f;
     chamfer(c,-.037f,.933f,width+.037f,.100f,.034f,rgb_t(200,0,17));
     chamfer(c,-.044f,.940f,width+.035f,.095f,.029f,rgb_t::black());
 #ifdef __ANDROID__
@@ -216,9 +240,10 @@ public:
             else if (occupied(i))
                 label(ui,target,"Saved",x,.505f,.166f,.034f);
             else {
-                box(c,x+.032f,.510f,.102f,.032f,rgb_t(102,24,37));
-                label(ui,target,"NAMCO MUSEUM",x+.033f,.507f,.10f,.021f);
-                label(ui,target,"ARCHIVES",x+.034f,.527f,.070f,.019f);
+                box(c,x+.032f,.512f,.102f,.016f,rgb_t(154,56,59));
+                box(c,x+.032f,.528f,.054f,.013f,rgb_t(154,56,59));
+                label(ui,target,"NAMCO MUSEUM",x+.032f,.507f,.102f,.021f);
+                label(ui,target,"ARCHIVES",x+.032f,.525f,.054f,.018f);
             }
         }
     }
@@ -397,8 +422,6 @@ public:
     {
         set_needs_prev_menu_item(false);
         set_process_flags(PROCESS_LR_ALWAYS);
-        int width=0, height=0;
-        machine().video().compute_snapshot_size(width,height);
         if (wallpaper) {
             static uint8_t const *const images[]={wallpaper_surround_jpeg,wallpaper_stars_jpeg,wallpaper_symbols_jpeg};
             static constexpr size_t sizes[]={sizeof(wallpaper_surround_jpeg),sizeof(wallpaper_stars_jpeg),sizeof(wallpaper_symbols_jpeg)};
@@ -409,13 +432,9 @@ public:
                 item->set_bitmap(wall_bitmaps[i],wall_bitmaps[i].cliprect(),TEXFORMAT_ARGB32);
                 wall_textures[i]=item;
             }
-        } else if (width>0 && height>0) {
-            bitmap.allocate(width,height);
-            machine().video().pixels(&bitmap.pix(0));
-            for (int y=0;y<height;++y)
-                for (int x=0;x<width;++x) bitmap.pix(y,x)|=0xff000000;
+        } else {
             texture=machine().render().texture_alloc();
-            texture->set_bitmap(bitmap,bitmap.cliprect(),TEXFORMAT_ARGB32);
+            update_sample();
         }
     }
     ~display_menu() override {
@@ -447,8 +466,16 @@ private:
     void choose(uintptr_t value) override
     {
         if (value==5) stack_pop();
-        else if (value==6 || value==7) battlecity_picture(battlecity_picture(-1) ^ (value==6 ? 1 : 2));
+        else if (value==6 || value==7) {
+            battlecity_picture(battlecity_picture(-1) ^ (value==6 ? 1 : 2));
+            update_sample();
+        }
         else preference(wallpaper,int(value)-1);
+    }
+    void update_sample()
+    {
+        draw_screen_sample(bitmap,battlecity_picture(-1));
+        texture->set_bitmap(bitmap,bitmap.cliprect(),TEXFORMAT_ARGB32);
     }
     void preview(int i,float x,float y,float w,float h) const
     {
@@ -460,10 +487,13 @@ private:
             return;
         }
         if (!texture) return;
-        static constexpr float width_factors[]={.62f,.80f,.55f,.96f};
-        static constexpr float height_factors[]={.78f,.97f,.78f,.97f};
-        float dx=w*(1-width_factors[i])/2,dy=h*(1-height_factors[i])/2;
-        container().add_quad(x+dx,y+dy,x+w-dx,y+h-dy,rgb_t::white(),texture,PRIMFLAG_BLENDMODE(BLENDMODE_ALPHA));
+        // Visible image extents in the four 1280x720 reference thumbnails.
+        static constexpr int widths[]={76,86,65,134}, heights[]={56,75,56,75};
+        bool const large=w>.2f;
+        float const pw=widths[i]*(large ? 164.f/86.f : 1.f)/1280.f;
+        float const ph=heights[i]*(large ? 144.f/75.f : 1.f)/720.f;
+        float const left=x+(w-pw)/2, top=y+(h-ph)/2;
+        container().add_quad(left,top,left+pw,top+ph,rgb_t::white(),texture,blend);
     }
     void draw(uint32_t) override
     {
@@ -475,8 +505,8 @@ private:
             float x=.170f+.173f*i;
             panel(container(),x,.496f,.141f,.147f,selected_index()==i);
             if (current==i) {
-                box(container(),x,.496f,.141f,.147f,rgb_t(125,168,229));
-                box(container(),x+.006f,.503f,.129f,.133f,rgb_t::black());
+                rounded(container(),x,.496f,.141f,.147f,.012f,.020f,rgb_t(125,168,229));
+                rounded(container(),x+.009f,.502f,.123f,.135f,.008f,.014f,rgb_t::black());
             }
             preview(i,x+.008f,.505f,.125f,.129f);
             if (!wallpaper) label(ui(),target(),screens[i],x-.012f,.656f,.165f,.036f);
@@ -486,13 +516,15 @@ private:
             for (int i=0;i<2;++i) {
                 float y=.195f+.060f*i;
                 std::string name=i ? "Scan Lines" : "Anti-Aliasing";
-                box(container(),.628f,y+.008f,.017f,.025f,picture & (1<<i) ? cyan : blue);
+                rounded(container(),.626f,y-.006f,.026f,.044f,.013f,.022f,navy);
+                label(ui(),target(),i ? "SL" : "SF",.626f,y,.026f,.027f,
+                      picture & (1<<i) ? cyan : rgb_t(174,62,69));
                 label(ui(),target(),name,.649f,y,.147f,.032f);
                 if (selected_index()==i+4) brackets(container(),.625f,y,.169f,.041f);
             }
         }
         button(ui(),target(),"Return to Settings",.369f,.770f,.262f,selected_index()==(wallpaper ? 4 : 6));
-        footer(ui(),target());
+        footer(ui(),target(),false,true);
     }
 };
 
@@ -577,7 +609,7 @@ private:
     void draw(uint32_t) override
     {
         header(ui(),target(),"Controller Settings");
-        footer(ui(),target());
+        footer(ui(),target(),false,true);
 #ifdef __ANDROID__
         char const *const keys[]={"Player 1 and Player 2 use separate gamepads",
             "D-pad  Move       A / B  Fire","Select  Choose mode       Start  Start / Pause",
@@ -656,7 +688,7 @@ private:
             label(ui(),target(),items[i],x,.499f,.18f,.032f);
         }
         button(ui(),target(),"Return to Menu",.367f,.691f,.266f,selected_index()==4);
-        footer(ui(),target());
+        footer(ui(),target(),false,true);
     }
 };
 } // anonymous namespace

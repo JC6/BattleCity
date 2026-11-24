@@ -118,7 +118,7 @@ public final class GameActivity extends SDLActivity {
         } catch (IOException error) {
             throw new IllegalStateException("Cannot prepare the bundled cartridge", error);
         }
-        return new String[] {"nes", "-cart", game.getPath(), "-skip_gameinfo", "-inipath", root.getPath(),
+        return new String[] {"nes", "-uifont", "battlecity-regular", "-cart", game.getPath(), "-skip_gameinfo", "-inipath", root.getPath(),
             "-video", "soft", "-nokeepaspect", "-joystick", "-rewind", "-state_directory", new File(root, "states/" + cartridgeId).getPath(),
             "-cfg_directory", new File(root, "cfg").getPath()};
     }

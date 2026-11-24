@@ -21,6 +21,7 @@ def stage = tasks.register('stageCartridge', Copy) {
     dependsOn validateRuntime
     from(rootProject.file('../../LICENSE')) { into 'licenses' }
     from(rootProject.file('../cartridge/NOTICE')) { into 'licenses' }
+    from(rootProject.file('../Menu-Font-LICENSE.txt')) { into 'licenses' }
     from rom
     filesMatching(rom.name) { name = 'game.nes' }
     from(new File(tree, 'COPYING')) { into 'licenses/MAME' }

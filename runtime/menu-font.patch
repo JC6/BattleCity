@@ -1,0 +1,27 @@
+--- a/src/emu/rendfont.cpp
++++ b/src/emu/rendfont.cpp
+@@ -21,6 +21,7 @@
+ 
+ #include "osdepend.h"
+ #include "uismall.fh"
++#include "battlecity-menu-font.h"
+ #include "unicode.h"
+ 
+ #include "ui/uicmd14.fh"
+@@ -506,6 +507,16 @@
+ {
+ 	memset(m_glyphs, 0, sizeof(m_glyphs));
+ 	memset(m_glyphs_cmd, 0, sizeof(m_glyphs_cmd));
++
++	if (filename && !std::strcmp(filename, "battlecity-regular"))
++	{
++		auto data = util::ram_read(battlecity_menu_font, sizeof(battlecity_menu_font));
++		if (data && load_cached(*data, 0, 0))
++		{
++			render_font_command_glyph();
++			return;
++		}
++	}
+ 
+ 	// if this is an OSD font, we're done
+ 	if (filename)

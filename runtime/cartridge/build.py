@@ -92,30 +92,19 @@ def art(logo_map):
         for tile_y in range(4):
             for tile_x in range(4*len(line)):
                 char=line[tile_x//4]
-                screen_word=line in ('BATTLE','CITY','GAME','OVER')
-                glyph=bytes.fromhex(LETTERS[char])
+                dx = 4 if line in ('CITY','GAME','OVER') else 0
+                dy = 4 if line in ('OVER','HISCORE') else 0
+                fill = '1' if line in ('HISCORE','0123456789') else '2'
                 rows = []
                 for j in range(8):
-                    y = tile_y*8+j
+                    y = tile_y*8+j-dy
                     row = ''
                     for i in range(8):
-                        x = (tile_x%4)*8+i
-                        col = x//5
-                        if screen_word:
-                            # Each regular glyph pixel becomes a 4x4 piece of brickwork.
-                            offset=0 if line=='BATTLE' else 4
-                            col=(x+offset)//4
-                            gy=y-(4 if line=='OVER' else 0)
-                            ink=gy>=0 and col<8 and font[char][gy//4][col]=='1'
-                            mortar=(x+offset+4*(gy//4))%8==4 or gy%4==3
-                            row+=('3' if mortar else '2') if ink else '0'
-                            continue
-                        if col>=5 or y>=28 or not glyph[y//4] & (16>>col):
-                            row += '0'
-                        elif y%4==3 or (x+4*((y//4)%2))%8==7:
-                            row += '3'
-                        else:
-                            row += '2' if y%4==0 else '1'
+                        x = (tile_x%4)*8+i+dx
+                        col = x//4
+                        ink = y>=0 and col<8 and font[char][y//4][col]=='1'
+                        mortar = (x+4*(y//4))%8==4 or y%4==3
+                        row += ('3' if mortar else fill) if ink else '0'
                     rows.append(row)
                 key = tuple(rows)
                 if key not in logo_tiles:

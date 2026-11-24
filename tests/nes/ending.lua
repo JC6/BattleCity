@@ -21,11 +21,14 @@ for tag,port in pairs(m.ioport.ports) do
 end
 local frame,origin,done,score_frame=0,nil,false,nil
 local capture=os.getenv("BATTLECITY_CAPTURE_DIR")
+local record=buttons=="record"
+local record_seen=false
 local rows={}
 local function event(name)
     if origin and not done then rows[#rows+1]=(frame-origin)..","..name end
 end
 local function finish()
+    if record then assert(record_seen,"high-score screen did not display the reference lettering and score") end
     local result=table.concat(rows,"\n").."\n"
     local out=os.getenv("BATTLECITY_TRACE")
     if out then local f=assert(io.open(out,"w"));f:write(result);f:close() end
@@ -63,6 +66,10 @@ local function setup()
     else
         for i=0,7 do put(a.tanks+13*i+3,0);put(a.kills+i,0) end
         for i=0,9 do put(a.shots+4*i+3,0);put(a.shot_blast+i,0) end
+        if record then
+            for i=0,3 do put(a.scores+i,(185900 >> (8*i)) & 255) end
+            for i,digit in ipairs({0,1,8,5,9,0,0}) do put(a.score_digits+i-1,digit) end
+        end
         put(a.kills,8);put(a.kills+1,3);put(a.kills+2,2);put(a.kills+3,coop and 0 or 6)
         if coop then put(a.kills+4,6) end
         put(a.spawned,20);put(a.defeated,win and 19 or 0);put(a.freeze,0);put(a.freeze+1,16)
@@ -110,6 +117,27 @@ end
 ending_frames=emu.add_machine_frame_notifier(function()
     frame=frame+1
     pads[4]:set_value(coop and frame>=300 and frame<305 and 1 or 0)
+    if record and not record_seen and bus:read_u8(a.mode)==8 then
+        local data=m.screens[":screen"]:pixels()
+        local function outline(x,y,columns)
+            local hash=2166136261
+            for cy=0,6 do for cx=0,columns-1 do
+                local lit=0
+                for v=0,3 do for u=0,3 do
+                    local pixel=1+4*((y+cy*4+v)*256+x+cx*4+u)
+                    local b,g,r=data:byte(pixel,pixel+2)
+                    if math.max(b,g,r)>56 then lit=lit+1 end
+                end end
+                hash=((hash ~ (lit>=9 and 1 or 0))*16777619) & 0xffffffff
+            end end
+            return hash
+        end
+        -- 4x4-cell outlines measured in the 185900 Switch frame at 43:36.
+        record_seen=outline(16,52,56)==0x5f1b57f1 and outline(48,104,48)==0xa79a5774
+        if record_seen and capture then
+            local f=assert(io.open(capture.."/record.bgra","wb"));f:write(data);f:close()
+        end
+    end
     if capture and origin then
         local t=frame-origin
         if t==9 or t==186 or t==240 or t==365 then

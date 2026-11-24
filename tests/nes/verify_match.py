@@ -26,13 +26,14 @@ def main():
     cases = [("attract", "", key) for key in ("start", "select", "p2-start", "p2-select", "natural")]
     cases.extend(("ending", name, keys) for name in ("solo", "coop", "base", "lives")
                  for keys in ("neutral", "tap", "hold"))
+    cases.append(("ending", "base", "record"))
     cases.extend(("campaign", name, "neutral") for name in ("solo", "coop"))
     with tempfile.TemporaryDirectory() as work:
         for suite, name, keys in cases:
             env = {k: v for k, v in os.environ.items() if not k.startswith("BATTLECITY_")}
             env.update(SDL_VIDEODRIVER="dummy", BATTLECITY_LABELS=str(labels),
                        BATTLECITY_SCENARIO=name, BATTLECITY_END_INPUT=keys, BATTLECITY_ATTRACT_INPUT=keys)
-            if name:
+            if name and keys != "record":
                 base = HERE / "fixtures" / suite / name
                 env["BATTLECITY_GOLDENS"] = str(base.with_suffix(".csv"))
                 if suite == "campaign":
