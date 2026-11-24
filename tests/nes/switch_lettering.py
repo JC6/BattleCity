@@ -20,30 +20,53 @@ WORDS = (
 )
 
 
-def verify(image, labels):
+def cartridge_tables(image, labels):
     address = int(re.search(r'^al ([0-9a-fA-F]+) \._large_letters$', labels, re.M)[1], 16)
-    tilemap = image[16 + address - 0x8000:]
-    chr_data = image[16 + image[4] * 16384:]
-    for name, start, stride, dx, dy, expected in WORDS:
-        def colored(x, y):
-            if not 0 <= x < stride * 8:
-                return False
-            tile = tilemap[start + y // 8 * stride + x // 8]
-            row = tile * 16 + y % 8
-            return (chr_data[row] | chr_data[row + 8]) & (128 >> (x % 8)) != 0
+    return image[16 + address - 0x8000:], image[16 + image[4] * 16384:]
 
-        mask = bytearray()
-        for cy in range(7):
-            for cx in range(len(name) * 8):
-                count = sum(colored(4*cx + dx + u, 4*cy + dy + v) for u in range(4) for v in range(4))
-                mask.append(count >= 9)
+
+def compiled_cells(tilemap, chr_data, start, stride, dx, dy, columns):
+    def colored(x, y):
+        if not 0 <= x < stride * 8:
+            return False
+        tile = tilemap[start + y // 8 * stride + x // 8]
+        row = tile * 16 + y % 8
+        return (chr_data[row] | chr_data[row + 8]) & (128 >> (x % 8)) != 0
+
+    mask = bytearray()
+    for cy in range(7):
+        for cx in range(columns):
+            count = sum(colored(4*cx + dx + u, 4*cy + dy + v) for u in range(4) for v in range(4))
+            mask.append(count >= 9)
+    return mask
+
+
+def verify(image, labels, secondary=False):
+    tilemap, chr_data = cartridge_tables(image, labels)
+    for name, start, stride, dx, dy, expected in WORDS:
+        mask = compiled_cells(tilemap, chr_data, start, stride, dx, dy, len(name)*8)
         assert sha256(mask).hexdigest() == expected, name + ' outline differs from the Switch frame'
     print('1008 title/ending and 672 high-score lettering cells match the Switch recordings')
+
+
+    if secondary:
+        # 26800 in the Japanese commentary and 441900 in the Famicom capture.
+        # The capture-specific measurement also checks the shared English masks.
+        digits = {
+            '2': '21965a4a44a61e34772adf19563c1e57abb393e9f1d490ccc67bcd49ec3a4eb5',
+            '4': '389e132ba94aff0529d8ebeedf9613b902b03ecf2caea7e639e5d9c2e7f7e231',
+            '6': 'bed1982a27117578e70d99a3191a60cea150e4abb60354ad87c38505364a737d',
+        }
+        for key,expected in digits.items():
+            mask=compiled_cells(tilemap,chr_data,400+4*int(key),40,0,0,8)
+            assert sha256(mask).hexdigest()==expected, 'supplementary high-score digit '+key
+        print('168 additional high-score cells match the separately identified commentary and Famicom sources')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('rom', type=Path)
     parser.add_argument('labels', type=Path)
+    parser.add_argument("--secondary",action="store_true",help="also verify the separately measured 2, 4 and 6")
     args = parser.parse_args()
-    verify(args.rom.read_bytes(), args.labels.read_text())
+    verify(args.rom.read_bytes(), args.labels.read_text(), args.secondary)

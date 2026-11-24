@@ -467,13 +467,25 @@ async function verify(engine, suite) {
             },null,{polling:80,timeout:90000});
             await capture(page,'staff-credits-final');
         } finally { await page.keyboard.up('ArrowDown'); }
-        await page.waitForFunction(() => creditTitleY()<0 && (() => {
-            const c=document.createElement('canvas'); c.width=80; c.height=45;
-            const ctx=c.getContext('2d'); ctx.drawImage(Module.canvas,0,0,80,45);
-            const pixels=ctx.getImageData(8,15,64,11).data;
-            return pixels.some((v,i)=>i%4===2 && v>65 && v>pixels[i-2]+40);
-        })(),null,{timeout:12000});
-        await menu(page, ['Home','ArrowDown','Enter','Home','ArrowLeft','Enter']);
+        // Credits return to the four Settings cards. Wait for all four blue
+        // card edges before sending navigation to the newly active menu.
+        await page.waitForFunction(() => {
+            if (creditTitleY() >= 0) return false;
+            const sample = document.createElement('canvas');
+            sample.width = 480; sample.height = 270;
+            const ctx = sample.getContext('2d');
+            ctx.drawImage(Module.canvas, 0, 0, sample.width, sample.height);
+            return [0, 1, 2, 3].every(i => {
+                const x = Math.round((.196 + i * .203) * sample.width);
+                const edge = ctx.getImageData(x, 93, 1, 5).data;
+                return edge.some((blue, j) => j % 4 === 2 && blue > 65 &&
+                    blue > edge[j - 1] + 30 && blue > edge[j - 2] + 55);
+            });
+        }, null, {timeout:15000});
+        await menu(page, ['Home','ArrowRight','Enter']);
+        await menu(page, ['Home','ArrowLeft','Enter']);
+        await page.waitForFunction(() => document.querySelector('main').dataset.wallpaper === '3');
+        await renderFrames(page, 2);
         await capture(page, 'wallpaper-settings');
         const previewRanges = await page.evaluate(() => {
             const canvas=Module.canvas, copy=document.createElement('canvas');
@@ -490,7 +502,6 @@ async function verify(engine, suite) {
         });
         assert.ok(previewRanges.slice(0,3).every(n => n>20) && previewRanges[3]<5,
             'wallpaper previews should show the three images and solid black: '+previewRanges);
-        await page.waitForFunction(() => document.querySelector('main').dataset.wallpaper === '3');
         await menu(page, ['Home','Enter','End','Enter','End','Enter','Backspace']);
         await checkScreenMode(page, '0');
         await page.waitForFunction(() => document.querySelector('#display').dataset.menu === '0');

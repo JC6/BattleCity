@@ -118,3 +118,7 @@ python3 tests/nes/compare_switch_audio.py switch-5m18.mp4 opening.wav --switch-s
 在英文 Switch 实录中连续跟踪向上 39 帧、向右 33 帧、向下 36 帧和向左 31 帧。每帧均有 10 个可见弹丸像素，四个方向的实录轮廓均与卡带图形一致。另取 31 帧护盾和 12 帧爆炸，按可见白色区域比较。护盾的交并比为 0.547–0.750，两种大爆炸为 0.831–0.913。可用 `tests/nes/switch_battle_samples.py` 对照同一录像片段和编译后的卡带，导出帧位置、像素差及截图。[原作者的英文实录](https://www.youtube.com/watch?v=S26lUv598_o&t=352s)
 
 两位作者的三次结束音乐在同一阈值下，首音至静音均为 1.63 秒，当前卡带为 1.58 秒。整段频谱余弦相似度为 0.824、0.814 和 0.768。末和弦的两个脉冲声道共享约 261.4 Hz 的基频。离线表保留混音包络和频谱，供复测这个约 50 毫秒的差异。[第二次结束音乐](https://www.youtube.com/watch?v=S26lUv598_o&t=650s) · [通关录像的结束音乐](https://www.youtube.com/watch?v=Xf02flMP7dc&t=2614s)
+
+另有一段日语解说录像显示最高分 26800。以英文实录已确认的 HISCORE、8 和两个 0 校准，三个闪烁相位下，2 和 6 各 56 格均匹配卡带。作者标题标注 Switch，录像片段未显示可独立确认英文合集版本的系统界面。复测脚本为 `tests/nes/switch_score_sample.py`。[日语解说原片，13 分 22 秒](https://www.youtube.com/watch?v=aRGjPGSfBmk&t=802s)
+
+Nenriki 发布的两段 Famicom 实录分别显示 196500 和 441900。本轮记录的播放量约为 171.8 万和 18.9 万。每段各验三个时刻，4 和 6 也与编译后的卡带逐格一致。以上为原版家用机游戏的辅助字形对照，3 和 7 仍缺这一级别的画面。[一轮录像](https://www.youtube.com/watch?v=fuMYsGiS33k&t=2283s) · [两轮录像](https://www.youtube.com/watch?v=Xww2jXpQSwQ&t=4128s)

@@ -42,6 +42,32 @@ def trace_summary(render, name):
             f'{statistics.median(gaps):.2f}' if gaps else '无可用时间戳')
 
 
+def renderer_spans(render, name):
+    stacks = {}
+    records = []
+    pattern = re.compile(r'-(\d+)\s+\([^)]*\)\s+\[\d+\].*?([0-9]+\.[0-9]+): tracing_mark_write: ([BE])(?:\|[0-9]+)?(?:\|(.*))?$')
+    with gzip.open(render/(name+'-atrace.txt.gz'),'rt',errors='replace') as trace:
+        for line in trace:
+            if 'tracing_mark_write: ' not in line:
+                continue
+            match = pattern.search(line.rstrip())
+            if not match: continue
+            tid,stamp,action,section=match.groups()
+            stamp=float(stamp)
+            if tid not in stacks:
+                if section not in ('BattleCity.draw','BattleCity.present'): continue
+                stacks[tid]=[]
+            stack=stacks[tid]
+            if action=='B':
+                stack.append((section,stamp))
+            elif stack:
+                label,start=stack.pop()
+                parent=next((part for part,_ in reversed(stack) if part in ('BattleCity.draw','BattleCity.present')),None)
+                if label in ('BattleCity.draw','BattleCity.present') or (parent and label in ('queueBuffer','dequeueBuffer','eglSwapBuffers')):
+                    records.append({'mode':name,'section':label,'parent':parent or '', 'start_s':start,'duration_ms':round((stamp-start)*1000,4)})
+    return records
+
+
 def tail_chart(research):
     series=[('ending-first','native','当前卡带','#24262a'),('ending-first','switch','第一次','#00768b'),
             ('ending-english','switch','第二次','#ce7713'),('ending-last','switch','通关录像','#8063ae')]
@@ -108,15 +134,30 @@ def build(run, research, output, commit, default, scenes_run):
         (labels[r['mode']],r['run'],r['driver'],f"{r['wall']:.3f}",f"{r['gameSpeed']:.4f}",f"{r['pcmSpeed']:.4f}",
          r['frames'],r['presented'],r['nativeSize'],f"{r['coreSliceMs']/r['frames']:.2f}",
          *(f"{r[k]/r['attempts']:.2f}" for k in ('drawMs','presentMs','threadCpuMs'))) for r in raw]))
+    passed = sum(r['pass'] for r in candidate)
+    html.append(f'<p>候选有 {passed}/3 个窗口同时满足游戏和 PCM 在实时的 99% 至 101% 之间，且每个窗口完整提交画面。'
+                f'定帧截图的全部游戏像素中心与游戏区外画面一致性检查结果为{"通过" if pixel_pass else "有差异"}。</p>')
     detailed = json_lines(tv/'timing/clock.jsonl')
     html.append('<p>开着 WAV 录制和每三帧一次 RAM 文件观测的相同默认路径，三个窗口的游戏倍率为 '
                 + '、'.join(f"{r['speed']:.3f}" for r in detailed)+'。轻量窗口只在边界写一行累计计数。'
-                '系统跟踪在单独启动中录制，核心、绘制与提交耗时按各自的计数归一化。</p>')
+                '系统跟踪在第三个窗口结束后从同一前台进程采集，核心、绘制与提交耗时按各自的计数归一化。</p>')
     html.append('<h2>同帧画质和手柄</h2><p>每对截图在相同 NES 帧暂停，并核对全部 2 KiB 工作 RAM 的摘要。'
                 '在可见游戏区逐一比较 256 × 224 个像素中心，同时比较完整 1080p 截图的 RGB。'
                 '两个显示路径各自还用两个 Android 内核手柄执行了单人、双人、断线重连、回退、存档保护、预览和系统菜单操作。</p>')
     html.append(table(('路径','跟踪中的绘制','跟踪中的呈现','SurfaceFlinger 有效时间戳','合成间隔中位数 / 毫秒'),[
         (labels[name],*trace_summary(render,name)) for name in labels]))
+    spans = [span for name in labels for span in renderer_spans(render,name)]
+    trace_rows=[]
+    for name in labels:
+        series=[r for r in spans if r['mode']==name]
+        for section in ('BattleCity.draw','BattleCity.present','dequeueBuffer','queueBuffer','eglSwapBuffers'):
+            durations=sorted(r['duration_ms'] for r in series if r['section']==section)
+            if durations:
+                trace_rows.append((labels[name],section,len(durations),f'{statistics.median(durations):.2f}',
+                                   f'{durations[(95*len(durations)+99)//100-1]:.2f}'))
+    if trace_rows:
+        html.append(table(('路径','跟踪区段','完整调用','中位毫秒','P95 毫秒'),trace_rows))
+        html.append('<p>队列与交换操作位于绘制或呈现调用之内，耗时存在包含关系。</p>')
     case_names={'firing':'移动、护盾和实弹','blast':'坦克爆炸和基地受击','standard':'4:3','large':'Zoom','pixel':'Dot-by-Dot','stretch':'Full Screen','antialias':'抗锯齿＋星空壁纸','scanlines':'扫描线＋符号壁纸'}
     html.append(table(('场景','帧与 RAM 摘要','分辨率','不同的中心像素','整图差异像素','通道差大于 8','游戏区外差异','最大通道差','整图相同'),[
         (case_names.get(name,name),v['battle'],' × '.join(map(str,v['size'])),v['differentCenters'],v['differentOutputPixels'],v['deltaAbove8'],v['differentWallpaperPixels'],v['maxChannelError'],'是' if v['identical'] else '否')
@@ -128,8 +169,8 @@ def build(run, research, output, commit, default, scenes_run):
     browser_rows = []
     for engine in ('chromium','webkit'):
         for cadence in ('native','60','120'):
-            samples=json_lines(web/f'{engine}-{cadence}.jsonl')
-            assert len(samples)==3
+            samples=[r for r in json_lines(web/f'{engine}-{cadence}.jsonl') if 'lifecycle' not in r]
+            assert len(samples)==3 and all(abs(r['speed']-1)<=.01 and abs(r['audioSpeed']-1)<=.01 for r in samples)
             browser_rows.extend(samples)
     def bounds(values): return f'{min(values):.4f}–{max(values):.4f}'
     html.append('<h2>Web 和卡带回放</h2>'+table(('浏览器','前台节奏','窗口数','游戏倍率','PCM 倍率'),[
@@ -163,6 +204,23 @@ def build(run, research, output, commit, default, scenes_run):
     html.append(table(('效果','图块','采集帧数','白色轮廓交并比'),[
         (kind,tile,len(group),bounds([float(r['iou']) for r in group])) for kind,tile in sorted({(r['effect'],r['tile']) for r in effects})
         if (group:=[r for r in effects if r['effect']==kind and r['tile']==tile])]))
+    score=rows(research/'score/digits.csv')
+    assert all(r['mismatches']=='0' for r in score) and {r['field'] for r in score}=={'HISCORE','2','6','8','0'}
+    html.append('<h2>最高分大字</h2><p>日语解说录像出现 26800。先用已在英文录像确认的 HISCORE、8 和两个 0 校准位置，'
+                '再比较 2 和 6，每个数字各 56 格。在三个不同闪烁相位中，两者与卡带均零格差异。'
+                '作者标题标注 Switch，画面没有可独立确认英文合集的系统界面，因此单列为补充对照。'
+                '<a href="https://www.youtube.com/watch?v=aRGjPGSfBmk&amp;t=802s">原作者录像，13 分 22 秒</a></p>'
+                '<img width="600" alt="日语解说录像中可见的 HISCORE 26800" src="'+inline(research/'score/score.png','image/png')+'">')
+    proxy_scores=[]
+    for folder,value,views in [('score-famicom-one','196500','171.8 万'),('score-famicom-two','441900','18.9 万')]:
+        entries=rows(research/folder/'digits.csv')
+        assert all(r['mismatches']=='0' for r in entries)
+        proxy_scores.append((value,views,len({r['source_seconds'] for r in entries}),0))
+    html.append('<p>另核对 Nenriki 的两段 Famicom 录像。196500 再次出现 6，441900 的两个 4 '
+                '均与卡带各 56 格匹配。播放量取本轮检索时的近似值。英文 Switch 字形仍以对应版本的画面为准。'
+                '<a href="https://www.youtube.com/watch?v=fuMYsGiS33k&amp;t=2283s">一轮录像</a> · '
+                '<a href="https://www.youtube.com/watch?v=Xww2jXpQSwQ&amp;t=4128s">两轮录像</a></p>'
+                +table(('Famicom 分数','约播放量','采样时刻数','格差'),proxy_scores))
     html.append('<h2>结束音乐</h2>')
     audio_rows=[]
     for folder,source,origin in [('ending-first','My Gameplay Videos，第一次',318),('ending-english','My Gameplay Videos，第二次',645),
@@ -189,20 +247,21 @@ def build(run, research, output, commit, default, scenes_run):
     with ZipFile(output/'Switch-TV-Measurements.zip','w',compression=ZIP_DEFLATED,compresslevel=5) as archive:
         archive.writestr('tv-clock.csv', csv_text(raw))
         archive.writestr('web-clock.csv',csv_text(browser_rows))
+        if spans: archive.writestr('renderer-trace.csv',csv_text(spans))
         archive.writestr('SHA256SUMS',manifest)
         archive.writestr('source.txt',commit+'\nhttps://github.com/JC6/BattleCity/actions/runs/'+run.name+'\n')
         for path in sorted(run.rglob('*')):
-            if path.is_file() and (path.suffix in {'.csv','.json','.jsonl','.gz','.png','.wav'} or path.name.endswith('-surface.txt')):
+            if path.is_file() and (path.suffix in {'.csv','.json','.jsonl','.gz','.png','.wav'} or path.name.endswith('-surface.txt') or path.name in {'tested-sha256.txt','device.log','device.txt'}):
                 archive.write(path,'actions/'+str(path.relative_to(run)))
         if scenes_run!=run:
             archive.writestr('scenes-run.txt','https://github.com/JC6/BattleCity/actions/runs/'+scenes_run.name+'\n')
             archive.write(scenes.parent/'tested-sha256.txt','scenes/tested-sha256.txt')
             for path in sorted(scenes.iterdir()):
                 if path.is_file() and path.suffix in ('.png','.json'): archive.write(path,'scenes/'+path.name)
-        for folder in ['motion','ending-first','ending-english','ending-last']:
+        for folder in ['motion','score','score-famicom-one','score-famicom-two','ending-first','ending-english','ending-last']:
             for path in sorted((research/folder).iterdir()):
                 if path.is_file(): archive.write(path,'switch/'+folder+'/'+path.name)
-        for name in ['switch_battle_samples.py','switch_motion.py','ending_audio.py','switch_cues.py','compare_switch_audio.py']:
+        for name in ['tv_render_report.py','runtime_report.py','switch_battle_samples.py','switch_motion.py','switch_score_sample.py','switch_lettering.py','ending_audio.py','switch_cues.py','compare_switch_audio.py']:
             archive.write(Path(__file__).with_name(name),'scripts/'+name)
 
 

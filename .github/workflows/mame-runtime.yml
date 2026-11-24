@@ -205,41 +205,6 @@ jobs:
           chmod +x "$RUNNER_TEMP/gradle-with-retry"
           export GRADLE_BIN="$RUNNER_TEMP/gradle-with-retry"
           bash tools/build-mame-runtime.sh android "build/shared/$CARTRIDGE.nes"
-      - uses: actions/setup-node@v6
-        if: matrix.platform == 'web'
-        with:
-          node-version: '24'
-      - name: Exercise the packaged site
-        if: matrix.platform == 'web'
-        run: |
-          exec > >(tee "$RUNNER_TEMP/battlecity-test.log") 2>&1
-          npm ci --prefix web
-          (cd web && npx playwright install --with-deps chromium webkit)
-          python3 -m http.server 8765 --bind 127.0.0.1 --directory build/mame-runtime/web/site &
-          server_pid=$!
-          trap 'kill "$server_pid"' EXIT
-          curl --retry 8 --retry-connrefused -fsS http://127.0.0.1:8765/ -o /dev/null
-          if [[ "$CARTRIDGE" == probe ]]; then
-            node tests/nes/browser.cjs http://127.0.0.1:8765/
-            node tests/nes/browser-replay.cjs http://127.0.0.1:8765/
-          else
-            set -o pipefail
-            clock_status=0
-            mkdir -p build/web-observations
-            for engine in chromium webkit; do
-              for hz in native 60 120; do
-                node tests/nes/browser-clock.cjs http://127.0.0.1:8765/ "$engine" "$hz" | tee "build/web-observations/$engine-$hz.jsonl" || clock_status=1
-              done
-            done
-            node tests/nes/browser-ending.cjs http://127.0.0.1:8765/ build/shared/game.lbl build/web-observations
-            node tests/nes/browser-game.cjs http://127.0.0.1:8765/ build/shared/game.lbl
-            exit "$clock_status"
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always() && matrix.platform == 'web' && inputs.cartridge == 'game'
-        with:
-          name: web-clock-and-endings
-          path: build/web-observations/
       - name: Verify the packaged cartridge ${{ needs.cartridge.outputs.sha256 }}
         run: |
           mkdir -p deliverable
@@ -259,6 +224,43 @@ jobs:
           name: ${{ inputs.cartridge }}-${{ matrix.target }}
           path: deliverable/
           if-no-files-found: error
+
+      - uses: actions/setup-node@v6
+        if: matrix.platform == 'web'
+        with:
+          node-version: '24'
+      - name: Exercise the packaged site
+        if: matrix.platform == 'web'
+        run: |
+          exec > >(tee "$RUNNER_TEMP/battlecity-test.log") 2>&1
+          npm ci --prefix web
+          (cd web && npx playwright install --with-deps chromium webkit)
+          python3 -m zipfile -e deliverable/BattleCity-Web.zip "$RUNNER_TEMP/web-site"
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory "$RUNNER_TEMP/web-site" &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          curl --retry 8 --retry-connrefused -fsS http://127.0.0.1:8765/ -o /dev/null
+          if [[ "$CARTRIDGE" == probe ]]; then
+            node tests/nes/browser.cjs http://127.0.0.1:8765/
+            node tests/nes/browser-replay.cjs http://127.0.0.1:8765/
+          else
+            set -o pipefail
+            clock_status=0
+            mkdir -p build/web-observations
+            for engine in chromium webkit; do
+              for hz in native 60 120; do
+                node tests/nes/browser-clock.cjs http://127.0.0.1:8765/ "$engine" "$hz" | tee "build/web-observations/$engine-$hz.jsonl" || clock_status=1
+              done
+            done
+            node tests/nes/browser-ending.cjs http://127.0.0.1:8765/ build/shared/game.lbl build/web-observations
+            BATTLECITY_CAPTURE_DIR="$PWD/build/web-observations/screens" node tests/nes/browser-game.cjs http://127.0.0.1:8765/ build/shared/game.lbl
+            exit "$clock_status"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.platform == 'web' && inputs.cartridge == 'game'
+        with:
+          name: web-clock-and-endings
+          path: build/web-observations/
 
       - name: Enable emulator acceleration
         if: matrix.abi == 'x86' && inputs.cartridge == 'game'
