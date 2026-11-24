@@ -287,7 +287,7 @@ jobs:
           echo "$PWD" >> "$GITHUB_PATH"
       - name: Boot the Android SDK television image and test both gamepads
         if: matrix.abi == 'x86' && inputs.cartridge == 'game'
-        timeout-minutes: 30
+        timeout-minutes: 55
         env:
           ANDROID_SERIAL: emulator-5554
         run: |

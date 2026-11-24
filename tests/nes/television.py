@@ -1,5 +1,8 @@
 """Run the installed SDL/MAME TV app with two Android kernel gamepads (dedicated test device)."""
 import argparse
+import gzip
+import math
+import shlex
 import json
 import os
 from pathlib import Path
@@ -24,14 +27,14 @@ def private(*args, **kwargs):
     return adb('exec-out', 'run-as', PACKAGE, *args, **kwargs)
 
 
-def wait(read, predicate, description):
+def wait(read, predicate, description, interval=.15):
     deadline = time.monotonic() + TIMEOUT
     last = None
     while time.monotonic() < deadline:
         last = read()
         if predicate(last):
             return last
-        time.sleep(.15)
+        time.sleep(interval)
     observed = f'{len(last)} bytes' if isinstance(last, bytes) else str(last)[:220]
     raise RuntimeError(f'{description}: timed out, last observation {observed}')
 
@@ -308,6 +311,134 @@ def launch():
     check(lambda s:s['mode']==0 and not s['scroll'] and s['ready'], 'cold title')
 
 
+def start_fixture():
+    adb('shell', 'am', 'start', '-W', '-a', 'android.intent.action.MAIN',
+        '-c', 'android.intent.category.LEANBACK_LAUNCHER', '-n', PACKAGE+'/.GameActivity')
+
+
+def render_fixture(labels, directory, tick, freeze=False):
+    mode = int(re.search(r'^al (\w+) \._mode$', labels.read_text(), re.M)[1], 16)
+    controls = Path(__file__).with_name('clock-input.lua').read_text()
+    return controls + f"""
+local ram = manager.machine.devices[":maincpu"].spaces.program
+local frames = 0
+visual_fixture = emu.add_machine_frame_notifier(function()
+    frames = frames + 1
+    if frames ~= {tick} then return end
+    local hash = 0
+    for address=0,2047 do hash = (hash * 33 + ram:read_u8(address)) & 0xffffffff end
+    local handle = assert(io.open("{directory}/tv-fixed", "w"))
+    handle:write(string.format("%d,%d,%08x", frames, ram:read_u8({mode}), hash))
+    handle:close()
+    {'emu.pause()' if freeze else ''}
+end)
+"""
+
+
+def record_render(results, labels, directory, write_private):
+    ini = (f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\n'
+           'autoframeskip 0\nframeskip 0\npause_brightness 1.0\n')
+    modes = {'baseline': 'none', 'candidate': 'native-tv'}
+    def stop():
+        adb('shell','am','force-stop',PACKAGE)
+        private('rm','-f','files/tv-fixed','files/tv-profile.jsonl')
+    def marker():
+        return wait(lambda: private('cat','files/tv-fixed',check=False).decode().strip(),
+                    lambda s: re.fullmatch(r'\d+,1,[a-f0-9]{8}', s), 'fixed solo battle frame')
+    def profile_rows():
+        raw = private('cat','files/tv-profile.jsonl',check=False)
+        return [json.loads(line) for line in raw.splitlines(keepends=True) if line.endswith(b'\n')]
+    summaries = {}
+    markers = {}
+    for name, scale in modes.items():
+        stop()
+        write_private('nes.ini', ini+f'scalemode {scale}\n')
+        write_private('tv-observer.lua', render_fixture(labels, directory, 560))
+        write_private('tv-profile.jsonl','')
+        start_fixture()
+        markers[name] = marker()
+        print('Measuring full frames:', name, markers[name], flush=True)
+        rows = []
+        for number in range(1,4):
+            rows = wait(profile_rows, lambda r: len(r)>=number, f'{name} 30-second window {number}',interval=1.0)
+            (results/(name+'.jsonl')).write_bytes(private('cat','files/tv-profile.jsonl'))
+        assert [r['run'] for r in rows]==[1,2,3]
+        for row in rows:
+            assert row['wall']>=30 and row['frames']>0 and row['sampleRate']>0 and row['samples']>0, row
+            assert row['driver'] and 0<row['presented']<=row['attempts'], row
+            row['gameSpeed'] = row['emu']/row['wall']
+            row['pcmSpeed'] = row['samples']/row['sampleRate']/row['wall']
+            row['pass'] = (0.99<=row['gameSpeed']<=1.01 and 0.99<=row['pcmSpeed']<=1.01
+                           and row['presented']==row['attempts'] and abs(row['presented']-row['frames'])<=1)
+        summaries[name] = rows
+        layers = adb('shell','dumpsys','SurfaceFlinger','--list').decode().splitlines()
+        prefix = results/(name+'-surface.txt')
+        with prefix.open('wb') as f:
+            for layer in layers:
+                if PACKAGE in layer and 'SurfaceView' in layer:
+                    f.write((layer+'\n').encode())
+                    f.write(adb('shell','dumpsys','SurfaceFlinger','--latency',shlex.quote(layer),check=False))
+    assert len(set(markers.values()))==1, markers
+    (results/'clock.json').write_text(json.dumps({'battle':markers,'windows':summaries},indent=2))
+    # A separate launch keeps tracing and screenshots out of both clock samples.
+    display = 'shared_prefs/display.xml'
+    stop()
+    existed = private('ls','-d',display,check=False).strip()==display.encode()
+    original = private('cat',display) if existed else None
+    private('mkdir','-p','shared_prefs')
+    def set_display(data):
+        adb('shell','-T','run-as',PACKAGE,'sh','-c',f"'cat > {display}'",data=data)
+        assert private('cat',display)==data
+    cases = [('standard',0,0,0),('large',1,0,0),('pixel',2,0,0),('stretch',3,0,0),
+             ('antialias',0,1,1),('scanlines',0,2,2)]
+    visual = {}
+    try:
+        for case,aspect,picture,wallpaper in cases:
+            pair = {}
+            for name,scale in modes.items():
+                stop()
+                set_display((f'<map><int name="mode" value="{aspect}"/><int name="picture" value="{picture}"/>'
+                             f'<int name="wallpaper" value="{wallpaper}"/></map>').encode())
+                write_private('nes.ini', ini+f'scalemode {scale}\n')
+                write_private('tv-observer.lua',render_fixture(labels,directory,705,True))
+                trace = case=='standard'
+                if trace:
+                    write_private('tv-profile.jsonl','')
+                    adb('shell','atrace','--async_start','-b','2048','-a',PACKAGE,'gfx',check=False)
+                try:
+                    start_fixture()
+                    fingerprint = marker()
+                    time.sleep(.4)
+                    png = adb('exec-out','screencap','-p')
+                    assert png.startswith(b'\x89PNG')
+                    (results/f'{case}-{name}.png').write_bytes(png)
+                    w,h = struct.unpack('>II',png[16:24])
+                    rgb = screen_rgb(png,f'{w}:{h}')
+                    pair[name] = (fingerprint,w,h,rgb)
+                finally:
+                    if trace:
+                        with gzip.open(results/(name+'-atrace.txt.gz'),'wb') as output:
+                            output.write(adb('shell','atrace','--async_stop',check=False))
+            stamp,w,h,base = pair['baseline']
+            assert pair['candidate'][:3]==(stamp,w,h), (case,stamp,pair['candidate'][:3])
+            other = pair['candidate'][3]
+            ratio = 256/224 if aspect==2 else 4/3
+            width = w if aspect==3 else min(w,math.floor(h*(1 if aspect==1 else .83)*ratio+.5))
+            height = h if aspect==3 else math.floor(width/ratio+.5)
+            xs = [int((w-width)/2+(x+.5)*width/256) for x in range(256)]
+            ys = [int((h-height)/2+(y+.5)*height/224) for y in range(224)]
+            pixels = [3*(y*w+x) for y in ys for x in xs]
+            mismatches = sum(base[i:i+3]!=other[i:i+3] for i in pixels)
+            max_error = max(abs(a-b) for a,b in zip(base,other))
+            visual[case] = {'battle':stamp,'size':[w,h],'nativePixels':len(pixels),'differentCenters':mismatches,
+                            'maxChannelError':max_error,'identical':base==other}
+            (results/'visual.json').write_text(json.dumps(visual,indent=2))
+    finally:
+        stop()
+        if existed: set_display(original)
+        else: private('rm','-f',display)
+
+
 def run(apk, labels, results, suite):
     results.mkdir(parents=True,exist_ok=True)
     adb('install','-r',str(apk))
@@ -320,7 +451,7 @@ def run(apk, labels, results, suite):
     slot = f'files/states/{digest}/nes/1.sta'
     # Leave existing player files intact. A completed run removes its own slot.
     test_files = ['files/'+name for name in ('nes.ini','tv-observer.lua','tv-observation',
-                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv')]
+                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv','tv-profile.jsonl','tv-fixed')]
     test_files.extend((slot,slot+'.png',slot+'.lock'))
     for name in test_files:
         if private('ls','-d',name,check=False).strip()==name.encode():
@@ -338,8 +469,12 @@ def run(apk, labels, results, suite):
         assert image.startswith(b'\x89PNG') and len(image)>1000
         (results/(name+'.png')).write_bytes(image)
     try:
+        if suite=='render':
+            record_render(results,labels,directory,write_private)
+            return
         write_private('tv-observer.lua',observer(labels,directory))
         ini=f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\nwavwrite {directory}/tv-audio.wav\n'
+        if suite == 'candidate-controls': ini+='scalemode native-tv\n'
         if suite == 'auto-frameskip': ini+='autoframeskip 1\n'
         write_private('nes.ini',ini)
         (results/'device.txt').write_bytes(adb('shell','getprop'))
@@ -567,10 +702,10 @@ def run(apk, labels, results, suite):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('apk','labels','results'): parser.add_argument(name,type=Path)
-    parser.add_argument('--suite',action='append',choices=('controls','timing','auto-frameskip'))
+    parser.add_argument('--suite',action='append',choices=('controls','timing','auto-frameskip','render','candidate-controls'))
     args=parser.parse_args()
     errors=[]
-    for suite in args.suite or ('controls','timing'):
+    for suite in args.suite or ('controls','timing','render','candidate-controls'):
         folder=args.results if suite=='controls' else args.results/suite
         try:
             run(args.apk,args.labels,folder,suite)

@@ -1,0 +1,187 @@
+--- a/src/emu/schedule.cpp
++++ b/src/emu/schedule.cpp
+@@ -10,6 +10,10 @@
+ 
+ #include "emu.h"
+ #include "debugger.h"
++#ifdef __ANDROID__
++#include "tv-profile.h"
++#endif
++
+ 
+ //**************************************************************************
+ //  DEBUGGING
+@@ -392,6 +396,9 @@
+ 
+ void device_scheduler::timeslice()
+ {
++#ifdef __ANDROID__
++	const auto started = battlecity_tv::measuring.load(std::memory_order_relaxed) ? battlecity_tv::now_ns() : 0;
++#endif
+ 	bool call_debugger = ((machine().debug_flags & DEBUG_FLAG_ENABLED) != 0);
+ 
+ 	// build the execution list if we don't have one yet
+@@ -501,6 +508,9 @@
+ 		m_basetime = target;
+ 	}
+ 
++#ifdef __ANDROID__
++	if (started) battlecity_tv::frame_meter::core_ns.fetch_add(battlecity_tv::now_ns()-started, std::memory_order_relaxed);
++#endif
+ 	// execute timers
+ 	execute_timers();
+ }
+--- a/src/emu/sound.cpp
++++ b/src/emu/sound.cpp
+@@ -21,6 +21,10 @@
+ #include "video.h"
+ 
+ #include "wavwrite.h"
++#ifdef __ANDROID__
++#include "tv-profile.h"
++#endif
++
+ #include "xmlfile.h"
+ 
+ #include "osdepend.h"
+@@ -482,8 +486,15 @@
+ 
+ 		// Send the result to the osd
+ 		for(auto &stream : m_osd_output_streams)
+-			if(stream.m_samples)
++			if(stream.m_samples) {
+ 				machine().osd().sound_stream_sink_update(stream.m_id, stream.m_buffer.data(), stream.m_samples);
++#ifdef __ANDROID__
++				if (&stream == &m_osd_output_streams.front() && battlecity_tv::measuring.load(std::memory_order_relaxed)) {
++					battlecity_tv::pcm_rate.store(stream.m_rate, std::memory_order_relaxed);
++					battlecity_tv::pcm_frames.fetch_add(stream.m_samples, std::memory_order_relaxed);
++				}
++#endif
++			}
+ 
+ 		machine().osd().sound_end_update();
+ #ifndef SOUND_DISABLE_THREADING
+--- a/src/osd/modules/render/drawsdl3soft.cpp
++++ b/src/osd/modules/render/drawsdl3soft.cpp
+@@ -29,6 +29,12 @@
+ #include "rendersw.hxx"
+ 
+ #include <SDL3/SDL.h>
++#ifdef __ANDROID__
++#include "emu.h"
++#include "screen.h"
++#include "ui/uimain.h"
++#include "tv-profile.h"
++#endif
+ 
+ // standard C headers
+ #include <cmath>
+@@ -98,6 +104,11 @@
+ 	void yuv_lookup_set(unsigned int pen, unsigned char red,
+ 				unsigned char green, unsigned char blue);
+ 
++#ifdef __ANDROID__
++	bool m_native_frame = false;
++	battlecity_tv::frame_meter m_meter;
++	screen_device *m_profile_screen = nullptr;
++#endif
+ 	int32_t               m_blittimer;
+ 
+ 	sdl_scale_mode const &m_scale_mode;
+@@ -159,7 +170,11 @@
+ 		default: break;
+ 	}
+ 
+-	if (m_scale_mode.is_scale)
++	bool compact = m_scale_mode.is_scale == 1;
++#ifdef __ANDROID__
++	compact = compact || m_native_frame;
++#endif
++	if (compact)
+ 	{
+ 		int m_hw_scale_width = 0;
+ 		int m_hw_scale_height = 0;
+@@ -186,6 +201,10 @@
+ 		m_texture_id = SDL_CreateTexture(m_sdl_renderer, SDL_PixelFormat(fmt), SDL_TEXTUREACCESS_STREAMING,
+ 				size.width(), size.height());
+ 	}
++#ifdef __ANDROID__
++	if (m_scale_mode.is_scale == 2 && m_texture_id)
++		SDL_SetTextureScaleMode(m_texture_id, SDL_SCALEMODE_NEAREST);
++#endif
+ }
+ 
+ //============================================================
+@@ -197,7 +216,13 @@
+ 	// create renderer
+ 	osd_printf_verbose("Enter renderer_sdl1::create()\n");
+ 	SDL_Window *sdl_window = dynamic_cast<sdl_window_info &>(window()).platform_window();
+-	m_sdl_renderer = SDL_CreateRenderer(sdl_window, "software");
++	char const *driver = "software";
++#ifdef __ANDROID__
++	if (m_scale_mode.is_scale == 2) driver = nullptr;
++	m_meter.open(SDL_GetAndroidInternalStoragePath());
++	if (m_meter.active) m_profile_screen = window().machine().root_device().subdevice<screen_device>("screen");
++#endif
++	m_sdl_renderer = SDL_CreateRenderer(sdl_window, driver);
+ 	if (!m_sdl_renderer)
+ 	{
+ 		fatalerror("Error creating renderer: %s\n", SDL_GetError());
+@@ -267,7 +292,27 @@
+ 	int bpp;
+ 
+ 	osd_dim wdim = window().get_size_pixels();
+-	if (has_flags(FI_CHANGED) || (wdim != m_last_dim))
++	bool texture_changed = false;
++#ifdef __ANDROID__
++	const auto started = m_meter.active ? battlecity_tv::now_ns() : 0;
++	if (started) ATrace_beginSection("BattleCity.draw");
++	if (m_scale_mode.is_scale == 2) {
++		bool native = !window().machine().ui().is_menu_active() && !battlecity_picture(-1);
++		if (native) {
++			bool screen = false;
++			window().m_primlist->acquire_lock();
++			for (const auto &prim : *window().m_primlist) {
++				if (PRIMFLAG_GET_SCREENTEX(prim.flags)) screen = true;
++				else if (prim.texture.base) { native = false; break; }
++			}
++			window().m_primlist->release_lock();
++			native = native && screen;
++		}
++		texture_changed = native != m_native_frame;
++		m_native_frame = native;
++	}
++#endif
++	if (has_flags(FI_CHANGED) || (wdim != m_last_dim) || texture_changed)
+ 	{
+ 		destroy_all_textures();
+ 		clear_flags(FI_CHANGED);
+@@ -406,7 +451,18 @@
+ 		r.w=blitwidth;
+ 		r.h=blitheight;
+ 		SDL_RenderTexture(m_sdl_renderer, m_texture_id, nullptr, (const SDL_FRect *)&r);
++#ifdef __ANDROID__
++		const auto before_present = started ? battlecity_tv::now_ns() : 0;
++		if (started) { ATrace_endSection(); ATrace_beginSection("BattleCity.present"); }
++		const bool presented = SDL_RenderPresent(m_sdl_renderer);
++		if (started) {
++			ATrace_endSection();
++			m_meter.finish(window().machine().time().as_double(), m_profile_screen ? m_profile_screen->frame_number() : 0,
++					SDL_GetRendererName(m_sdl_renderer), m_native_frame, started, before_present, presented);
++		}
++#else
+ 		SDL_RenderPresent(m_sdl_renderer);
++#endif
+ 	}
+ 	return 0;
+ }
+@@ -693,6 +749,9 @@
+ 
+ sdl_scale_mode const video_sdl3soft::s_scale_modes[] = {
+ 		{ "none",    0, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                    nullptr },
++#ifdef __ANDROID__
++		{ "native-tv", 2, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                   nullptr },
++#endif
+ 		{ "hwblit",  1, 0, 1, 1, DRAW2_SCALEMODE_LINEAR,  0,                    nullptr },
+ 		{ "hwbest",  1, 0, 1, 1, DRAW2_SCALEMODE_BEST,    0,                    nullptr },
+ 		/* SDL1.2 uses interpolation as well */
