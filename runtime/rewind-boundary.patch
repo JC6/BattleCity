@@ -1,0 +1,70 @@
+--- a/src/emu/machine.h
++++ b/src/emu/machine.h
+@@ -188,6 +188,7 @@
+ 	void schedule_soft_reset();
+ 	void schedule_save(std::string &&filename);
+ 	void schedule_load(std::string &&filename);
++	void schedule_rewind();
+ 
+ 	// date & time
+ 	void base_datetime(system_time &systime);
+@@ -309,7 +310,8 @@
+ 	{
+ 		NONE,
+ 		SAVE,
+-		LOAD
++		LOAD,
++		REWIND
+ 	};
+ 	saveload_schedule       m_saveload_schedule;
+ 	attotime                m_saveload_schedule_time;
+--- a/src/emu/machine.cpp
++++ b/src/emu/machine.cpp
+@@ -751,6 +751,17 @@
+ }
+ 
+ 
++// Rewind at the same safe boundary as a file load. The input edge is
++// dispatched inside a video timer whose bookkeeping still owns the old time.
++void running_machine::schedule_rewind()
++{
++	if (m_saveload_schedule == saveload_schedule::NONE)
++	{
++		m_saveload_schedule_time = time();
++		m_saveload_schedule = saveload_schedule::REWIND;
++	}
++}
++
+ //-------------------------------------------------
+ //  immediate_load - load state.
+ //-------------------------------------------------
+@@ -987,6 +998,18 @@
+ 
+ void running_machine::handle_saveload()
+ {
++	if (m_saveload_schedule == saveload_schedule::REWIND)
++	{
++		if (!m_scheduler.can_save() && time() - m_saveload_schedule_time < attotime::from_seconds(1))
++			return;
++		m_saveload_schedule = saveload_schedule::NONE;
++		if (m_scheduler.can_save())
++			rewind_step();
++		else
++			popmessage("Unable to rewind while a device timer is active.");
++		return;
++	}
++
+ 	// if no name, bail
+ 	if (!m_saveload_pending_file.empty())
+ 	{
+--- a/src/frontend/mame/ui/ui.cpp
++++ b/src/frontend/mame/ui/ui.cpp
+@@ -1858,7 +1858,7 @@
+ 
+ 	// rewind single step
+ 	if (inp.pressed(IPT_UI_REWIND_SINGLE))
+-		machine().rewind_step();
++		machine().schedule_rewind();
+ 
+ 	// handle a toggle cheats request
+ 	if (inp.pressed(IPT_UI_TOGGLE_CHEAT))

@@ -4,8 +4,12 @@ const path = require('node:path');
 const {createRequire} = require('node:module');
 const engines = createRequire(path.resolve(__dirname, '../../web/package.json'))('@playwright/test');
 const [url, engine, cadence = 'native', duration = '30', repeats = '3'] = process.argv.slice(2);
-const observer = `local m=manager.machine
+const inputs = require('node:fs').readFileSync(path.join(__dirname,'clock-input.lua'),'utf8');
+const observer = inputs + `\nlocal m=manager.machine
+local tick=0
 clock_observer=emu.add_machine_frame_notifier(function()
+    tick=tick+1
+    if tick%6~=0 then return end
     print(string.format("CLOCK %.8f %d",m.time:as_double(),m.screens[":screen"]:frame_number()))
 end)`;
 
@@ -42,11 +46,7 @@ async function measure() {
             };
         }, {observer, cadence});
         await page.click('#start');
-        await page.waitForFunction(() => window.clockSample?.emu > 2);
-        await page.keyboard.down('Enter');
-        await page.waitForTimeout(120);
-        await page.keyboard.up('Enter');
-        await page.waitForTimeout(1500);
+        await page.waitForFunction(() => window.clockSample?.emu >= 9, null, {timeout:90000});
         let start = await page.evaluate(() => clockSample);
         let passed = true;
         for (let run=1; run<=Number(repeats); run++) {
@@ -61,6 +61,38 @@ async function measure() {
             console.log(JSON.stringify(row));
             passed &&= wall >= Number(duration)*.95 && Math.abs(row.speed-1)<=.01 && Math.abs(row.audioSpeed-1)<=.01;
             start = end;
+        }
+        if (cadence === 'native') {
+            async function escape() {
+                await page.keyboard.down('Escape');
+                await page.waitForTimeout(150);
+                await page.keyboard.up('Escape');
+            }
+            await escape();
+            await page.waitForFunction(() => document.querySelector('#display').dataset.menu==='1');
+            const paused = await page.evaluate(() => clockSample.emu);
+            await page.waitForTimeout(750);
+            assert.ok(Math.abs(await page.evaluate(() => clockSample.emu)-paused)<.12, 'system menu advanced game time');
+            await escape();
+            await page.waitForFunction(() => document.querySelector('#display').dataset.menu==='0');
+            await page.waitForFunction(t => clockSample.emu>t+.15, paused);
+            // Desktop headless engines do not expose tab suspension uniformly.
+            // Deliver the same DOM visibility transition to the packaged runtime.
+            const hidden = await page.evaluate(() => {
+                Object.defineProperty(document,'hidden',{configurable:true,value:true});
+                document.dispatchEvent(new Event('visibilitychange'));
+                return clockSample.emu;
+            });
+            await page.waitForTimeout(1500);
+            assert.equal(await page.evaluate(() => clockSample.emu), hidden);
+            await page.evaluate(() => {
+                delete document.hidden;
+                document.dispatchEvent(new Event('visibilitychange'));
+            });
+            await page.waitForFunction(t => clockSample.emu>t, hidden);
+            const resumed = await page.evaluate(() => clockSample.emu);
+            assert.ok(resumed-hidden<.35, 'background time was replayed');
+            console.log(JSON.stringify({engine, lifecycle:'menu and simulated visibility resume', resumeAdvance:resumed-hidden}));
         }
         assert.ok(passed, 'emulated or PCM time differed from wall time by more than 1%');
     } finally {

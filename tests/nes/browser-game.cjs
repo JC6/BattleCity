@@ -17,7 +17,12 @@ const reads = fields.map(([name, offset = 0]) => {
 });
 const menuKeys = ['Escape', 'Home', 'End', 'ArrowUp', 'ArrowDown', 'Enter', 'r', 'ArrowLeft', 'ArrowRight', 'Delete', 'Backspace'];
 const menuCodes = ['ESC', 'HOME', 'END', 'UP', 'DOWN', 'ENTER', 'R', 'LEFT', 'RIGHT', 'DEL', 'BACKSPACE'];
-const observer = `local ram=manager.machine.devices[":maincpu"].spaces.program
+const rewindObserver = readFileSync(path.join(__dirname, 'rewind-state.lua'), 'utf8');
+const observer = `local function checkpoint_report(kind,time,matched)
+    print(string.format("CHECKPOINT %s %.8f %d",kind,time,matched))
+end
+${rewindObserver}
+local ram=manager.machine.devices[":maincpu"].spaces.program
 game_observer=emu.add_machine_frame_notifier(function()
     print("GAME_STATE "..table.concat({${reads.join(',')}},","))
 end)
@@ -61,6 +66,11 @@ async function start(page) {
         Module.arguments.push('-autoboot_delay','0','-autoboot_script','/observe.lua');
         Module.preRun = [() => FS.writeFile('/observe.lua', script)];
         Module.print = message => {
+            if (String(message).startsWith('CHECKPOINT ')) {
+                const [,kind,stamp,match] = message.split(' ');
+                (window.checkpoints ||= []).push({kind, stamp:Number(stamp), match:Number(match)});
+                return;
+            }
             if (String(message).startsWith('INPUT_FRAME ')) {
                 const [, active, keys, select] = message.split(' ');
                 window.uiSelectPressed = select === '1';
@@ -74,6 +84,7 @@ async function start(page) {
             const [mode, selection, stage, players, frame, y1, y2, cursor, design, board, shot1, shot2, shield, titleScroll, idleTimer] =
                 message.slice(11).split(',').map(Number);
             window.gameState = {mode, selection, stage, players, frame, y1, y2, cursor, design, board, shot1, shot2, shield, titleScroll, idleTimer};
+            if (window.observePress) window.observePress();
             if (shot1) window.seenShot1 = true;
             if (shot2) window.seenShot2 = true;
         };
@@ -91,13 +102,21 @@ async function start(page) {
 }
 
 async function press(page, key, expected) {
+    // A catch-up callback can present several NES frames between two Playwright
+    // polls. Remember the first matching state at the emulated frame boundary.
+    await page.evaluate(check => {
+        const matches = new Function('return (' + check + ')()');
+        window.pressMatched = false;
+        window.observePress = () => { if (matches()) window.pressMatched = true; };
+    }, expected.toString());
     await page.keyboard.down(key);
     try {
-        await page.waitForFunction(expected, null, {timeout: 30000});
+        await page.waitForFunction(() => window.pressMatched, null, {timeout:30000});
     } catch (error) {
-        throw new Error(key + ' failed at ' + JSON.stringify(await page.evaluate(() => window.gameState)), {cause: error});
+        throw new Error(key + ' failed at ' + JSON.stringify(await page.evaluate(() => window.gameState)), {cause:error});
     } finally {
         await page.keyboard.up(key);
+        await page.evaluate(() => { window.observePress = null; });
     }
     // Each new edge must reach the NES after it has sampled the release.
     const frame = await page.evaluate(() => window.gameState.frame);
@@ -490,10 +509,21 @@ async function verify(engine, suite) {
             await page.keyboard.up('w');
         }
         const advanced = await page.evaluate(() => gameState.y1);
-        for (let steps = 0; steps < 3; steps++) {
-            await menu(page, ['r'], 'Game rewound.');
-            if (await page.evaluate(y => gameState.y1 > y, advanced)) break;
+        // The first tap is issued just after a fresh checkpoint. A second tap
+        // must restore an earlier snapshot, including live shots and damaged bricks.
+        await page.waitForFunction(() => window.checkpoints?.filter(p=>p.kind==='save').length >= 3);
+        const lastSave = await page.evaluate(() => checkpoints.filter(p=>p.kind==='save').at(-1).stamp);
+        await page.waitForFunction(stamp => checkpoints.filter(p=>p.kind==='save').at(-1).stamp > stamp, lastSave);
+        // Two short physical keyboard edges. Waiting for full menu animations
+        // between taps would allow a new one-second checkpoint to intervene.
+        for (let step=0; step<2; step++) {
+            await page.keyboard.press('r',{delay:75});
+            await page.waitForTimeout(75);
         }
+        await page.waitForFunction(() => checkpoints.filter(p=>p.kind==='load').length>=2);
+        const loads = await page.evaluate(() => checkpoints.filter(p=>p.kind==='load').slice(-2));
+        assert.equal(loads.length, 2);
+        assert.ok(loads.every(p=>p.match===1) && loads[1].stamp < loads[0].stamp, JSON.stringify(await page.evaluate(() => checkpoints.slice(-20))));
         const restored = await page.evaluate(() => gameState.y1);
         assert.ok(restored > advanced, 'rewind did not restore an earlier position');
         await page.keyboard.down('s');

@@ -98,7 +98,14 @@ def observer(labels, directory):
     reads = ','.join(f'ram:read_u8({addresses[key]+offset})' for key,offset in fields)
     # Observe the game through its CPU bus. Publishing between rendered frames
     # also works while the emulated CPU is paused in the native player menu.
+    rewind = Path(__file__).with_name('rewind-state.lua').read_text()
     return f"""
+local function checkpoint_report(kind,stamp,matched)
+    local f=assert(io.open("{directory}/rewind.csv","a"))
+    f:write(string.format("%s,%.8f,%d\\n",kind,stamp,matched))
+    f:close()
+end
+{rewind}
 local ram=manager.machine.devices[":maincpu"].spaces.program
 local tick,p1,p2=0,0,0
 emu.register_frame_done(function()
@@ -274,7 +281,7 @@ def run(apk, labels, results):
     slot = f'files/states/{digest}/nes/1.sta'
     # Leave existing player files intact. A completed run removes its own slot.
     test_files = ['files/'+name for name in ('nes.ini','tv-observer.lua','tv-observation',
-                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav')]
+                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv')]
     test_files.extend((slot,slot+'.png',slot+'.lock'))
     for name in test_files:
         if private('ls','-d',name,check=False).strip()==name.encode():
@@ -302,9 +309,24 @@ def run(apk, labels, results):
             launch()
             capture('title')
             one.tap(MENU)
-            one.down()
-            one.down()
-            one.tap(SOUTH)
+            # A presented SDL frame does not guarantee the next menu has opened.
+            # Wait for its cyan cursor before sending another directional edge.
+            def cursor_at(x,y):
+                rgb=screen_rgb(adb('exec-out','screencap','-p'),'320:180')
+                return sum(1 for cy in range(y-2,y+2) for cx in range(x-2,x+5)
+                           if (lambda r,g,b:g>95 and b>120 and b-r>70 and g-r>35)(
+                               *rgb[3*(320*cy+cx):3*(320*cy+cx)+3]))>=4
+            def reach_cursor(x,y,action):
+                for attempt in range(3):
+                    if cursor_at(x,y): return
+                    action()
+                    if cursor_at(x,y): return
+                    time.sleep(.25)
+                wait(lambda:cursor_at(x,y),bool,'visible cursor at '+str((x,y)))
+            wait(lambda:cursor_at(124,29),bool,'initial Save cursor')
+            reach_cursor(124,45,one.down)
+            reach_cursor(84,126,one.down)
+            reach_cursor(34,63,lambda:one.tap(SOUTH))
             one.tap(SOUTH)
             def shooter_width():
                 image=adb('exec-out','screencap','-p')
@@ -364,8 +386,23 @@ def run(apk, labels, results):
             one.direction(-1)
             advanced=check(lambda s:s['y1']<=152,'travel before rewind')
             one.direction(0)
-            one.tap(REWIND)
+            # Schedule both shoulder taps on the device. Host-side screenshots
+            # or adb polling between them can span a whole checkpoint interval.
+            for _ in range(2):
+                one.event(1,REWIND,1)
+                one.send({'command':'delay','duration':90})
+                one.event(1,REWIND,0)
+                one.send({'command':'delay','duration':90})
             check(lambda s:s['y1']>advanced['y1'] and not s['menu'],'direct shoulder rewind')
+            def restored_twice():
+                trace=private('cat','files/rewind.csv',check=False).decode()
+                loads=[row.split(',') for row in trace.splitlines() if row.startswith('load,')]
+                if len(loads)<2: return None
+                assert all(row[2]=='1' for row in loads[-2:]), 'restored work RAM differs'
+                assert float(loads[-1][1])<float(loads[-2][1]), 'second shoulder rewind did not go back'
+                return trace
+            trace=wait(restored_twice,bool,'two direct shoulder rewinds')
+            (results/'rewind.csv').write_text(trace)
             adb('shell','am','force-stop',PACKAGE)
             launch()
             one.tap(SELECT)
@@ -447,7 +484,10 @@ def run(apk, labels, results):
             (results/'result.json').write_text(json.dumps(
                 {'saved':saved,'restored':restored,'background':background,'resumed':resumed,'result':'passed'},indent=2))
         adb('shell','am','force-stop',PACKAGE)
+        clock_input = Path(__file__).with_name('clock-input.lua').read_text()
+        write_private('tv-observer.lua', clock_input+'\n'+observer(labels,directory))
         launch()
+        check(lambda s:s['emu_us']>=9_000_000 and s['mode']==1,'clock entry into solo battle')
         measure_clock(results)
         record_endings(labels, directory, results, write_private)
     except Exception:

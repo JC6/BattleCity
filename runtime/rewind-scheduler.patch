@@ -9,7 +9,7 @@
 +	auto &scheduler = machine.scheduler();
 +	auto const previous_second = scheduler.time().seconds();
 +	scheduler.timeslice();
-+	if (scheduler.time().seconds() != previous_second && machine.save().rewind()->enabled() && scheduler.can_save())
++	if (scheduler.time().seconds() > previous_second && machine.save().rewind()->enabled() && scheduler.can_save())
 +		machine.rewind_capture();
 +}
 +

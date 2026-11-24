@@ -173,11 +173,14 @@ def art(logo_map):
             radius = radii[dy] if dy < len(radii) else -1
             rows.append(''.join('3' if abs(x-7) <= radius else '0' for x in range(16)))
         square(416+phase*4, rows)
-    for phase in range(2):
-        def shield(x,y):
-            radius=(2*x-15)**2+(2*y-15)**2
-            return '3' if 172 <= radius <= 282 and ((x//3+y//3+phase)&1) else '0'
-        square(432+phase*4,[[shield(x,y) for x in range(16)] for y in range(16)])
+    # The two white shield outlines alternate around the player sprite.
+    shield_quarters = (
+        ('......##','.....#..','....#...','....#...','..##....','.#......','#.......','#.......'),
+        ('..##....','.#..#...','#....##.','#......#','.#......','..#.....','..#.....','...#....'),
+    )
+    for phase, quarter in enumerate(shield_quarters):
+        top = [row+row[::-1] for row in quarter]
+        square(432+phase*4, colors(top+top[::-1], {'.':'0','#':'3'}))
     tile(440, ['02200000','23320000','23320000','02200000'] + ['00000000']*4)
     for phase, radius in enumerate((7,5,3)):
         tile(442+phase, [''.join('3' if abs(2*x-7)+abs(2*y-7)<radius else

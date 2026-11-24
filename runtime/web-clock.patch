@@ -1,6 +1,19 @@
 --- a/src/emu/machine.cpp
 +++ b/src/emu/machine.cpp
-@@ -1457,31 +1457,53 @@
+@@ -1451,37 +1451,75 @@
+ 
+ running_machine * running_machine::emscripten_running_machine;
+ 
++// Only the last complete emulated screen in a callback can reach the display.
++static attotime browser_deadline;
++bool emscripten_intermediate_frame(running_machine &machine)
++{
++	return !machine.paused() && machine.time() + attotime::from_hz(60) < browser_deadline;
++}
++
+ void running_machine::emscripten_main_loop()
+ {
+ 	running_machine *machine = emscripten_running_machine;
  
  	auto profile = g_profiler.start(PROFILER_EXTRA);
  
@@ -8,13 +21,20 @@
 +	// A display callback may arrive at any refresh rate. Keep the cumulative
 +	// emulation target so that rounding up a CPU timeslice cannot cause drift.
 +	static double previous_ms = -1;
-+	static attotime target, previous_emu;
++	static attotime previous_emu;
++	auto &target = browser_deadline;
 +	double const now = emscripten_get_now();
 +	double const elapsed_ms = now - previous_ms;
 +	auto &scheduler = machine->scheduler();
-+	bool const interrupted = previous_ms < 0 || elapsed_ms < 0 || elapsed_ms > 1000;
++	int const visibility = EM_ASM_INT({
++		if (document.hidden) return 2;
++		const changed = Module.clockVisibilityChanged;
++		Module.clockVisibilityChanged = false;
++		return changed ? 1 : 0;
++	});
++	bool const interrupted = visibility || previous_ms < 0 || elapsed_ms < 0 || elapsed_ms > 1000;
 +	previous_ms = now;
-+	if (EM_ASM_INT({ return document.hidden ? 1 : 0; }))
++	if (visibility == 2)
 +	{
 +		previous_ms = -1;
 +		return;
@@ -61,7 +81,36 @@
 +	{
 +		target = previous_emu = scheduler.time();
  		machine->m_video->frame_update();
++		if (machine->m_saveload_schedule == saveload_schedule::REWIND)
++			machine->handle_saveload();
 +	}
  
  	// cancel the emscripten loop if the system has been told to exit
  	if (machine->exit_pending())
+@@ -1495,6 +1531,7 @@
+ 	emscripten_running_machine = machine;
+ 	EM_ASM (
+ 		JSMESS.running = true;
++		document.addEventListener("visibilitychange", () => { Module.clockVisibilityChanged = true; });
+ 	);
+ 	emscripten_set_main_loop(&(emscripten_main_loop), 0, 1);
+ }
+--- a/src/osd/sdl3/video.cpp
++++ b/src/osd/sdl3/video.cpp
+@@ -101,8 +101,16 @@
+ //  update
+ //============================================================
+ 
++#ifdef __EMSCRIPTEN__
++extern bool emscripten_intermediate_frame(running_machine &machine);
++#endif
++
+ void sdl_osd_interface::update(bool skip_redraw)
+ {
++	#ifdef __EMSCRIPTEN__
++	if (!skip_redraw)
++		skip_redraw = emscripten_intermediate_frame(machine());
++#endif
+ 	osd_common_t::update(skip_redraw);
+ 
+ 	// if we're not skipping this redraw, update all windows
