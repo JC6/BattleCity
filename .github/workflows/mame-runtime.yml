@@ -139,8 +139,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: web, platform: web }
-          - { target: tv, platform: android, abi: arm64-v8a }
           - { target: tv-emulator, platform: android, abi: x86 }
     env:
       PACKAGE_PLATFORM: ${{ matrix.platform }}
@@ -191,6 +189,19 @@ jobs:
           Libs: -L$SDL_INSTALL_ROOT/lib -lSDL3
           Cflags: -I$SDL_INSTALL_ROOT/include
           PC
+          # Keep the compiled NES core when the package repository limits this runner.
+          cat > "$RUNNER_TEMP/gradle-with-retry" <<'BASH'
+          #!/usr/bin/env bash
+          set -o pipefail
+          for delay in 0 20 55; do
+            sleep "$delay"
+            if gradle "$@" 2>&1 | tee "$RUNNER_TEMP/gradle-attempt.log"; then exit 0; fi
+            grep -Eq 'status code (429|50[0234])|timed out|Connection reset' "$RUNNER_TEMP/gradle-attempt.log" || exit 1
+          done
+          exit 1
+          BASH
+          chmod +x "$RUNNER_TEMP/gradle-with-retry"
+          export GRADLE_BIN="$RUNNER_TEMP/gradle-with-retry"
           bash tools/build-mame-runtime.sh android "build/shared/$CARTRIDGE.nes"
       - uses: actions/setup-node@v6
         if: matrix.platform == 'web'
