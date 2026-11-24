@@ -128,3 +128,11 @@ Nenriki 发布的两段 Famicom 实录分别显示 196500 和 441900。本轮记
 另找到一段能连续看到双人结局的 NES 录像。第 34 关结算显示 1P 122800 和 2P 89500，随后依次出现 GAME OVER、HISCORE 122800 和标题的双人游标。该片能交叉核对画面顺序，英文 Switch 版本的按键与帧数仍待直接测量。[双人原片 34:53](https://www.youtube.com/watch?v=mV4AnvS300Y&t=2093s)
 
 将结算页 TOTAL 数字第一次连续可见的采集帧作为独立画面标记，三段英文 Switch 录像从该帧到结束音乐起音分别为 2.543、2.548 和 2.667 秒。本作固定输入回放为 2.314 秒。录像里三次 TOTAL 分别为 0、10、0，只有中间一次能用连续计分声再校准。录像的采集音画偏移未知。本作两个脉冲声道均在首个音符指令约 1.797 秒后执行最终静音，此时混音已低于测量阈值。现有测量无法把约 50 毫秒的可听尾音差归因到其中一个声道的静音指令。[三次起音与包络](../../build/battlecity/Switch-TV-Comparison.html)
+
+### 结算页与音画同步
+
+五段英文 Switch 录像中，从 TOTAL 数字稳定出现到 GAME OVER 字样首次可读，分别测得 2.402、2.367、2.402、2.417、2.400 秒。前两段来自不同作者，用于校准。其余三段用于复验，包括 Xupgeeks 的 13 击毁和 itFredda 的 17 击毁。复刻卡带的单人终局从 2.329 秒调至 2.379 秒，每段差值均小于该录像的一帧。只在失守或生命耗尽后额外等待三个垂直消隐；正常过关与双人奖励沿用原有节奏。[第二关](https://www.youtube.com/watch?v=S26lUv598_o&t=449s) · [第二轮首关](https://www.youtube.com/watch?v=Xf02flMP7dc&t=2611s) · [十击毁](https://www.youtube.com/watch?v=S26lUv598_o&t=647s) · [Xupgeeks](https://www.youtube.com/watch?v=uc_If5fksfA&t=270s) · [itFredda](https://www.youtube.com/watch?v=hlJ4skgnFko&t=306s)
+
+以同一音画文件里可见的最后一个击毁数和对应计分声估计采集偏移。四段可校准录像的起音残差在 −19 至 +27 毫秒之内，低于各自的单帧采集时长。首段最终计数为零，缺少这个独立音频标记。五份混音在 1.2% 峰值阈值下的尾音为 1.63–1.64 秒，当前卡带为 1.58 秒。音序与声道包络仍按当前卡带播放。[时间线测量脚本](../../tests/nes/terminal_tally.py) · [同一录音内的音画校准](../../tests/nes/terminal_av_sync.py)
+
+另复查了三段社区上传的时间线。两个可辨认英文 Switch 界面的片段进入了单人结算，读取到的 13 和 17 属于小号 TOTAL 字体。另一段合集直播的设备与输入无法从片段确认。英文 Switch 双人完整结局、两次回退的精确跨度、无人操作演示以及 HISCORE 大数字 2、3、4、6、7，继续保留为未验证项。万代南梦宫的 Switch 资料明确列出双人同时游玩和回退功能。[官方游戏介绍](https://nc.bn-ent.net/title-lineup/title.php?tit=battle-city) · [官方回退说明](https://nc.bn-ent.net/product/useful.php)

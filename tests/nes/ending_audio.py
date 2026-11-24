@@ -77,6 +77,13 @@ def envelope(path, sources, notes):
                 writer.writerow((source,center/1000,round(rms,2),*(round(a,2) for a in amps)))
 
 
+def quiet_time(values):
+    levels=[statistics.pstdev(values[i:i+80]) for i in range(0,len(values)-79,80)]
+    limit=max(levels)*.012
+    quiet=next((i for i in range(120,len(levels)-9) if max(levels[i:i+10])<limit),None)
+    return round(quiet*.01,3) if quiet is not None else ''
+
+
 def compare(video, trace, wave, out, search=(132.85,133.90)):
     left,right = search
     if not 0 <= left < right:
@@ -126,10 +133,7 @@ def compare(video, trace, wave, out, search=(132.85,133.90)):
         writer=csv.writer(f);writer.writerow(('source','duration_to_quiet_s','quiet_threshold_fraction','window_ms'))
         for file,offset,name in ((wave,native_onset,'native'),(video,onset,'switch')):
             values=pcm(file,offset,2.0)
-            levels=[statistics.pstdev(values[i:i+80]) for i in range(0,len(values)-79,80)]
-            limit=max(levels)*.012
-            quiet=next((i for i in range(120,len(levels)-9) if max(levels[i:i+10])<limit),None)
-            writer.writerow((name,round(quiet*.01,3) if quiet is not None else '',.012,10))
+            writer.writerow((name,quiet_time(values),.012,10))
     envelope(out/'envelope.csv',[('native',wave,native_onset),('switch',video,onset)],notes)
     for file,offset,name in ((wave,native_onset,'native'),(video,onset,'switch')):
         subprocess.run(['ffmpeg','-v','error','-y','-ss',str(offset-.12),'-i',str(file),'-t','1.96',

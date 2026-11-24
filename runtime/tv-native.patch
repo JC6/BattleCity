@@ -28,7 +28,7 @@
  	if (m_scale_mode.is_scale == 4) {
  		m_surface_output = SDL_GetWindowSurface(sdl_window) != nullptr;
  		if (m_surface_output) {
-@@ -340,6 +347,24 @@
+@@ -340,6 +347,22 @@
  #ifdef __ANDROID__
  	const auto started = m_meter.active ? battlecity_tv::now_ns() : 0;
  	const bool tracing = m_meter.instrumented && ATrace_isEnabled();
@@ -43,17 +43,15 @@
 +				"android-native-window", phases.fast, started, started+phases.draw, ok, -2, wdim.width(), wdim.height(),
 +				phases.lock, phases.copy, phases.post, phases.area);
 +		}
-+		if (ok) return 0;
-+		osd_printf_warning("Android native window unavailable, recovering the software renderer\n");
-+		m_native_window.close();
-+		m_dirty_output = false;
-+		if (!open_software_renderer()) return 1;
++		// SurfaceView resize and resume can temporarily return a buffer of the old size.
++		// Keep this CPU producer and invalidate its cache until the new surface is ready.
++		if (!ok) notify_changed();
++		return ok ? 0 : 1;
 +	}
-+	if (m_scale_mode.is_scale == 5 && !m_sdl_renderer && !open_software_renderer()) return 1;
  	if (m_surface_output) {
  		surface = SDL_GetWindowSurface(m_output_window);
  		const SDL_PixelFormatDetails *details = surface ? SDL_GetPixelFormatDetails(surface->format) : nullptr;
-@@ -820,6 +845,7 @@
+@@ -820,6 +843,7 @@
  sdl_scale_mode const video_sdl3soft::s_scale_modes[] = {
  		{ "none",    0, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                    nullptr },
  #ifdef __ANDROID__

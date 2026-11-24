@@ -42,8 +42,8 @@ emu.register_frame_done(function()
     print("INPUT_FRAME "..(manager.ui.menu_active and "1 " or "0 ")..mask.." "..(io:type_pressed(selectType) and 1 or 0))
 end)`;
 
-async function start(page) {
-    await page.goto(url);
+async function start(page, entry = url) {
+    await page.goto(entry);
     await page.evaluate(script => {
         // Read MAME's selected row from the rendered highlight. SDL reports
         // raw key state before the paused UI has necessarily acted on it.
@@ -173,6 +173,17 @@ async function slotDigest(page, slot) {
         const digest = await crypto.subtle.digest('SHA-256', bytes);
         return Array.from(new Uint8Array(digest)).join(',');
     }, slot);
+}
+
+async function stateFilesDigest(page, slotPath) {
+    return page.evaluate(async file => {
+        const digests = [];
+        for (const suffix of ['', '.png', '.lock']) {
+            const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', FS.readFile(file + suffix)));
+            digests.push(Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join(''));
+        }
+        return digests;
+    }, slotPath);
 }
 
 async function capture(page, name) {
@@ -614,7 +625,15 @@ async function verify(engine, suite) {
         // Selecting a protected slot must leave the cursor here. Move to slot four
         // and cancel its overwrite to verify the protected state was untouched.
         await menu(page, ['Enter','ArrowLeft','Enter','End','Enter']);
-        await start(page);
+        const upgrade = process.env.BATTLECITY_UPGRADE_URL;
+        if (upgrade) assert.equal(new URL(upgrade).origin,new URL(url).origin,'upgrade requires the same browser origin');
+        const oldFiles = upgrade && await stateFilesDigest(page, slotPath);
+        await start(page,upgrade || url);
+        if (upgrade) {
+            const newSlot = await page.evaluate(() => Module.arguments[Module.arguments.indexOf('-state_directory')+1]+'/nes/1.sta');
+            assert.notEqual(newSlot,slotPath);
+            assert.deepEqual(await stateFilesDigest(page,newSlot),oldFiles,'upgraded state, thumbnail and lock');
+        }
         assert.equal(await slotDigest(page, 4), fourthSlot, 'slot four changed after reload');
         assert.equal(await page.evaluate(() => Module.canvas.dataset.picture), '3', 'picture settings did not survive reload');
         const lockPath = await page.evaluate(() => Module.arguments[Module.arguments.indexOf('-state_directory')+1]+'/nes/1.sta.lock');
@@ -633,6 +652,10 @@ async function verify(engine, suite) {
         } finally { await page.keyboard.up('ArrowDown'); }
         await menu(page,['Escape','End','Enter','Enter']);
         await page.waitForFunction(() => gameState.mode===0 && !gameState.titleScroll && !window.menuActive);
+        if (upgrade) {
+            assert.deepEqual(await stateFilesDigest(page,slotPath),oldFiles,'new saves must preserve the old slot, thumbnail and lock');
+            console.log(engine.name() + ' passed previous-release save upgrade, original slot preservation and second-player movement');
+        }
         assert.deepEqual(errors, []);
         console.log(engine.name() + ' passed 720p/1080p viewport, solo, stage selection, Construction, co-op, shooting, pause, rewind and persistent save/load');
         if (engine === chromium && suite !== 'controls') {

@@ -43,6 +43,8 @@ function copyCompatibleSlots() {
                 if (!FS.analyzePath(prior+'/'+file).exists) continue;
                 FS.writeFile(temp+'/nes/'+file, FS.readFile(prior+'/'+file));
                 files.push(file);
+                const stat = FS.stat(prior+'/'+file);
+                FS.utime(temp+'/nes/'+file, stat.atime.getTime(), stat.mtime.getTime());
             }
         }
         FS.rename(temp, target);

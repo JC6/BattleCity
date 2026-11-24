@@ -74,19 +74,28 @@ Connect both gamepads before launching a two-player session. The official Androi
 
 ## Measuring Android TV full frames
 
-The Android build produces a baseline APK using SDL's software renderer and a candidate APK using `scalemode surface-tv`. The candidate rasterizes directly into the SDL window surface at its negotiated resolution. If the surface is unavailable, incompatible or cannot be presented, subsequent frames use the software renderer. Both packages use the same cartridge and save directory.
+The Android build produces an SDL software baseline and a candidate with the packaged `dirty-tv` renderer. The `surface-tv` diagnostic remains available for comparing full-window SDL rendering and system upscaling. Both packages use the same cartridge and save directory.
 
 On a dedicated API 34 television emulator, run the following against the packaged x86 APK and the labels for its embedded cartridge.
 
 ```sh
-mkdir -p build/tv-result/second
+mkdir -p build/tv-result
 sha256sum deliverable/tv-emulator{,-candidate}.apk build/shared/game.nes > build/tv-result/tested-sha256.txt
-bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result --stable deliverable/tv-emulator.apk
-sha256sum deliverable/tv-emulator{,-candidate}.apk build/shared/game.nes > build/tv-result/second/tested-sha256.txt
-bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result/second --suite render --suite scenes
-python3 tests/nes/tv_release_gate.py build/tv-result
+bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result \
+  --stable deliverable/tv-emulator.apk --record-candidate-failure --suite controls --suite prototype --suite candidate-controls --suite held-out --suite timing
+if PYTHONPATH=tests/nes python3 -c "import sys; from pathlib import Path; from tv_release_gate import probe_pass; sys.exit(0 if probe_pass(Path('build/tv-result')) else 1)"; then
+  bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result --suite render --suite scenes
+  mkdir -p build/tv-result/second
+  cp build/tv-result/tested-sha256.txt build/tv-result/second/
+  bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result/second --suite render --suite scenes
+fi
+python3 tests/nes/tv_release_gate.py --require-prototype build/tv-result
 ```
 
-The first cold boot exercises two gamepads on both packages, records three endings and tests five display configurations. The second uses a clean AVD and the same APK. Set the workflow input `previous_tv_run` to exercise a save created by a previous release through an in-place update. For each of the eight picture comparisons the harness freezes the same NES frame, checks a digest of 2 KiB RAM, samples all 256 × 224 visible pixel centres and checks the wallpaper. A second baseline screenshot supplies a per-pixel, per-channel tolerance for the full raster. The candidate qualifies as the release default only if both boots pass all picture checks and each of their three 30-second windows submits every frame while the NES and output PCM both run at 99–101% of real time. The low-resolution window, native-size texture and full-resolution GPU runs are diagnostic comparisons.
+The prototype boot exercises both packages with two gamepads, records three endings and compares two held-out movement frames. Passing both speed probes starts two further clean AVDs with the same APK. Set the workflow input `previous_tv_run` to exercise a save created by a previous release through an in-place update. For each of the eight picture comparisons the harness freezes the same NES frame, checks a digest of 2 KiB RAM, samples all 256 × 224 visible pixel centres and checks the wallpaper. A second baseline screenshot supplies a per-pixel, per-channel tolerance for the full raster. The candidate qualifies as the release default only if both boots pass all picture checks and each of their three 30-second windows submits every frame while the NES and output PCM both run at 99–101% of real time. The low-resolution window, native-size texture and full-resolution GPU runs are diagnostic comparisons.
 
-The lightweight run creates an app-private measurement file, warms up for ten emulated seconds, and appends one JSON row per 30-second window. It counts vblanks, successful SDL texture-and-present submissions, and PCM frames handed to the first system sound sink. The system trace is taken after the third window, while the same process is in the foreground. The detailed `timing` suite records WAV and RAM separately. A compositor timestamp measures Android presentation. Physical input-to-display latency requires a device measurement.
+The lightweight run creates an app-private measurement file, warms up for ten emulated seconds, and appends one JSON row per 30-second window. It counts vblanks, successful window-buffer or SDL submissions, and PCM frames handed to the first system sound sink. The system trace is taken after the third window, while the same process is in the foreground. The detailed `timing` suite records WAV and RAM separately. A compositor timestamp measures Android presentation. Physical input-to-display latency requires a device measurement.
+
+The Android candidate uses the Native Window API with a full-size RGB565 image. During ordinary gameplay it compares consecutive NES rows and expands changed pixels using MAME's nearest-neighbour sampling coordinates. It locks the entire window for replacement to avoid Android copying pixels from an older buffer. RGBX and RGBA surfaces receive an explicit RGB565-to-eight-bit expansion. Window resizes retry on the next frame. Menus and picture filters use full composition. The test profile records lock, copy and post times alongside actual submitted frames. A normal battle and a repeatable explosion load must both pass before the two independent cold boots. Local motion frames 626 and 633 are reserved for checking stale pixels.
+
+Web and Android keep save files in cartridge-specific directories. A pair of hashes in the save compatibility table permits copying slots, thumbnails and lock files to the new directory when upgrading. The terminal-tally correction reuses all 220 named cartridge addresses and preserves the previous program everywhere except the two-byte jump operand and 12 formerly unused bytes. Browser and Android have separate upgrade tests because they use different storage systems.

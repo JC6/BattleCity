@@ -249,6 +249,13 @@ jobs:
         if: matrix.platform == 'web'
         with:
           node-version: '24'
+      - uses: actions/download-artifact@v4
+        if: matrix.platform == 'web' && inputs.cartridge == 'game' && inputs.previous_tv_run != ''
+        with:
+          run-id: ${{ inputs.previous_tv_run }}
+          github-token: ${{ github.token }}
+          name: game-web
+          path: previous-web
       - name: Exercise the packaged site
         if: matrix.platform == 'web'
         run: |
@@ -274,6 +281,13 @@ jobs:
             done
             node tests/nes/browser-ending.cjs http://127.0.0.1:8765/ build/shared/game.lbl build/web-observations
             BATTLECITY_CAPTURE_DIR="$PWD/build/web-observations/screens" node tests/nes/browser-game.cjs http://127.0.0.1:8765/ build/shared/game.lbl
+            if [[ -f previous-web/BattleCity-Web.zip ]]; then
+              python3 -m zipfile -e previous-web/BattleCity-Web.zip "$RUNNER_TEMP/web-site/previous"
+              for engine in chromium webkit; do
+                BATTLECITY_UPGRADE_URL=http://127.0.0.1:8765/ node tests/nes/browser-game.cjs \
+                  http://127.0.0.1:8765/previous/ build/shared/game.lbl "$engine" controls | tee "build/web-observations/upgrade-$engine.log"
+              done
+            fi
             exit "$clock_status"
           fi
       - uses: actions/upload-artifact@v4
@@ -336,7 +350,7 @@ jobs:
             done
             previous=(--previous previous-tv/upgrade.apk)
           fi
-          bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result --stable deliverable/tv-emulator.apk "${previous[@]}" --suite controls --suite prototype --suite candidate-controls --suite held-out --suite timing
+          bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result --stable deliverable/tv-emulator.apk "${previous[@]}" --record-candidate-failure --suite controls --suite prototype --suite candidate-controls --suite held-out --suite timing
           passed=$(PYTHONPATH=tests/nes python3 -c "from tv_release_gate import probe_pass;from pathlib import Path;print(int(probe_pass(Path('build/tv-result'))))")
           echo "BATTLECITY_PROBE_PASSED=$passed" >> "$GITHUB_ENV"
       - name: Two independent cold boots after passing the renderer prototype
@@ -350,7 +364,7 @@ jobs:
       - name: Select the measured TV renderer
         if: success() && matrix.abi == 'x86' && inputs.cartridge == 'game'
         run: |
-          python3 tests/nes/tv_release_gate.py build/tv-result
+          python3 tests/nes/tv_release_gate.py --require-prototype build/tv-result
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json
           from pathlib import Path

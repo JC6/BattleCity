@@ -14,7 +14,11 @@ Web 解压后通过 HTTP 打开，按 Enter 启动。标题滚动时可按 Enter
 
 ## 复验
 
-1080p Android TV 模拟器对同一个候选 APK 做了两次独立冷启动。全分辨率窗口缓冲的游戏速度为实时的 59.76%–60.86%，系统 PCM 输出为 59.63%–60.82%，共 0/6 个窗口同时达到实时与逐帧提交门槛。系统放大的 256×240 小缓冲测得游戏速度 99.76%–99.96%。每次启动均对八个场景核对 NES 帧、2 KiB RAM、57,344 个原生像素中心、壁纸和全图重复截图误差。本次 Android TV 默认使用 SDL 软件渲染，这条路径在同一模拟器上的游戏速度为实时的 44.29%–56.82%。旧版双人存档、缩略图与写保护已通过覆盖安装和恢复测试。[离线报告](build/battlecity/Switch-TV-Comparison.html) · [原始记录](build/battlecity/Switch-TV-Measurements.zip) · [同提交验收](https://github.com/JC6/BattleCity/actions/runs/45394628713)
+终局计分画面增加了 3 个 NES 帧。零击毁和十击毁的固定输入均测得从 TOTAL 数字出现到 GAME OVER 为 2.379 秒。五段英文 Switch 录像为 2.367–2.417 秒。Web 与 Android TV 支持从上一张卡带复制已有存档、预览和写保护。[英文 Switch 对照](runtime/cartridge/switch-comparison.md)
+
+电视原生窗口的初次试验中，普通战斗和连续爆炸分别达到实时的 57.01% 和 56.60%，锁定缓冲区占约 24 毫秒／帧。候选版改为整块写入窗口，并在窗口尺寸变化时重新提交。验收会分别测量两种负载，全部通过才进行两次冷启动和八场景逐像素比对。[第一次测量](https://github.com/JC6/BattleCity/actions/runs/45417789873) · [后续验收记录](https://github.com/JC6/BattleCity/actions/workflows/pages.yml?query=branch%3Avalidation%2Fswitch-parity-native-window-20261124-final)
+
+上一轮在 1080p Android TV 模拟器对同一候选 APK 做了两次独立冷启动。全分辨率窗口缓冲的游戏速度为实时的 59.76%–60.86%，系统 PCM 输出为 59.63%–60.82%，共 0/6 个窗口同时达到实时与逐帧提交门槛。系统放大的 256×240 小缓冲测得游戏速度 99.76%–99.96%。每次启动均对八个场景核对 NES 帧、2 KiB RAM、57,344 个原生像素中心、壁纸和全图重复截图误差。该轮 Android TV 默认使用 SDL 软件渲染，这条路径在同一模拟器上的游戏速度为实时的 44.29%–56.82%。旧版双人存档、缩略图与写保护已通过覆盖安装和恢复测试。[离线报告](build/battlecity/Switch-TV-Comparison.html) · [原始记录](build/battlecity/Switch-TV-Measurements.zip) · [同提交验收](https://github.com/JC6/BattleCity/actions/runs/45394628713)
 
 [Android TV 默认安装包](build/battlecity/BattleCity-TV.apk) · [Android TV 窗口缓冲候选版](build/battlecity/BattleCity-TV-Candidate.apk) · [Web 成品](build/battlecity/BattleCity-Web.zip) · [SHA-256](build/battlecity/SHA256SUMS)
 

@@ -142,7 +142,11 @@ public final class GameActivity extends SDLActivity {
                 if (!Files.isRegularFile(source.resolve(name))) continue;
                 for (String suffix : new String[]{"", ".png", ".lock"}) {
                     java.nio.file.Path file = source.resolve(name + suffix);
-                    if (Files.isRegularFile(file)) Files.copy(file, saves.resolve(name + suffix));
+                    if (Files.isRegularFile(file)) {
+                        java.nio.file.Path copy = saves.resolve(name + suffix);
+                        Files.copy(file, copy);
+                        Files.setLastModifiedTime(copy, Files.getLastModifiedTime(file));
+                    }
                 }
                 copied = true;
             }

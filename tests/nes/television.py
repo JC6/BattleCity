@@ -796,6 +796,8 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('apk','labels','results'): parser.add_argument(name,type=Path)
     parser.add_argument('--suite',action='append',choices=('controls','timing','auto-frameskip','render','scenes','candidate-controls','prototype','held-out'))
+    parser.add_argument('--record-candidate-failure',action='store_true',
+                        help='record a failing optional candidate control run for the release selector')
     parser.add_argument('--previous',type=Path)
     parser.add_argument('--stable',type=Path)
     args=parser.parse_args()
@@ -806,6 +808,11 @@ if __name__=='__main__':
             app = args.stable if suite=='controls' and args.stable else args.apk
             run(app,args.labels,folder,suite,args.previous if suite=='controls' else None)
         except Exception as error:
-            errors.append(error)
+            if args.record_candidate_failure and suite=='candidate-controls':
+                folder.mkdir(parents=True,exist_ok=True)
+                (folder/'result.json').write_text(json.dumps({'result':'failed','error':str(error)})+'\n')
+                print('::warning::Candidate controls failed: '+str(error),flush=True)
+            else:
+                errors.append(error)
     if errors:
         raise ExceptionGroup('Android TV acceptance',errors)

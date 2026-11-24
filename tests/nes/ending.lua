@@ -47,6 +47,14 @@ local function finish()
     local path=os.getenv("BATTLECITY_GOLDENS")
     if path then
         local f=assert(io.open(path));local expected=f:read("*a");f:close()
+        -- The shared fixture is the Famicom recording. Independent Switch video
+        -- puts three additional display frames between the terminal tally and the next page.
+        if a.finish_loss_tally and not win then
+            expected=expected:gsub("(%d+),([%w-]+)\n",function(tick,name)
+                if name=="game-over" or name=="title" then tick=tonumber(tick)+3 end
+                return tick..","..name.."\n"
+            end)
+        end
         if result~=expected then
             local i=0
             for line in expected:gmatch("[^\n]+") do
@@ -134,7 +142,9 @@ for _,cue in ipairs({10,11,7,19,27}) do
         if origin and v==1 and last~=frame then last=frame;event("cue-"..cue) end
     end)
 end
-local over_at,previous_ink,previous_mode=nil,nil,nil
+local over_at,previous_ink,previous_mode,previous_total_ink
+local observed_row=tonumber(os.getenv("BATTLECITY_TALLY_OBSERVE") or "")
+local previous_count_mask
 if av_path then
     for cue=24,26 do
         tap(a.audio_commands+cue,"install_write_tap",function(_,v)
@@ -154,6 +164,15 @@ ending_frames=emu.add_machine_frame_notifier(function()
         if previous_mode~=mode then av("mode",mode);previous_mode=mode end
         if mode==4 and score_frame and frame>score_frame+20 then
             local data=m.screens[":screen"]:pixels()
+            if observed_row then
+                local mask=2166136261
+                for y=96+24*observed_row,103+24*observed_row do for x=96,111 do
+                    local i=1+4*(256*y+x)
+                    local b,g,r=data:byte(i,i+2)
+                    mask=((mask ~ (math.min(b,g,r)>90 and 1 or 0))*16777619)&0xffffffff
+                end end
+                if mask~=previous_count_mask then av("count-mask",mask);previous_count_mask=mask end
+            end
             local bright=0
             for y=184,191 do for x=104,111 do
                 local i=1+4*(256*y+x)

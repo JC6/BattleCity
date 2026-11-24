@@ -1,5 +1,5 @@
-// Android candidate. Keep the full-size RGB565 image so BufferQueue may enlarge
-// the requested repaint when it returns an older buffer.
+// Keep a complete CPU image. Lock the entire window buffer for replacement so
+// Android can discard its old contents instead of copying unchanged regions.
 #pragma once
 #include <android/native_window.h>
 #include <android/hardware_buffer.h>
@@ -15,6 +15,8 @@ class tv_native_window
 	int width = 0, height = 0, source_w = 0, source_h = 0;
 	bool compact = false, fresh = true;
 	std::vector<uint16_t> image, source, previous;
+	std::vector<uint32_t> rgba;
+	int format = 0, last_buffer_format = 0;
 	std::vector<int> xs, ys;
 
 	static void map_axis(std::vector<int> &map, int output, int input)
@@ -102,21 +104,27 @@ public:
 		if (!next) return false;
 		ANativeWindow_acquire(next);
 		window = next;
-		if (ANativeWindow_setBuffersGeometry(window,0,0,AHARDWAREBUFFER_FORMAT_R5G6B5_UNORM) < 0 &&
-			ANativeWindow_setBuffersGeometry(window,0,0,AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM) < 0) {
-			close(); return false;
+		for (int choice : { AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM, AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM,
+				AHARDWAREBUFFER_FORMAT_R5G6B5_UNORM }) {
+			if (ANativeWindow_setBuffersGeometry(window,0,0,choice) == 0) {
+				format = choice;
+				width = height = 0;
+				return true;
+			}
 		}
-		return true;
+		close();
+		return false;
 	}
 
 	bool draw(render_primitive_list &list, int w, int h, uint8_t picture, bool menu, bool reset, timing *meter)
 	{
 		if (w <= 0 || h <= 0 || !window) return false;
-		if ((ANativeWindow_getWidth(window) != w || ANativeWindow_getHeight(window) != h) &&
-			ANativeWindow_setBuffersGeometry(window,w,h,ANativeWindow_getFormat(window)) < 0) return false;
 		if (w != width || h != height || reset) {
+			if (ANativeWindow_setBuffersGeometry(window,w,h,format) < 0) return false;
 			width = w; height = h;
-			image.assign(size_t(w)*h,0); fresh = true; compact = false;
+			image.resize(size_t(w)*h);
+			rgba.resize(size_t(w)*h);
+			fresh = true; compact = false;
 		}
 		const auto now = [meter]() -> int64_t { return meter ? battlecity_tv::now_ns() : 0; };
 		const auto begin = now();
@@ -130,32 +138,37 @@ public:
 		}
 		list.release_lock();
 		if (fresh) dirty = {0,0,w,h};
-		else if (dirty.left >= dirty.right || dirty.top >= dirty.bottom) dirty = {0,0,1,1};
 		const auto drawn = now();
 		ANativeWindow_Buffer buffer{};
-		if (ANativeWindow_lock(window,&buffer,&dirty) < 0) return false;
+		if (ANativeWindow_lock(window,&buffer,nullptr) < 0) { fresh = true; return false; }
 		const auto locked = now();
-		bool valid = buffer.bits && buffer.width == w && buffer.height == h && buffer.stride >= w &&
-			(buffer.format == AHARDWAREBUFFER_FORMAT_R5G6B5_UNORM ||
-			 buffer.format == AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM || buffer.format == AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM) &&
-			dirty.left >= 0 && dirty.right <= w && dirty.top >= 0 && dirty.bottom <= h;
-		if (valid) for (int y = dirty.top; y < dirty.bottom; ++y) {
-			const auto *row = image.data()+size_t(y)*w;
-			size_t offset = size_t(y)*buffer.stride;
-			if (buffer.format == AHARDWAREBUFFER_FORMAT_R5G6B5_UNORM)
-				std::memcpy(static_cast<uint16_t *>(buffer.bits)+offset+dirty.left,row+dirty.left,(dirty.right-dirty.left)*2);
-			else {
-				auto *dest = static_cast<uint32_t *>(buffer.bits)+offset;
+		const bool rgb565 = buffer.format == AHARDWAREBUFFER_FORMAT_R5G6B5_UNORM;
+		const bool valid = buffer.bits && buffer.width == w && buffer.height == h && buffer.stride >= w &&
+			(rgb565 || buffer.format == AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM || buffer.format == AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM);
+		if (valid) {
+			if (buffer.format != last_buffer_format) dirty = {0,0,w,h};
+			last_buffer_format = buffer.format;
+			if (!rgb565) for (int y = dirty.top; y < dirty.bottom; ++y) {
+				const auto *row = image.data()+size_t(y)*w;
+				auto *dest = rgba.data()+size_t(y)*w;
 				for (int x = dirty.left; x < dirty.right; ++x) {
 					const unsigned c = row[x], r = c>>11, g = (c>>5)&63, b = c&31;
+					// SDL's software RGB565-to-888 conversion replicates the high bits.
 					dest[x] = 0xff000000U | ((b*8+b/4)<<16) | ((g*4+g/16)<<8) | (r*8+r/4);
 				}
 			}
+			const size_t bytes = rgb565 ? sizeof(uint16_t) : sizeof(uint32_t);
+			const auto *src = rgb565 ? reinterpret_cast<const uint8_t *>(image.data()) :
+				reinterpret_cast<const uint8_t *>(rgba.data());
+			auto *dest = static_cast<uint8_t *>(buffer.bits);
+			if (buffer.stride == w) std::memcpy(dest,src,size_t(w)*h*bytes);
+			else for (int y=0; y<h; ++y)
+				std::memcpy(dest+size_t(y)*buffer.stride*bytes,src+size_t(y)*w*bytes,size_t(w)*bytes);
 		}
 		const auto copied = now();
 		const bool posted = ANativeWindow_unlockAndPost(window) == 0;
 		if (meter) *meter = {drawn-begin,locked-drawn,copied-locked,now()-copied,
-			int64_t(dirty.right-dirty.left)*(dirty.bottom-dirty.top),compact};
+			valid ? int64_t(w)*h : 0,compact};
 		fresh = !(posted && valid);
 		return !fresh;
 	}

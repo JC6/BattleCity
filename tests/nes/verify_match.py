@@ -36,18 +36,6 @@ def main():
             if name and keys != "record":
                 base = HERE / "fixtures" / suite / name
                 env["BATTLECITY_GOLDENS"] = str(base.with_suffix(".csv"))
-                # The terminal tally in the English Switch capture holds three
-                # more VBlanks. Keep the original Famicom fixtures intact.
-                if (suite=="ending" and name in ("base","lives")) or (suite=="campaign" and name=="coop"):
-                    expected=[]
-                    for row in base.with_suffix(".csv").read_text().splitlines():
-                        tick,event=row.split(",",1)
-                        if event in ("game-over","title","end,title"):
-                            tick=str(int(tick)+3)
-                        expected.append(f"{tick},{event}\n")
-                    switch_expected=Path(work)/f"{suite}-{name}.csv"
-                    switch_expected.write_text("".join(expected))
-                    env["BATTLECITY_GOLDENS"]=str(switch_expected)
                 if suite == "campaign":
                     env["BATTLECITY_INPUT"] = str(base.with_suffix(".pads"))
                 if traces:
