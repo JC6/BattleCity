@@ -1,8 +1,10 @@
 """Compare the last tally sound, music onset and both pulse silence commands."""
 import argparse
 import csv
+import hashlib
 from pathlib import Path
 import statistics
+import subprocess
 
 from switch_cues import pcm, spectrum, RATE, HOP
 from ending_audio import centered_frames, alignment
@@ -17,9 +19,9 @@ def frames(samples):
     return result
 
 
-def locate(reference, audio, onset):
+def locate(reference, audio, onset, start):
     # Find each short tally tick in the pre-music mix, including different tally counts.
-    first=max(0,onset-19)
+    first=max(0,start)
     measured=frames(pcm(audio,first,onset-first-.12))
     peaks=[]
     for i in range(len(measured)-len(reference)):
@@ -30,6 +32,36 @@ def locate(reference, audio, onset):
     for score,when in sorted(peaks,reverse=True):
         if all(abs(when-t)>.065 for t,_ in selected):selected.append((when,score))
     return sorted(selected)
+
+
+# Crop the final kill count to the right of TOTAL. Coordinates refer to 384 × 216.
+# The three excerpts end at stage 2 (0 kills), stage 1 (10), and stage 36 (0).
+PICTURES = {
+    'first': ('1c9360378d74fb8f49955193385ad375b9c780e1cb511a696a4795e8c377cac0', (168,159,12,8), 18,21.8,0),
+    'english': ('a7c8bafb4572ed78669df2e4ebbd53a98116773e8c60b1faa812ea8f526a40e0',(162,159,18,8),18,23.7,10),
+    'last': ('2077152006a652dd556a8e99e91f8c07d0cb0d69ceec93ce65cbe0ba6a3efa1a',(165,159,14,10),22,25.5,0),
+}
+
+
+def visible_total(video, name):
+    digest,(x,y,w,h),start,reference,count=PICTURES[name]
+    with video.open('rb') as f:
+        if hashlib.file_digest(f,'sha256').hexdigest()!=digest:
+            raise ValueError('Expected the calibrated '+name+' excerpt')
+    pts=subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0','-show_entries',
+                                 'frame=best_effort_timestamp_time','-of','csv=p=0',str(video)],text=True)
+    times=[float(line.partition(',')[0]) for line in pts.splitlines() if line and line[0].isdigit()]
+    raw=subprocess.check_output(['ffmpeg','-v','error','-i',str(video),'-vf',
+                                 f'scale=384:216,format=gray,crop={w}:{h}:{x}:{y}','-fps_mode','passthrough',
+                                 '-threads','1','-pix_fmt','gray','-f','rawvideo','-'])
+    assert len(raw)==len(times)*w*h
+    masks=[bytes(v>108 for v in raw[i:i+w*h]) for i in range(0,len(raw),w*h)]
+    template=masks[min(range(len(times)),key=lambda i:abs(times[i]-reference))]
+    assert sum(template)>6
+    accepted=[sum(a!=b for a,b in zip(m,template))<=2 for m in masks]
+    onset=next(i for i,t in enumerate(times) if start<t<reference and all(accepted[i:i+3]))
+    assert not accepted[onset-1] and not any(accepted[onset-10:onset])
+    return times[onset],count,start
 
 
 def measure(trace,wav,research,out):
@@ -50,7 +82,7 @@ def measure(trace,wav,research,out):
     with (out/'pulse-mute.csv').open('w',newline='') as f:
         w=csv.writer(f);w.writerow(['control','nes_frame','seconds_after_first_timer']);w.writerows(commands)
     with (out/'tally-alignment.csv').open('w',newline='') as f:
-        w=csv.writer(f);w.writerow(['source','published_music_time','last_tick_time','last_tick_cosine','matching_ticks','paired_ticks','music_after_tick','quiet_after_music','quiet_after_tick'])
+        w=csv.writer(f);w.writerow(['source','music_s','total_visible_s','music_after_total_s','last_count_tick_s','last_tick_cosine','quiet_after_music_s','quiet_after_total_s'])
         with (research/'ending-first/alignment.csv').open() as f:
             native_onset=float(next(csv.DictReader(f))['native_onset_s'])
         native_music=centered_frames(pcm(wav,native_onset,1.48),256)
@@ -65,14 +97,25 @@ def measure(trace,wav,research,out):
                 if similarity<.65:raise ValueError('music anchor not found in '+name)
                 onset=left+best*HOP/RATE
             with (folder/'tail.csv').open() as a:quiet=float(next(r['duration_to_quiet_s'] for r in csv.DictReader(a) if r['source']==('native' if name=='native' else 'switch')))
-            peaks=locate(reference,path,onset)
-            paired=[(t,s) for t,s in peaks if any(.135<=abs(t-other)<=.165 for other,_ in peaks)]
-            # An isolated peak in a commentary mix cannot establish the offset.
-            if paired:
-                tick,confidence=paired[-1]
-                if name=='native':assert abs(tick-(last_tally+attack/RATE))<.012
-                w.writerow([name,round(origin+onset,4),round(origin+tick,4),round(confidence,4),len(peaks),len(paired),round(onset-tick,4),quiet,round(onset-tick+quiet,4)])
-            else:w.writerow([name,round(origin+onset,4),'','',len(peaks),0,'',quiet,''])
+            if name=='native':
+                native_trace=out/'tally-native/events.csv'
+                with native_trace.open() as stream:
+                    total=float(next(e['emu_s'] for e in csv.DictReader(stream) if e['event']=='score-total-ink' and int(e['value'])>6))
+                count=len([e for e in events if e['event']=='cue-19'])
+                start=float(next(e['emu_s'] for e in events if e['event']=='tally'))
+            else:
+                label=name.removeprefix('ending-')
+                total,count,start=visible_total(out/(label+'-tally.mp4'),label)
+            tick=confidence=''
+            if count:
+                peaks=locate(reference,path,total,start)
+                paired=[(t,s) for t,s in peaks if any(.135<=abs(t-other)<=.165 for other,_ in peaks)]
+                if paired:
+                    tick,confidence=paired[-1]
+                    if name=='native':assert abs(tick-(last_tally+attack/RATE))<.012
+                    tick,confidence=round(origin+tick,4),round(confidence,4)
+            w.writerow([name,round(origin+onset,4),round(origin+total,4),round(onset-total,4),
+                        tick,confidence,quiet,round(onset-total+quiet,4)])
 
 
 if __name__=='__main__':

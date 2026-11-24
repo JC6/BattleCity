@@ -279,6 +279,11 @@ def build(run, research, output, commit, default, scenes_run):
         html.append(table(('本作 APU 音量寄存器','末次静音写入帧','距首个音符指令 / 秒'),
                           [(r['control'],r['nes_frame'],f"{float(r['seconds_after_first_timer']):.5f}") for r in mute]))
         html.append('<p>两个声道的显式静音命令都晚于可听阈值。公开视频只有混音，无法据此定位到某一个声道指令。</p>')
+        alignment=rows(research/'surface-research/tally-alignment.csv')
+        html.append(table(('画面与混音','总击毁数首次可见 / 秒','总数至起音 / 秒','总数至静音 / 秒'),
+                          [(r['source'],r['total_visible_s'],r['music_after_total_s'],r['quiet_after_total_s']) for r in alignment]))
+        html.append('<p>独立画面标记取自结算页 TOTAL 数字首次连续出现的采集帧。第一次和第三次录像的最终击毁数为零，'
+                    '第二次录像是 10。公开视频的画面和混音可能存在采集偏移，表中时间以该录像为准。</p>')
     html.append('<p>曲线为混音中 261.4 Hz 的幅度，使用 40 毫秒 Hann 窗，按每条录音在 1.10 至 1.50 秒区间内的峰值归一化。'
                 '两个脉冲声道在末和弦具有相同的基频。</p>')
     html.append('<p>尾音按连续十个 10 毫秒窗口均低于该段峰值的 1.2% 判定。频谱来自完整混音。'
@@ -298,6 +303,7 @@ def build(run, research, output, commit, default, scenes_run):
         archive.writestr('SHA256SUMS',manifest)
         archive.writestr('source.txt',commit+'\nhttps://github.com/JC6/BattleCity/actions/runs/'+run.name+'\n')
         for path in sorted(run.rglob('*')):
+            if 'packages' in path.relative_to(run).parts: continue
             if path.is_file() and (path.suffix in {'.csv','.json','.jsonl','.gz','.png','.wav'} or path.name.endswith('-surface.txt') or path.name in {'tested-sha256.txt','previous-sha256.txt','device.log','device.txt'}):
                 archive.write(path,'actions/'+str(path.relative_to(run)))
         if scenes_run!=run:
@@ -314,6 +320,14 @@ def build(run, research, output, commit, default, scenes_run):
                     if path.is_file(): archive.write(path,'supplementary/'+folder+'/'+path.name)
             for name in ['sampling.json','sampling-rows.csv','pulse-mute.csv','tally-alignment.csv','sources.csv']:
                 archive.write(research/'surface-research'/name,'measurements/'+name)
+            for name in ['ending-total.lua','events.csv','native.log']:
+                archive.write(research/'surface-research/tally-native'/name,'measurements/tally-native/'+name)
+            previous=research/'45364504056'/'tv-device-results'
+            archive.write(previous/'tested-sha256.txt','measurements/previous-render/tested-sha256.txt')
+            for case in ('large','stretch'):
+                for mode in ('baseline','candidate'):
+                    name=f'{case}-{mode}.png'
+                    archive.write(previous/'render'/name,'measurements/previous-render/'+name)
         for name in ['tv_render_report.py','tv_release_gate.py','tv_sampling.py','runtime_report.py','switch_battle_samples.py','switch_motion.py','switch_score_sample.py','switch_lettering.py','ending_audio.py','ending_calibration.py','switch_cues.py','compare_switch_audio.py']:
             archive.write(Path(__file__).with_name(name),'scripts/'+name)
 

@@ -180,6 +180,13 @@ jobs:
         if: matrix.platform == 'android'
         with:
           gradle-version: '8.7'
+      - name: Create the signing key for the TV upgrade test
+        if: matrix.abi == 'x86' && inputs.previous_tv_run != ''
+        run: |
+          key="$RUNNER_TEMP/battlecity-tv-upgrade.jks"
+          keytool -genkeypair -noprompt -storetype JKS -keystore "$key" -storepass android -keypass android \
+            -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 365 -dname "CN=Android Debug,O=Android,C=US"
+          echo "BATTLECITY_TV_TEST_KEYSTORE=$key" >> "$GITHUB_ENV"
       - name: Build Android TV
         if: matrix.platform == 'android'
         run: |
@@ -321,7 +328,12 @@ jobs:
             sdk_signer="$ANDROID_HOME/build-tools/34.0.0/apksigner"
             "$sdk_signer" verify previous-tv/tv-emulator.apk
             sha256sum previous-tv/tv-emulator.apk > build/tv-result/previous-sha256.txt
-            "$sdk_signer" sign --ks "$HOME/.android/debug.keystore" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out previous-tv/upgrade.apk previous-tv/tv-emulator.apk
+            "$sdk_signer" sign --ks "$BATTLECITY_TV_TEST_KEYSTORE" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out previous-tv/upgrade.apk previous-tv/tv-emulator.apk
+            for app in previous-tv/upgrade.apk deliverable/tv-emulator{,-candidate}.apk; do
+              "$sdk_signer" verify --print-certs "$app" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' > "$app.cert"
+              test -s "$app.cert"
+              cmp previous-tv/upgrade.apk.cert "$app.cert"
+            done
             previous=(--previous previous-tv/upgrade.apk)
           fi
           bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result --stable deliverable/tv-emulator.apk "${previous[@]}"

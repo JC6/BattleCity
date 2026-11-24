@@ -126,3 +126,5 @@ Nenriki 发布的两段 Famicom 实录分别显示 196500 和 441900。本轮记
 英文 PS4 合集的 430200 和 KinjoGameChannel 的 Famicom 攻略录像（约 1.19 万次播放）中的 256700 分别补上了 3 和 7。用 HISCORE 和 0 定位后，三个采样时刻里两个数字各 56 格均与卡带匹配。英文 Switch 画面直接覆盖 0、1、5、8、9，其余五个数字按录像来源单列。可运行 `tests/nes/switch_lettering.py --secondary` 检查卡带。[PS4 合集 1:03:46](https://www.youtube.com/watch?v=LgMNFRP_LxE&t=3826s) · [Famicom 攻略 29:29](https://www.youtube.com/watch?v=mRNyb2IGjSY&t=1769s)
 
 另找到一段能连续看到双人结局的 NES 录像。第 34 关结算显示 1P 122800 和 2P 89500，随后依次出现 GAME OVER、HISCORE 122800 和标题的双人游标。该片能交叉核对画面顺序，英文 Switch 版本的按键与帧数仍待直接测量。[双人原片 34:53](https://www.youtube.com/watch?v=mV4AnvS300Y&t=2093s)
+
+将结算页 TOTAL 数字第一次连续可见的采集帧作为独立画面标记，三段英文 Switch 录像从该帧到结束音乐起音分别为 2.543、2.548 和 2.667 秒。本作固定输入回放为 2.314 秒。录像里三次 TOTAL 分别为 0、10、0，只有中间一次能用连续计分声再校准。录像的采集音画偏移未知。本作两个脉冲声道均在首个音符指令约 1.797 秒后执行最终静音，此时混音已低于测量阈值。现有测量无法把约 50 毫秒的可听尾音差归因到其中一个声道的静音指令。[三次起音与包络](../../build/battlecity/Switch-TV-Comparison.html)

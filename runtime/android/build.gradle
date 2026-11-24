@@ -34,6 +34,11 @@ def stage = tasks.register('stageCartridge', Copy) {
 }
 
 android {
+    // The upgrade test signs its previous APK with the same disposable key as these builds.
+    def testKey = providers.environmentVariable('BATTLECITY_TV_TEST_KEYSTORE').orNull
+    if (testKey) {
+        signingConfigs.debug.storeFile = file(testKey)
+    }
     namespace 'org.jiangc.bc.runtime'
     compileSdk 34
     ndkVersion '28.2.13676358'
