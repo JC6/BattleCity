@@ -14,7 +14,19 @@
 | 结束音乐 | 将同一场基地失守后的卡带录音与 Switch 录音对齐，1.48 秒乐段的平均频谱余弦相似度为 0.824。首段和最后变音段在 5 毫秒搜索步长下给出相同起点。每窗去除直流分量，以峰值 1.2% 判断安静，尾音分别为 1.58 和 1.63 秒。 |
 | GAME OVER | 自然结束及进入最高分时完整字样可见 117 个模拟帧，本次固定 Start 输入得到 36 帧。三条路径从同一个基地中弹状态起步，同时记录逐帧事件和 PCM。 |
 
+同机 Chromium 以 30 Hz 调度时，上版在 14.96 秒内推进 450 帧，本版在 14.97 秒内推进 900 帧，模拟速度为 0.5004× 和 1.0004×。本版连续过两轮，全部 274,114 次战斗更新与固定参考输入逐次相符。[连续回放 CSV](../../build/battlecity/Campaign-Runtime-Loop.csv) · [原始测量及录音](../../build/battlecity/Switch-Runtime-Measurements.zip)
+
+GitHub Actions 在干净环境中复验 Chromium、WebKit 的原生、60 Hz 和 120 Hz 调度。18 个 30 秒窗口全部达标，游戏速度为 0.99952–1.00046 倍，PCM 为 0.99930–1.00063 倍。三条结局的逐帧事件也与本地原生核心相符。[Web 作业](https://github.com/JC6/BattleCity/actions/runs/45327163577/job/138220921697)
+
+Android TV API 34 的 1080p x86 模拟器以软件图形后端运行已安装的 APK。默认设置下，三个约 30 秒窗口的模拟速度为 0.524、0.535、0.534 倍，48 kHz PCM 与模拟时钟同步。三条结局的音频指令、完整字样的帧数及返回标题的帧号均与原生核心一致。这组采样包含运行观察器及写 WAV 的开销，实体电视速度和输入延迟仍待实测。[电视计时与结局任务](https://github.com/JC6/BattleCity/actions/runs/45330116914/job/138229595879)
+
+同一 APK 在独立验收机上通过双手柄测试。两次右肩键依次恢复到第 10 秒、第 9 秒的检查点，逐个字节核对全部 2,048 字节工作 RAM。重启后读档，两辆坦克的 Y 坐标均恢复为 186。二号手柄热重连后可继续移动。离开应用并返回，两辆坦克的 Y 坐标保持为 186 和 183。[电视双手柄任务](https://github.com/JC6/BattleCity/actions/runs/45333482160/job/138239902571)
+
+本地 Chromium 与 WebKit 的原生回调、标称 60 Hz 和 120 Hz 各测三次。首轮 18 个窗口中有 15 个的游戏和 PCM 同时落在 ±1% 内。报告保留 WebKit 的慢速窗口和追加采样的回调耗时。停止本项目已空闲的 Gradle 进程后，WebKit 60 Hz、120 Hz 共六个窗口的游戏和 PCM 全部回到 ±1%。这些读数描述具体主机当时的运行条件。[离线报告](../../build/battlecity/Switch-Runtime-Comparison.html) · [原始数据](../../build/battlecity/Switch-Runtime-Measurements.zip)
+
 向上炮弹的逐格结论来自 Switch；另外三个方向的形状与定位来自红白机对照。数字 2、3、4、6、7 的最高分大字、Switch 无人演示与双人片尾、回退的原机跨度及实体电视输入延迟仍缺直接测量。参考材料使用任天堂一方截图、发行方说明及能看清相关帧的英文实录。[任天堂原图](https://www.nintendo.com/eu/media/images/06_screenshots/games_5/nintendo_switch_download_software_2/nswitchds_namcomuseumarchivesvolume2/NSwitchDS_NamcoMuseumArchivesVolume2_01.jpg) · [第一关录像](https://www.youtube.com/watch?v=S26lUv598_o&t=349s) · [回退说明](https://nc.bn-ent.net/product/useful.php)
+
+电视验收工具将设备截图缩为 RGB 以识别光标。运行机缺少 FFmpeg 时，从 7.1.1 官方源码构建 PNG 解码器，并先用仓库图片核对输出字节数。它与原有 FFmpeg 对同一张 1080p 设备截图缩放后得到相同的 172,800 字节。[FFmpeg 官方源码](https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz) · [电视验收工作流](../../.github/workflows/mame-runtime.yml)
 
 用同批次卡带、录音和留存的 Switch 片段可复算图像和音频。画面脚本先核验两个来源文件的 SHA-256。报告内嵌了对照图和声音，可直接离线打开。
 
@@ -25,6 +37,10 @@ video="$old/references/battle.mp4"
 python3 tests/nes/switch_motion.py "$video" build/stage-validation/switch-clock/references/official.jpg \
   "$old/game.nes" "$data/game.nes" "$data/motion"
 python3 tests/nes/ending_audio.py "$video" "$data/native-neutral/events.csv" "$data/native-neutral/game.wav" "$data/audio"
+python3 tests/nes/runtime_report.py "$data" "$data/motion" "$data/audio" "$data/comparison.html" \
+  --ci-clocks build/stage-validation/switch-clock/45327163577/web-clock-and-endings \
+  --tv build/stage-validation/switch-clock/45330116914/tv-device-results \
+  --tv-controls build/stage-validation/switch-clock/45333482160/tv-device-results
 ```
 
 ## 2026-11-24 菜单与画面对照基线

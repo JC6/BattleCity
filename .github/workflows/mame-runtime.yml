@@ -191,6 +191,19 @@ jobs:
           Libs: -L$SDL_INSTALL_ROOT/lib -lSDL3
           Cflags: -I$SDL_INSTALL_ROOT/include
           PC
+          # Keep the compiled NES core when the package repository limits this runner.
+          cat > "$RUNNER_TEMP/gradle-with-retry" <<'BASH'
+          #!/usr/bin/env bash
+          set -o pipefail
+          for delay in 0 20 55; do
+            sleep "$delay"
+            if gradle "$@" 2>&1 | tee "$RUNNER_TEMP/gradle-attempt.log"; then exit 0; fi
+            grep -Eq 'status code (429|50[0234])|timed out|Connection reset' "$RUNNER_TEMP/gradle-attempt.log" || exit 1
+          done
+          exit 1
+          BASH
+          chmod +x "$RUNNER_TEMP/gradle-with-retry"
+          export GRADLE_BIN="$RUNNER_TEMP/gradle-with-retry"
           bash tools/build-mame-runtime.sh android "build/shared/$CARTRIDGE.nes"
       - uses: actions/setup-node@v6
         if: matrix.platform == 'web'
@@ -253,6 +266,25 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Prepare the PNG screenshot decoder
+        if: matrix.abi == 'x86' && inputs.cartridge == 'game'
+        timeout-minutes: 12
+        run: |
+          if command -v ffmpeg >/dev/null; then exit 0; fi
+          cd "$RUNNER_TEMP"
+          curl -fLSs --retry 3 https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz -o ffmpeg-7.1.1.tar.xz
+          echo '733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1  ffmpeg-7.1.1.tar.xz' | sha256sum -c -
+          tar -xf ffmpeg-7.1.1.tar.xz
+          cd ffmpeg-7.1.1
+          ./configure --disable-everything --disable-autodetect --disable-doc --disable-debug \
+            --disable-ffplay --disable-ffprobe --disable-network --disable-x86asm --enable-zlib \
+            --enable-decoder=png --enable-parser=png --enable-demuxer=image_png_pipe --enable-protocol=pipe \
+            --enable-filter=scale,format,buffer,buffersink --enable-encoder=rawvideo --enable-muxer=rawvideo
+          make -j"$(nproc)" ffmpeg
+          ./ffmpeg -loglevel error -i pipe:0 -vf scale=320:180 -frames:v 1 -threads 1 \
+            -f rawvideo -pix_fmt rgb24 pipe:1 < "$GITHUB_WORKSPACE/runtime/android/src/main/res/drawable-xhdpi/game_icon.png" > sample.rgb
+          test "$(wc -c < sample.rgb)" -eq 172800
+          echo "$PWD" >> "$GITHUB_PATH"
       - name: Boot the Android SDK television image and test both gamepads
         if: matrix.abi == 'x86' && inputs.cartridge == 'game'
         timeout-minutes: 30
@@ -260,10 +292,6 @@ jobs:
           ANDROID_SERIAL: emulator-5554
         run: |
           exec > >(tee "$RUNNER_TEMP/battlecity-test.log") 2>&1
-          if ! command -v ffmpeg >/dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends ffmpeg
-          fi
           bash tests/nes/television-avd.sh deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result
       - name: Report the failed build or device check
         if: failure()

@@ -1,6 +1,6 @@
 # Battle City 复刻验收记录
 
-对照目标为 Nintendo Switch 英文合集《NAMCO MUSEUM ARCHIVES Volume 2》内的 Battle City。卡带使用 C 和 6502 汇编，构建脚本将项目的像素图、字体和图块转换成 NES 图形数据，35 张地图与出敌顺序取自仓库关卡表。卡带采用 iNES mapper 0、32 KiB PRG、8 KiB CHR 和两个 NES 手柄端口。Web 与 Android TV 封装使用同一卡带和 MAME 修订版。[任天堂 Switch 商店](https://www.nintendo.com/en-gb/Games/Nintendo-Switch-download-software/NAMCO-MUSEUM-ARCHIVES-Volume-2-1800373.html) · [关卡数据](../../web/src/data/original.ts) · [项目署名](../../THIRD_PARTY_NOTICES.md)
+对照目标为 Nintendo Switch 英文合集《NAMCO MUSEUM ARCHIVES Volume 2》内的 Battle City。卡带使用 C 和 6502 汇编，构建脚本将项目的像素图、字体和图块转换成 NES 图形数据，35 张地图与出敌顺序取自仓库关卡表。卡带采用 iNES mapper 0、32 KiB PRG、8 KiB CHR 和两个 NES 手柄端口。Web 与 Android TV 封装使用同一卡带和 MAME 修订版。[任天堂 Switch 商店](https://www.nintendo.com/en-gb/Games/Nintendo-Switch-download-software/NAMCO-MUSEUM-ARCHIVES-Volume-2-1800373.html) · [关卡数据](../../web/src/data/original.ts) · [第三方声明](../../THIRD_PARTY_NOTICES.md)
 
 本轮核验了出生闪光、护盾、四个方向的炮弹、基地失守后的三条结局及核心连续回退。离线报告包含逐帧对照、两段可播放的结束音乐和实际输出的时钟数据。[本轮详细记录](switch-comparison.md) · [离线报告](../../build/battlecity/Switch-Runtime-Comparison.html)
 

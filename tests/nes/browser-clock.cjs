@@ -31,6 +31,18 @@ async function measure() {
                 };
                 window.cancelAnimationFrame = clearTimeout;
             }
+            // Record real callback gaps and time spent in the browser callback
+            // so host stalls remain visible alongside the wall-clock samples.
+            const requestFrame = window.requestAnimationFrame.bind(window);
+            let lastFrame;
+            window.clockCallbacks = [];
+            window.requestAnimationFrame = callback => requestFrame(timestamp => {
+                const begin = performance.now();
+                const gap = lastFrame === undefined ? 0 : begin - lastFrame;
+                lastFrame = begin;
+                try { return callback(timestamp); }
+                finally { window.clockCallbacks.push([begin/1000, gap, performance.now()-begin]); }
+            });
             Module.arguments.push('-autoboot_delay','0','-autoboot_script','/clock.lua');
             Module.preRun = [() => FS.writeFile('/clock.lua', observer)];
             let sink, pcm = 0;
@@ -56,8 +68,18 @@ async function measure() {
             const wall = end.wall-start.wall;
             const emu = end.emu-start.emu;
             const pcm = (end.pcm-start.pcm)/end.rate;
+            const callbackStats = await page.evaluate(([begin, finish]) => {
+                const frames = window.clockCallbacks.filter(([time]) => time >= begin && time < finish);
+                return {
+                    callbackCount: frames.length,
+                    maxGapMs: frames.reduce((max, f) => Math.max(max, f[1]), 0),
+                    maxWorkMs: frames.reduce((max, f) => Math.max(max, f[2]), 0),
+                    gapsOverOneSecond: frames.filter(f => f[1] > 1000).length,
+                    callbackWorkSeconds: frames.reduce((sum, f) => sum + f[2], 0) / 1000
+                };
+            }, [start.wall,end.wall]);
             const row = {engine, cadence, run, wall, emu, frames:end.frame-start.frame, pcm,
-                sampleRate:end.rate, speed:emu/wall, audioSpeed:pcm/wall};
+                sampleRate:end.rate, speed:emu/wall, audioSpeed:pcm/wall, ...callbackStats};
             console.log(JSON.stringify(row));
             passed &&= wall >= Number(duration)*.95 && Math.abs(row.speed-1)<=.01 && Math.abs(row.audioSpeed-1)<=.01;
             start = end;
