@@ -336,20 +336,26 @@ jobs:
             done
             previous=(--previous previous-tv/upgrade.apk)
           fi
-          bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result --stable deliverable/tv-emulator.apk "${previous[@]}"
-      - name: Independently cold boot the same TV candidate
-        if: always() && matrix.abi == 'x86' && inputs.cartridge == 'game'
-        timeout-minutes: 65
+          bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result --stable deliverable/tv-emulator.apk "${previous[@]}" --suite controls --suite prototype --suite candidate-controls --suite held-out --suite timing
+          passed=$(PYTHONPATH=tests/nes python3 -c "from tv_release_gate import probe_pass;from pathlib import Path;print(int(probe_pass(Path('build/tv-result'))))")
+          echo "BATTLECITY_PROBE_PASSED=$passed" >> "$GITHUB_ENV"
+      - name: Two independent cold boots after passing the renderer prototype
+        if: success() && matrix.abi == 'x86' && inputs.cartridge == 'game' && env.BATTLECITY_PROBE_PASSED == '1'
+        timeout-minutes: 90
         run: |
+          bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result --suite render --suite scenes
           mkdir -p build/tv-result/second
           sha256sum deliverable/tv-emulator{,-candidate}.apk build/shared/game.nes > build/tv-result/second/tested-sha256.txt
           bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result/second --suite render --suite scenes
+      - name: Select the measured TV renderer
+        if: success() && matrix.abi == 'x86' && inputs.cartridge == 'game'
+        run: |
           python3 tests/nes/tv_release_gate.py build/tv-result
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json
           from pathlib import Path
           gate = json.loads(Path('build/tv-result/release-gate.json').read_text())
-          selected = '-candidate' if gate['default'] == 'surface-tv' else ''
+          selected = '-candidate' if gate['default'] == 'dirty-tv' else ''
           print(f"Android TV default renderer `{gate['default']}`. Install `tv{selected}.apk` on ARM64 or `tv-emulator{selected}.apk` on x86.")
           PY
       - name: Report the failed build or device check

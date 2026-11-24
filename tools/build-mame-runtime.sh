@@ -48,7 +48,7 @@ python3 "$tree/scripts/build/file2str.py" "$repo/runtime/menu-regular.bdc" "$tre
         direct-rewind web-clock nes-palette slot-preview picture menu-viewport
         tv-startup tv-gamepads rewind-boundary
     )
-    if [[ $platform == android ]]; then patches+=(tv-render tv-surface); fi
+    if [[ $platform == android ]]; then patches+=(tv-render tv-surface tv-native); fi
     for i in "${!patches[@]}"; do patches[i]="$repo/runtime/${patches[i]}.patch"; done
     mapfile -t files < <(sed -n 's|^--- a/||p' "${patches[@]}" | sort -u)
     stage=$(mktemp -d)
@@ -76,6 +76,7 @@ if [[ "$platform" == android ]]; then
         x86) target=android-x86; triple=i686-linux-android; flags+=(NOASM=1) ;;
         *) echo "Unsupported Android ABI: $abi" >&2; exit 2 ;;
     esac
+    cp "$repo/runtime/tv-native-window.h" "$tree/src/emu/tv-native-window.h"
     if ! cmp -s "$repo/runtime/tv-profile.h" "$tree/src/emu/tv-profile.h"; then
         cp "$repo/runtime/tv-profile.h" "$tree/src/emu/tv-profile.h"
     fi
@@ -98,6 +99,7 @@ else
     cp "$repo/LICENSE" "$repo/runtime/cartridge/NOTICE" "$repo/runtime/Menu-Font-LICENSE.txt" "$out/site/licenses/"
     cp "$tree/battlecity.js" "$tree/battlecity.wasm" "$repo/runtime/android/src/main/res/drawable-nodpi/"battle_{surround,stars,symbols}.jpg "$out/site/"
     cartridge_hash=$(sha256sum < "$rom")
-    sed "s/@CARTRIDGE_SHA256@/${cartridge_hash%% *}/g" "$repo/runtime/browser/index.html" > "$out/site/index.html"
+    predecessor=$(awk -v current="${cartridge_hash%% *}" '$1 == current {print $2}' "$repo/runtime/cartridge/save-compatibility.tsv")
+    sed -e "s/@SAVE_PREDECESSOR@/$predecessor/g" -e "s/@CARTRIDGE_SHA256@/${cartridge_hash%% *}/g" "$repo/runtime/browser/index.html" > "$out/site/index.html"
     (cd "$out/site" && python3 -m zipfile -c "$out/battlecity-web.zip" index.html battlecity.js battlecity.wasm battle_{surround,stars,symbols}.jpg licenses)
 fi

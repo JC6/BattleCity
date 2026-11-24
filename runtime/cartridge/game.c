@@ -73,6 +73,7 @@ static u16 end_delay;
 enum { STAGE_LIVE, STAGE_WON, STAGE_LOST };
 static u8 ending, ruined, tally_row, counted[2], totals[2], tally_frame;
 static void game_over_page(void);
+static void finish_loss_tally(void);
 u8 rng, rng_index, combat_frame, clock_high;
 #pragma bss-name (push,"ZEROPAGE")
 static u8 sprite_phase;
@@ -606,8 +607,16 @@ static void tally(void) {
     }
     ++tally_row; tally_frame+=120;
   } else if (ending==STAGE_WON) next_stage();
-  else game_over_page();
+  else finish_loss_tally();
 }
+/* Store the extra wait outside the original code/data layout so saves made
+   anywhere within the previous cartridge retain valid program counters. */
+#pragma code-name(push, "ENDING")
+static void finish_loss_tally(void) {
+  wait_frame(); wait_frame(); wait_frame();
+  game_over_page();
+}
+#pragma code-name(pop)
 static void game_over_page(void) {
   begin_screen();
   mode = GAME_OVER_PAGE;

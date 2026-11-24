@@ -45,6 +45,8 @@ var Module = {
     return Number(surround.dataset.wallpaper || 0);
   },
   canvas: screenElement,
+  cartridgeId: "@CARTRIDGE_SHA256@",
+  compatibleSaveId: "@SAVE_PREDECESSOR@",
   arguments: ["nes","-uifont","battlecity-regular","-nokeepaspect","-window","-nomaximize","-resolution0","320x240","-nothrottle","-nomouse","-cart","/game.nes","-video","soft","-sound","js","-ctrlrpath","/","-ctrlr","keyboard","-rewind",
               "-state_directory","/local/states/@CARTRIDGE_SHA256@","-cfg_directory","/local/cfg","-skip_gameinfo"],
   onAbort: () => report("The game could not start.")

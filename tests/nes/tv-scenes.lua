@@ -11,7 +11,7 @@ for tag,port in pairs(manager.machine.ioport.ports) do
 end
 
 local function update_scene(frame)
-    if scene=="firing" then
+    if scene=="firing" or scene=="motion" then
         pad[128]:set_value(frame>=570 and frame<598 and 1 or 0)
         pad[16]:set_value(frame>=601 and frame<665 and 1 or 0)
         pad[1]:set_value((frame>=575 and frame<578 or frame>=618 and frame<621) and 1 or 0)

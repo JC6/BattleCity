@@ -321,7 +321,7 @@ def render_fixture(labels, directory, tick, freeze=False, scene=None):
     controls = Path(__file__).with_name('clock-input.lua').read_text()
     scenario = ''
     if scene:
-        assert scene in ('firing','blast')
+        assert scene in ('firing','motion','blast')
         names = ('tanks','shots','shot_fast','tread','ruined')
         addresses = {key:int(value,16) for value,key in re.findall(r'^al (\w+) \._(\w+)$',labels.read_text(),re.M)}
         definitions = ','.join(f'{key}={addresses[key]}' for key in names)
@@ -360,12 +360,14 @@ def compare_raster(base, other, w, h, width, height):
             'maxChannelError':largest,'identical':changed==0}
 
 
-def record_render(results, labels, directory, write_private, scenes_only=False):
+def record_render(results, labels, directory, write_private, scenes_only=False, prototype=False, held_out=False):
     ini = (f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\n'
            'autoframeskip 0\nframeskip 0\npause_brightness 1.0\n')
     # A missing override exercises the installed candidate's packaged default.
     modes = {'baseline':'none', 'gpu-full':'gpu-full', 'native':'native-tv',
-             'candidate':None, 'low-buffer':None}
+             'candidate':None, 'low-buffer':'surface-tv'}
+    if prototype:
+        modes = {'battle':None, 'explosions':None}
     def select(mode, scale):
         if mode == 'low-buffer':
             write_private('tv-low-buffer', '1')
@@ -401,16 +403,21 @@ def record_render(results, labels, directory, write_private, scenes_only=False):
     for name, scale in (() if scenes_only else modes.items()):
         stop()
         select(name, scale)
-        write_private('tv-observer.lua', render_fixture(labels, directory, 560))
+        fixture = render_fixture(labels, directory, 560)
+        if name == 'explosions':
+            addresses = dict((k,int(v,16)) for v,k in re.findall(r'^al (\w+) \._(\w+)$',labels.read_text(),re.M))
+            fixture += f'\nlocal mode_address={addresses["mode"]}\nlocal tank_address={addresses["tanks"]}\n'
+            fixture += f'local stress_path="{directory}/tv-stress"\n'+Path(__file__).with_name('tv-blast-load.lua').read_text()
+        write_private('tv-observer.lua',fixture)
         write_private('tv-profile.jsonl','')
         start_fixture()
         markers[name] = marker()
         print('Measuring full frames:', name, markers[name], flush=True)
         rows = []
-        for number in range(1,4):
+        for number in range(1,2 if prototype else 4):
             rows = wait(profile_rows, lambda r: len(r)>=number, f'{name} 30-second window {number}',interval=1.0)
             (results/(name+'.jsonl')).write_bytes(private('cat','files/tv-profile.jsonl'))
-        assert [r['run'] for r in rows]==[1,2,3]
+        assert [r['run'] for r in rows]==([1] if prototype else [1,2,3])
         for row in rows:
             assert row['wall']>=30 and row['frames']>0 and row['sampleRate']>0 and row['samples']>0, row
             assert row['driver'] and 0<row['presented']<=row['attempts'], row
@@ -418,6 +425,8 @@ def record_render(results, labels, directory, write_private, scenes_only=False):
             row['pcmSpeed'] = row['samples']/row['sampleRate']/row['wall']
             row['pass'] = (0.99<=row['gameSpeed']<=1.01 and 0.99<=row['pcmSpeed']<=1.01
                            and row['presented']==row['attempts'] and row['presented']==row['frames'])
+        if name == 'explosions':
+            assert int(private('cat','files/tv-stress')) >= 720, 'blast fixture never ran in battle'
         summaries[name] = rows
         layers = adb('shell','dumpsys','SurfaceFlinger','--list').decode().splitlines()
         prefix = results/(name+'-surface.txt')
@@ -433,6 +442,9 @@ def record_render(results, labels, directory, write_private, scenes_only=False):
     if not scenes_only:
         assert len(set(markers.values()))==1, markers
         (results/'clock.json').write_text(json.dumps({'battle':markers,'windows':summaries},indent=2))
+    if prototype:
+        stop()
+        return
     # Separate launches keep the frozen visual fixtures out of the clock samples.
     display = 'shared_prefs/display.xml'
     stop()
@@ -446,18 +458,20 @@ def record_render(results, labels, directory, write_private, scenes_only=False):
              ('antialias',0,1,1),('scanlines',0,2,2)]
     if scenes_only:
         cases = [('firing',0,0,0),('blast',0,0,0)]
+    if held_out:
+        cases = [('moving-626',0,0,0),('moving-633',0,0,0)]
     visual = {}
     small_visual = {}
     try:
         for case,aspect,picture,wallpaper in cases:
             pair = {}
-            for name,scale in [('baseline','none'),('repeat','none'),('candidate',None),('low-buffer',None)]:
+            for name,scale in [('baseline','none'),('repeat','none'),('candidate',None),('low-buffer','surface-tv')]:
                 stop()
                 set_display((f'<map><int name="mode" value="{aspect}"/><int name="picture" value="{picture}"/>'
                              f'<int name="wallpaper" value="{wallpaper}"/></map>').encode())
                 select(name, scale)
-                tick = {'firing':621,'blast':696}.get(case,705)
-                write_private('tv-observer.lua',render_fixture(labels,directory,tick,True,case if scenes_only else None))
+                tick = {'firing':621,'blast':696,'moving-626':626,'moving-633':633}.get(case,705)
+                write_private('tv-observer.lua',render_fixture(labels,directory,tick,True,("motion" if held_out else case) if scenes_only else None))
                 start_fixture()
                 try:
                     fingerprint = marker()
@@ -506,11 +520,18 @@ def run(apk, labels, results, suite, previous=None):
         digest = package.read('assets/cartridge.id').decode('ascii')
     if not re.fullmatch(r'[a-f0-9]{64}', digest):
         raise ValueError('Invalid bundled cartridge identity')
-    slot = f'files/states/{digest}/nes/1.sta'
+    current_slot = f'files/states/{digest}/nes/1.sta'
+    slot = current_slot
+    if previous:
+        with ZipFile(previous) as package:
+            prior = package.read('assets/cartridge.id').decode('ascii')
+        assert re.fullmatch(r'[a-f0-9]{64}',prior)
+        slot = f'files/states/{prior}/nes/1.sta'
     # Leave existing player files intact. A completed run removes its own slot.
     test_files = ['files/'+name for name in ('nes.ini','tv-observer.lua','tv-observation',
                                                'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv','tv-profile.jsonl','tv-fixed','tv-low-buffer')]
     test_files.extend((slot,slot+'.png',slot+'.lock'))
+    if slot!=current_slot: test_files.extend((current_slot,current_slot+'.png',current_slot+'.lock'))
     for name in test_files:
         if private('ls','-d',name,check=False).strip()==name.encode():
             raise RuntimeError('Use a clean TV test profile: found '+name)
@@ -527,8 +548,9 @@ def run(apk, labels, results, suite, previous=None):
         assert image.startswith(b'\x89PNG') and len(image)>1000
         (results/(name+'.png')).write_bytes(image)
     try:
-        if suite in ('render','scenes'):
-            record_render(results,labels,directory,write_private,scenes_only=suite=='scenes')
+        if suite in ('render','scenes','prototype','held-out'):
+            record_render(results,labels,directory,write_private,scenes_only=suite in ('scenes','held-out'),
+                          prototype=suite=='prototype',held_out=suite=='held-out')
             return
         write_private('tv-observer.lua',observer(labels,directory))
         ini=f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\nwavwrite {directory}/tv-audio.wav\n'
@@ -706,10 +728,14 @@ def run(apk, labels, results, suite, previous=None):
                 adb('install','-r',str(apk))
                 assert before==private('cat',slot) and preview==private('cat',slot+'.png')
                 assert private('ls',slot+'.lock').strip()==(slot+'.lock').encode()
-                (results/'upgrade.json').write_text(json.dumps({'slotSha256':hashlib.sha256(before).hexdigest(),
-                                                              'thumbnailPreserved':True,'lockPreserved':True}))
-
             launch()
+            if previous:
+                assert wait(lambda: private('cat',current_slot,check=False),lambda data: data==before,'copied previous slot')==before
+                assert private('cat',current_slot+'.png')==preview and private('ls',current_slot+'.lock',check=False).strip()==(current_slot+'.lock').encode()
+                assert private('cat',slot)==before and private('cat',slot+'.png')==preview
+                (results/'upgrade.json').write_text(json.dumps({'slotSha256':hashlib.sha256(before).hexdigest(),
+                                                              'previousCartridge':prior,'cartridge':digest,
+                                                              'thumbnailPreserved':True,'lockPreserved':True}))
             open_system_menu(one)
             check(lambda s:s['menu'],'load menu')
             reach(load_button,one.down,'Load')
@@ -769,7 +795,7 @@ def run(apk, labels, results, suite, previous=None):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('apk','labels','results'): parser.add_argument(name,type=Path)
-    parser.add_argument('--suite',action='append',choices=('controls','timing','auto-frameskip','render','scenes','candidate-controls'))
+    parser.add_argument('--suite',action='append',choices=('controls','timing','auto-frameskip','render','scenes','candidate-controls','prototype','held-out'))
     parser.add_argument('--previous',type=Path)
     parser.add_argument('--stable',type=Path)
     args=parser.parse_args()

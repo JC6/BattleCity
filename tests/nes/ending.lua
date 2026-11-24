@@ -84,6 +84,12 @@ local function setup()
         end
         put(a.kills,8);put(a.kills+1,3);put(a.kills+2,2);put(a.kills+3,coop and 0 or 6)
         if coop then put(a.kills+4,6) end
+        local counts=os.getenv("BATTLECITY_TALLY_ROWS")
+        if counts then
+            assert(not win and counts:match("^%d+,%d+,%d+,%d+$"),"expected four ending tally rows")
+            local k=0
+            for value in counts:gmatch("%d+") do put(a.kills+k,tonumber(value));k=k+1 end
+        end
         put(a.spawned,20);put(a.defeated,win and 19 or 0);put(a.freeze,0);put(a.freeze+1,16)
         put(a.lives,scenario=="lives" and 1 or 3);put(a.lives+1,coop and 3 or 0)
         put(a.tanks,64);put(a.tanks+1,144);put(a.tanks+3,1);put(a.tanks+11,0);put(a.tanks+12,0)
@@ -146,6 +152,16 @@ ending_frames=emu.add_machine_frame_notifier(function()
     if av_path and origin then
         local mode=bus:read_u8(a.mode)
         if previous_mode~=mode then av("mode",mode);previous_mode=mode end
+        if mode==4 and score_frame and frame>score_frame+20 then
+            local data=m.screens[":screen"]:pixels()
+            local bright=0
+            for y=184,191 do for x=104,111 do
+                local i=1+4*(256*y+x)
+                local b,g,r=data:byte(i,i+2)
+                if math.min(b,g,r)>90 then bright=bright+1 end
+            end end
+            if previous_total_ink~=bright then av("score-total-ink",bright);previous_total_ink=bright end
+        end
         if over_at and frame<=over_at+125 then
             local data=m.screens[":screen"]:pixels()
             local ink=0

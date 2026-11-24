@@ -47,11 +47,13 @@ public:
     }
 
     void finish(double emulated, uint64_t frame, const char *driver, bool native_size,
-                int64_t began, int64_t before_present, bool presented, int vsync, int width, int height)
+                int64_t began, int64_t before_present, bool presented, int vsync, int width, int height,
+                int64_t lock=0, int64_t copy=0, int64_t post=0, int64_t area=0)
     {
         const auto wall = now_ns();
         if (emulated < 10.0) return;
         ++attempts;
+        lock_ns+=lock; copy_ns+=copy; post_ns+=post; copied_area+=area;
         submissions += presented;
         compact += native_size;
         render_ns += before_present - began;
@@ -64,18 +66,19 @@ public:
                 std::fprintf(file, "{\"run\":%d,\"driver\":\"%s\",\"wall\":%.9f,\"emu\":%.9f,"
                     "\"frames\":%llu,\"attempts\":%u,\"presented\":%u,\"nativeSize\":%u,\"vsync\":%d,\"bufferWidth\":%d,\"bufferHeight\":%d,"
                     "\"samples\":%llu,\"sampleRate\":%u,\"drawMs\":%.3f,\"presentMs\":%.3f,"
-                    "\"coreSliceMs\":%.3f,\"threadCpuMs\":%.3f}\n",
+                    "\"coreSliceMs\":%.3f,\"threadCpuMs\":%.3f,\"lockMs\":%.3f,\"copyMs\":%.3f,\"postMs\":%.3f,\"writtenPixels\":%lld}\n",
                     windows, driver, (end.wall-start.wall)/1e9, end.emulated-start.emulated,
                     static_cast<unsigned long long>(end.frame-start.frame), attempts, submissions, compact, vsync, width, height,
                     static_cast<unsigned long long>(end.pcm-start.pcm), pcm_rate.load(std::memory_order_relaxed),
                     render_ns/1e6, present_ns/1e6, core_ns.load(std::memory_order_relaxed)/1e6,
-                    (end.cpu-start.cpu)/1e6);
+                    (end.cpu-start.cpu)/1e6, lock_ns/1e6, copy_ns/1e6, post_ns/1e6, static_cast<long long>(copied_area));
                 std::fclose(file);
             }
         }
         start=end;
         attempts=submissions=compact=0;
         render_ns=present_ns=0;
+        lock_ns=copy_ns=post_ns=copied_area=0;
         core_ns.store(0, std::memory_order_relaxed);
         if (windows==3) {
             active=false;
@@ -92,5 +95,6 @@ private:
     int windows=0;
     unsigned attempts=0, submissions=0, compact=0;
     int64_t render_ns=0, present_ns=0;
+    int64_t lock_ns=0, copy_ns=0, post_ns=0, copied_area=0;
 };
 } // namespace battlecity_tv

@@ -118,6 +118,46 @@ public final class GameActivity extends SDLActivity {
         return new String[] {"SDL3", "main"};
     }
 
+    private void copyCompatibleSlots(File root, String current) throws IOException {
+        String previous = null;
+        try (InputStream input = getAssets().open("save-compatibility.tsv")) {
+            String table = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.US_ASCII);
+            for (String line : table.split("\n")) {
+                String[] ids = line.split(" ");
+                if (ids.length == 2 && ids[0].equals(current) && ids[1].matches("[0-9a-f]{64}")) previous = ids[1];
+            }
+        }
+        if (previous == null || previous.equals(current)) return;
+        java.nio.file.Path states = root.toPath().resolve("states");
+        java.nio.file.Path source = states.resolve(previous).resolve("nes");
+        java.nio.file.Path target = states.resolve(current);
+        if (!Files.isDirectory(source) || Files.exists(target)) return;
+        java.nio.file.Path temp = Files.createTempDirectory(states, ".upgrade-");
+        java.nio.file.Path saves = temp.resolve("nes");
+        Files.createDirectory(saves);
+        try {
+            boolean copied = false;
+            for (int slot = 1; slot <= 4; ++slot) {
+                String name = slot + ".sta";
+                if (!Files.isRegularFile(source.resolve(name))) continue;
+                for (String suffix : new String[]{"", ".png", ".lock"}) {
+                    java.nio.file.Path file = source.resolve(name + suffix);
+                    if (Files.isRegularFile(file)) Files.copy(file, saves.resolve(name + suffix));
+                }
+                copied = true;
+            }
+            if (copied) Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE);
+        } finally {
+            if (Files.isDirectory(saves)) {
+                try (java.nio.file.DirectoryStream<java.nio.file.Path> files = Files.newDirectoryStream(saves)) {
+                    for (java.nio.file.Path file : files) Files.delete(file);
+                }
+                Files.delete(saves);
+            }
+            Files.deleteIfExists(temp);
+        }
+    }
+
     @Override
     protected String[] getArguments() {
         File root = getFilesDir();
@@ -130,9 +170,14 @@ public final class GameActivity extends SDLActivity {
         } catch (IOException error) {
             throw new IllegalStateException("Cannot prepare the bundled cartridge", error);
         }
+        try {
+            copyCompatibleSlots(root, cartridgeId);
+        } catch (IOException error) {
+            android.util.Log.e("BattleCity", "Could not copy the previous saves", error);
+        }
         File defaults = new File(root, "runtime-defaults");
         File config = new File(defaults, "mame.ini");
-        String renderer = BuildConfig.TV_SURFACE ? "surface-tv" : "none";
+        String renderer = BuildConfig.TV_SURFACE ? "dirty-tv" : "none";
         try {
             Files.createDirectories(defaults.toPath());
             Files.write(config.toPath(), ("scalemode " + renderer + "\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));

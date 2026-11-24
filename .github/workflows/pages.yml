@@ -25,7 +25,7 @@ jobs:
       actions: read
     uses: ./.github/workflows/mame-runtime.yml
     with:
-      previous_tv_run: ${{ inputs.previous_tv_run || '45364504056' }}
+      previous_tv_run: ${{ inputs.previous_tv_run || '45394628713' }}
 
   build:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'

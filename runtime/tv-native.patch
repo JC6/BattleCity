@@ -1,0 +1,63 @@
+--- a/src/osd/modules/render/drawsdl3soft.cpp
++++ b/src/osd/modules/render/drawsdl3soft.cpp
+@@ -34,6 +34,7 @@
+ #include "screen.h"
+ #include "ui/uimain.h"
+ #include "tv-profile.h"
++#include "tv-native-window.h"
+ #endif
+ 
+ // standard C headers
+@@ -106,6 +107,8 @@
+ 
+ #ifdef __ANDROID__
+ 	bool m_native_frame = false;
++	bool m_dirty_output = false;
++	tv_native_window m_native_window;
+ 	SDL_Window *m_output_window = nullptr;
+ 	bool m_surface_output = false;
+ 	int m_actual_vsync = -2;
+@@ -228,6 +231,10 @@
+ 	if (m_meter.active) m_profile_screen = window().machine().root_device().subdevice<screen_device>("screen");
+ #endif
+ #ifdef __ANDROID__
++	if (m_scale_mode.is_scale == 5 && m_native_window.attach(sdl_window)) {
++		m_dirty_output = true;
++		return 0;
++	}
+ 	if (m_scale_mode.is_scale == 4) {
+ 		m_surface_output = SDL_GetWindowSurface(sdl_window) != nullptr;
+ 		if (m_surface_output) {
+@@ -340,6 +347,24 @@
+ #ifdef __ANDROID__
+ 	const auto started = m_meter.active ? battlecity_tv::now_ns() : 0;
+ 	const bool tracing = m_meter.instrumented && ATrace_isEnabled();
++	if (m_dirty_output) {
++		tv_native_window::timing phases{};
++		bool const ok = m_native_window.attach(m_output_window) &&
++			m_native_window.draw(*window().m_primlist, wdim.width(), wdim.height(), picture,
++				window().machine().ui().is_menu_active(), has_flags(FI_CHANGED), started ? &phases : nullptr);
++		clear_flags(FI_CHANGED);
++		if (started) {
++			m_meter.finish(window().machine().time().as_double(), m_profile_screen->frame_number(),
++				"android-native-window", phases.fast, started, started+phases.draw, ok, -2, wdim.width(), wdim.height(),
++				phases.lock, phases.copy, phases.post, phases.area);
++		}
++		if (ok) return 0;
++		osd_printf_warning("Android native window unavailable, recovering the software renderer\n");
++		m_native_window.close();
++		m_dirty_output = false;
++		if (!open_software_renderer()) return 1;
++	}
++	if (m_scale_mode.is_scale == 5 && !m_sdl_renderer && !open_software_renderer()) return 1;
+ 	if (m_surface_output) {
+ 		surface = SDL_GetWindowSurface(m_output_window);
+ 		const SDL_PixelFormatDetails *details = surface ? SDL_GetPixelFormatDetails(surface->format) : nullptr;
+@@ -820,6 +845,7 @@
+ sdl_scale_mode const video_sdl3soft::s_scale_modes[] = {
+ 		{ "none",    0, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                    nullptr },
+ #ifdef __ANDROID__
++		{ "dirty-tv", 5, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0, nullptr },
+ 		{ "surface-tv", 4, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                  nullptr },
+ 		{ "gpu-full", 3, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                    nullptr },
+ 		{ "native-tv", 2, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                   nullptr },
