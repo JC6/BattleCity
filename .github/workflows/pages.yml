@@ -1,52 +1,67 @@
-name: BattleCity Web
-
+name: Final Android TV device acceptance
 on:
   push:
-    branches: [master, 'validation/switch-parity-*']
-  pull_request:
-    branches: [master]
-  workflow_dispatch:
-
+    branches: [validation/switch-parity-tv-20261124]
 permissions:
+  actions: read
   contents: read
-
-concurrency:
-  group: pages-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
-
 jobs:
-  runtime:
-    uses: ./.github/workflows/mame-runtime.yml
-
-  build:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
-    needs: runtime
+  television:
     runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      pages: read
     steps:
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
         with:
-          name: game-web
-          path: package
-      - run: unzip -q package/BattleCity-Web.zip -d site
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
+          github-token: ${{ github.token }}
+          run-id: 45330116914
+          name: game-tv-emulator
+          path: deliverable
+      - uses: actions/download-artifact@v4
         with:
-          path: site
-
-  deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github-token: ${{ github.token }}
+          run-id: 45330116914
+          name: cartridge
+          path: build/shared
+      - name: Verify the packaged x86 release and card identity
+        run: |
+          expected=72259aab96d617eb7c9feeba91ee9426c4d80e7d3b51b86edf204fecf6789741
+          echo "$expected  build/shared/game.nes" | sha256sum -c -
+          python3 tests/nes/package.py deliverable/tv-emulator.apk build/shared/game.nes --abi x86
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Boot the Android SDK television image and test both gamepads
+        timeout-minutes: 30
+        env:
+          ANDROID_SERIAL: emulator-5554
+        run: |
+          exec > >(tee "$RUNNER_TEMP/battlecity-test.log") 2>&1
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
+          bash tests/nes/television-avd.sh deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result --suite controls --suite auto-frameskip
+      - name: Report the failed build or device check
+        if: failure()
+        shell: python
+        run: |
+          import os
+          import re
+          from pathlib import Path
+          temporary = Path(os.environ['RUNNER_TEMP'])
+          log = temporary / 'battlecity-test.log'
+          if not log.is_file():
+              log = temporary / 'battlecity-build.log'
+          if log.is_file():
+              lines = log.read_text(errors='replace').splitlines()
+              errors = [line for line in lines if re.search(
+                  r'error|fatal|failed|no space|not found|no such|exception|make.*\*\*\*', line, re.I)]
+              for line in (errors or lines)[-10:]:
+                  print('::error::' + line[-500:].replace('%', '%25'))
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tv-device-results
+          path: build/tv-result/

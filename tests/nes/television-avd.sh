@@ -41,4 +41,4 @@ until [[ "$(timeout 5 "$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -
     fi
     sleep 2
 done
-python3 "$(dirname "$0")/television.py" "$apk" "$labels" "$results"
+python3 "$(dirname "$0")/television.py" "$apk" "$labels" "$results" "${@:4}"

@@ -74,11 +74,10 @@ class Pad:
         self.event(3, 17, y)
 
     def tap_hat(self, axis, value):
+        # Host adb acknowledgments can take long enough to trigger UI repeat.
         self.event(3, axis, value)
-        try:
-            presented(4)
-        finally:
-            self.event(3, axis, 0)
+        self.send({'command':'delay','duration':120})
+        self.event(3, axis, 0)
         presented(5)
 
     def down(self):
@@ -316,16 +315,18 @@ def run(apk, labels, results, suite):
         (results/(name+'.png')).write_bytes(image)
     try:
         write_private('tv-observer.lua',observer(labels,directory))
-        write_private('nes.ini',f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\nwavwrite {directory}/tv-audio.wav\n')
+        ini=f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\nwavwrite {directory}/tv-audio.wav\n'
+        if suite == 'auto-frameskip': ini+='autoframeskip 1\n'
+        write_private('nes.ini',ini)
         (results/'device.txt').write_bytes(adb('shell','getprop'))
-        if suite == 'timing':
+        if suite in ('timing','auto-frameskip'):
             adb('shell','am','force-stop',PACKAGE)
             clock_input = Path(__file__).with_name('clock-input.lua').read_text()
             write_private('tv-observer.lua', clock_input+'\n'+observer(labels,directory))
             launch()
             check(lambda s:s['emu_us']>=9_000_000 and s['mode']==1,'clock entry into solo battle')
             measure_clock(results)
-            record_endings(labels, directory, results, write_private)
+            if suite == 'timing': record_endings(labels, directory, results, write_private)
             return
         with (results/'gamepads.jsonl').open('w') as events:
             for n in (1,2):
@@ -336,22 +337,33 @@ def run(apk, labels, results, suite):
             open_system_menu(one)
             # A presented SDL frame does not guarantee the next menu has opened.
             # Wait for its cyan cursor before sending another directional edge.
-            def cursor_at(x,y):
+            save_button=(.389,.164,.222,.061)
+            load_button=(.389,.253,.222,.061)
+            settings_button=(.262,.702,.221,.061)
+            screen_card=(.106,.350,.180,.215)
+            staff_card=(.106+.203*3,.350,.180,.215)
+            def focused(rect):
                 rgb=screen_rgb(adb('exec-out','screencap','-p'),'320:180')
-                return sum(1 for cy in range(y-2,y+2) for cx in range(x-2,x+5)
-                           if (lambda r,g,b:g>95 and b>120 and b-r>70 and g-r>35)(
-                               *rgb[3*(320*cy+cx):3*(320*cy+cx)+3]))>=4
-            def reach_cursor(x,y,action):
-                for attempt in range(3):
-                    if cursor_at(x,y): return
+                x,y,w,h=rect
+                corners=0
+                for a in (x-.004,x+w+.004):
+                    for b in (y-.008,y+h+.008):
+                        cx,cy=round(a*320),round(b*180)
+                        count=0
+                        for yy in range(cy-4,cy+5):
+                            for xx in range(cx-5,cx+6):
+                                r,g,blue=rgb[3*(320*yy+xx):3*(320*yy+xx)+3]
+                                count+=g>95 and blue>120 and blue-r>70 and g-r>35
+                        corners+=count>=2
+                return corners>=3
+            def reach(rect,action,label):
+                for _ in range(12):
+                    if focused(rect): return
                     action()
-                    if cursor_at(x,y): return
-                    time.sleep(.25)
-                wait(lambda:cursor_at(x,y),bool,'visible cursor at '+str((x,y)))
-            wait(lambda:cursor_at(124,29),bool,'initial Save cursor')
-            reach_cursor(124,45,one.down)
-            reach_cursor(84,126,one.down)
-            reach_cursor(34,63,lambda:one.tap(SOUTH))
+                raise RuntimeError('gamepad did not reach '+label)
+            wait(lambda:focused(save_button),bool,'initial Save cursor')
+            reach(settings_button,one.down,'Settings')
+            reach(screen_card,lambda:one.tap(SOUTH),'Screen Settings card')
             one.tap(SOUTH)
             def shooter_width():
                 image=adb('exec-out','screencap','-p')
@@ -360,18 +372,18 @@ def run(apk, labels, results, suite):
                     if (lambda r,g,b: (r>60 and g>115 and b<65) or (35<r<90 and g<95 and b>150))(
                         *rgb[(320*y+x)*3:(320*y+x)*3+3])]
                 return max(xs)-min(xs)+1 if xs else 0
-            # Default 4:3, Zoom, Dot-by-Dot and Full Screen have distinct widths.
-            for i,width in enumerate((36,41,31,64)):
-                if i:
+            def select_width(width):
+                for _ in range(8):
+                    if abs(shooter_width()-width)<=3: return
                     one.tap_hat(16,1)
                     one.tap(SOUTH)
-                wait(shooter_width,lambda w: abs(w-width)<=3,'screen sample width '+str(width))
+                raise RuntimeError('screen sample did not reach width '+str(width))
+            wait(shooter_width,lambda w:abs(w-36)<=3,'default screen sample')
+            for width in (41,31,64): select_width(width)
             capture('screen-settings')
-            one.tap_hat(16,1)
-            one.tap(SOUTH)
+            select_width(36)
             one.tap(EAST)
-            # Staff Credits is one step left of Screen Settings on the four-card row.
-            one.tap_hat(16, -1)
+            reach(staff_card,lambda:one.tap_hat(16,-1),'Staff Credits card')
             one.tap(SOUTH)
             def read_credits():
                 image=adb('exec-out','screencap','-p')
@@ -474,7 +486,7 @@ def run(apk, labels, results, suite):
             launch()
             open_system_menu(one)
             check(lambda s:s['menu'],'load menu')
-            one.down()
+            reach(load_button,one.down,'Load')
             one.tap(SOUTH)
             one.tap(SOUTH)
             restored=check(lambda s:not s['menu'] and s['mode']==5,'restored paused game')
@@ -531,9 +543,11 @@ def run(apk, labels, results, suite):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('apk','labels','results'): parser.add_argument(name,type=Path)
+    parser.add_argument('--suite',action='append',choices=('controls','timing','auto-frameskip'))
     args=parser.parse_args()
     errors=[]
-    for suite,folder in [('controls',args.results),('timing',args.results/'timing')]:
+    for suite in args.suite or ('controls','timing'):
+        folder=args.results if suite=='controls' else args.results/suite
         try:
             run(args.apk,args.labels,folder,suite)
         except Exception as error:
