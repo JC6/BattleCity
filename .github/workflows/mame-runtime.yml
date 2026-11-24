@@ -2,11 +2,17 @@ name: Battle City NES runtime
 on:
   workflow_call:
     inputs:
+      previous_tv_run:
+        type: string
+        default: ''
       cartridge:
         type: string
         default: game
   workflow_dispatch:
     inputs:
+      previous_tv_run:
+        type: string
+        default: ''
       cartridge:
         type: choice
         description: Cartridge to package
@@ -133,6 +139,9 @@ jobs:
           path: loop.csv
 
   package:
+    permissions:
+      contents: read
+      actions: read
     needs: cartridge
     runs-on: ubuntu-24.04
     strategy:
@@ -216,6 +225,10 @@ jobs:
             outputs=runtime/android/build
             if [[ "$BATTLECITY_ANDROID_ABI" == x86 ]]; then outputs="$outputs/x86"; fi
             cp "$outputs/outputs/apk/debug/BattleCityRuntime-debug.apk" "$apk"
+            candidate="deliverable/$PACKAGE_TARGET-candidate.apk"
+            cp "$outputs/outputs/apk/candidate/BattleCityRuntime-candidate.apk" "$candidate"
+            "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify "$candidate"
+            python3 tests/nes/package.py "$candidate" "build/shared/$CARTRIDGE.nes" --abi "$BATTLECITY_ANDROID_ABI"
             "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$apk"
             python3 tests/nes/package.py "$apk" "build/shared/$CARTRIDGE.nes" --abi "$BATTLECITY_ANDROID_ABI"
           fi
@@ -287,16 +300,39 @@ jobs:
             -f rawvideo -pix_fmt rgb24 pipe:1 < "$GITHUB_WORKSPACE/runtime/android/src/main/res/drawable-xhdpi/game_icon.png" > sample.rgb
           test "$(wc -c < sample.rgb)" -eq 172800
           echo "$PWD" >> "$GITHUB_PATH"
+      - uses: actions/download-artifact@v4
+        if: matrix.abi == 'x86' && inputs.previous_tv_run != ''
+        with:
+          run-id: ${{ inputs.previous_tv_run }}
+          github-token: ${{ github.token }}
+          name: game-tv-emulator
+          path: previous-tv
       - name: Boot the Android SDK television image and test both gamepads
         if: matrix.abi == 'x86' && inputs.cartridge == 'game'
-        timeout-minutes: 55
+        timeout-minutes: 85
         env:
           ANDROID_SERIAL: emulator-5554
         run: |
           exec > >(tee "$RUNNER_TEMP/battlecity-test.log") 2>&1
           mkdir -p build/tv-result
-          sha256sum deliverable/tv-emulator.apk build/shared/game.nes > build/tv-result/tested-sha256.txt
-          bash tests/nes/television-avd.sh deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result
+          sha256sum deliverable/tv-emulator{,-candidate}.apk build/shared/game.nes > build/tv-result/tested-sha256.txt
+          previous=()
+          if [[ -f previous-tv/tv-emulator.apk ]]; then
+            sdk_signer="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+            "$sdk_signer" verify previous-tv/tv-emulator.apk
+            sha256sum previous-tv/tv-emulator.apk > build/tv-result/previous-sha256.txt
+            "$sdk_signer" sign --ks "$HOME/.android/debug.keystore" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out previous-tv/upgrade.apk previous-tv/tv-emulator.apk
+            previous=(--previous previous-tv/upgrade.apk)
+          fi
+          bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result --stable deliverable/tv-emulator.apk "${previous[@]}"
+      - name: Independently cold boot the same TV candidate
+        if: always() && matrix.abi == 'x86' && inputs.cartridge == 'game'
+        timeout-minutes: 65
+        run: |
+          mkdir -p build/tv-result/second
+          sha256sum deliverable/tv-emulator{,-candidate}.apk build/shared/game.nes > build/tv-result/second/tested-sha256.txt
+          bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result/second --suite render --suite scenes
+          python3 tests/nes/tv_release_gate.py build/tv-result
       - name: Report the failed build or device check
         if: failure()
         shell: python

@@ -12,9 +12,12 @@ import java.nio.file.StandardCopyOption;
 
 public final class GameActivity extends SDLActivity {
     private boolean showingMenu;
+    private boolean measureSmallBuffer;
+    private boolean smallBuffer;
 
     @Override
     protected void onCreate(Bundle state) {
+        measureSmallBuffer = new File(getFilesDir(), "tv-low-buffer").isFile();
         super.onCreate(state);
         if (mLayout == null || mSurface == null) return;
         applyWallpaper(wallpaperMode(-1));
@@ -34,7 +37,10 @@ public final class GameActivity extends SDLActivity {
 
     public int pictureMode(int requested) {
         android.content.SharedPreferences prefs = getSharedPreferences("display", MODE_PRIVATE);
-        if (requested >= 0 && requested <= 3) prefs.edit().putInt("picture", requested).apply();
+        if (requested >= 0 && requested <= 3) {
+            prefs.edit().putInt("picture", requested).apply();
+            if (measureSmallBuffer) runOnUiThread(() -> resizeSurface(mLayout.getWidth(), mLayout.getHeight()));
+        }
         return prefs.getInt("picture", 0);
     }
 
@@ -97,6 +103,12 @@ public final class GameActivity extends SDLActivity {
             size.addRule(RelativeLayout.CENTER_IN_PARENT);
             mSurface.setLayoutParams(size);
         }
+        boolean useSmall = measureSmallBuffer && !showingMenu && pictureMode(-1) == 0;
+        if (smallBuffer != useSmall) {
+            smallBuffer = useSmall;
+            if (useSmall) mSurface.getHolder().setFixedSize(256, 240);
+            else mSurface.getHolder().setSizeFromLayout();
+        }
         int crop = (full - visible) / 2;
         mSurface.setClipBounds(new Rect(0, crop, screenWidth, crop + visible));
     }
@@ -118,7 +130,16 @@ public final class GameActivity extends SDLActivity {
         } catch (IOException error) {
             throw new IllegalStateException("Cannot prepare the bundled cartridge", error);
         }
-        return new String[] {"nes", "-uifont", "battlecity-regular", "-cart", game.getPath(), "-skip_gameinfo", "-inipath", root.getPath(),
+        File defaults = new File(root, "runtime-defaults");
+        File config = new File(defaults, "mame.ini");
+        String renderer = BuildConfig.TV_SURFACE ? "surface-tv" : "none";
+        try {
+            Files.createDirectories(defaults.toPath());
+            Files.writeString(config.toPath(), "scalemode " + renderer + "\n");
+        } catch (IOException error) {
+            throw new IllegalStateException("Cannot prepare runtime defaults", error);
+        }
+        return new String[] {"nes", "-uifont", "battlecity-regular", "-cart", game.getPath(), "-skip_gameinfo", "-inipath", root.getPath() + ";" + defaults.getPath(),
             "-video", "soft", "-nokeepaspect", "-joystick", "-rewind", "-state_directory", new File(root, "states/" + cartridgeId).getPath(),
             "-cfg_directory", new File(root, "cfg").getPath()};
     }

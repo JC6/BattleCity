@@ -40,7 +40,16 @@ android {
     if (System.getenv('ANDROID_NDK_HOME')) {
         ndkPath System.getenv('ANDROID_NDK_HOME')
     }
+    buildFeatures { buildConfig true }
+    buildTypes {
+        candidate {
+            initWith debug
+            matchingFallbacks = ['debug']
+            buildConfigField 'boolean', 'TV_SURFACE', 'true'
+        }
+    }
     defaultConfig {
+        buildConfigField 'boolean', 'TV_SURFACE', 'false'
         applicationId 'org.jiangc.bc.runtime'
         minSdk 34
         targetSdk 34

@@ -47,7 +47,7 @@ public:
     }
 
     void finish(double emulated, uint64_t frame, const char *driver, bool native_size,
-                int64_t began, int64_t before_present, bool presented)
+                int64_t began, int64_t before_present, bool presented, int vsync, int width, int height)
     {
         const auto wall = now_ns();
         if (emulated < 10.0) return;
@@ -62,11 +62,11 @@ public:
             ++windows;
             if (auto *file = std::fopen(path.c_str(), "a")) {
                 std::fprintf(file, "{\"run\":%d,\"driver\":\"%s\",\"wall\":%.9f,\"emu\":%.9f,"
-                    "\"frames\":%llu,\"attempts\":%u,\"presented\":%u,\"nativeSize\":%u,"
+                    "\"frames\":%llu,\"attempts\":%u,\"presented\":%u,\"nativeSize\":%u,\"vsync\":%d,\"bufferWidth\":%d,\"bufferHeight\":%d,"
                     "\"samples\":%llu,\"sampleRate\":%u,\"drawMs\":%.3f,\"presentMs\":%.3f,"
                     "\"coreSliceMs\":%.3f,\"threadCpuMs\":%.3f}\n",
                     windows, driver, (end.wall-start.wall)/1e9, end.emulated-start.emulated,
-                    static_cast<unsigned long long>(end.frame-start.frame), attempts, submissions, compact,
+                    static_cast<unsigned long long>(end.frame-start.frame), attempts, submissions, compact, vsync, width, height,
                     static_cast<unsigned long long>(end.pcm-start.pcm), pcm_rate.load(std::memory_order_relaxed),
                     render_ns/1e6, present_ns/1e6, core_ns.load(std::memory_order_relaxed)/1e6,
                     (end.cpu-start.cpu)/1e6);

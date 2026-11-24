@@ -1,0 +1,206 @@
+--- a/src/osd/modules/render/drawsdl3soft.cpp
++++ b/src/osd/modules/render/drawsdl3soft.cpp
+@@ -106,6 +106,10 @@
+ 
+ #ifdef __ANDROID__
+ 	bool m_native_frame = false;
++	SDL_Window *m_output_window = nullptr;
++	bool m_surface_output = false;
++	int m_actual_vsync = -2;
++	bool open_software_renderer();
+ 	battlecity_tv::frame_meter m_meter;
+ 	screen_device *m_profile_screen = nullptr;
+ #endif
+@@ -218,11 +222,26 @@
+ 	SDL_Window *sdl_window = dynamic_cast<sdl_window_info &>(window()).platform_window();
+ 	char const *driver = "software";
+ #ifdef __ANDROID__
+-	if (m_scale_mode.is_scale == 2) driver = nullptr;
++	if (m_scale_mode.is_scale == 2 || m_scale_mode.is_scale == 3) driver = nullptr;
++	m_output_window = sdl_window;
+ 	m_meter.open(SDL_GetAndroidInternalStoragePath());
+ 	if (m_meter.active) m_profile_screen = window().machine().root_device().subdevice<screen_device>("screen");
+ #endif
++#ifdef __ANDROID__
++	if (m_scale_mode.is_scale == 4) {
++		m_surface_output = SDL_GetWindowSurface(sdl_window) != nullptr;
++		if (m_surface_output) {
++			SDL_GetWindowSurfaceVSync(sdl_window, &m_actual_vsync);
++			return 0;
++		}
++		SDL_DestroyWindowSurface(sdl_window);
++	}
++#endif
+ 	m_sdl_renderer = SDL_CreateRenderer(sdl_window, driver);
++#ifdef __ANDROID__
++	if (!m_sdl_renderer && !driver)
++		m_sdl_renderer = SDL_CreateRenderer(sdl_window, "software");
++#endif
+ 	if (!m_sdl_renderer)
+ 	{
+ 		fatalerror("Error creating renderer: %s\n", SDL_GetError());
+@@ -233,6 +252,9 @@
+ 		SDL_SetRenderVSync(m_sdl_renderer, SDL_RENDERER_VSYNC_ADAPTIVE);
+ 	}
+ 
++#ifdef __ANDROID__
++	SDL_GetRenderVSync(m_sdl_renderer, &m_actual_vsync);
++#endif
+ 	m_yuv_lookup = nullptr;
+ 	m_blittimer = 0;
+ 
+@@ -249,7 +271,10 @@
+ {
+ 	destroy_all_textures();
+ 
+-	SDL_DestroyRenderer(m_sdl_renderer);
++#ifdef __ANDROID__
++	if (m_surface_output) SDL_DestroyWindowSurface(m_output_window);
++#endif
++	if (m_sdl_renderer) SDL_DestroyRenderer(m_sdl_renderer);
+ }
+ 
+ //============================================================
+@@ -282,6 +307,23 @@
+ //  renderer_sdl2::draw
+ //============================================================
+ 
++#ifdef __ANDROID__
++bool renderer_sdl1::open_software_renderer()
++{
++	SDL_DestroyWindowSurface(m_output_window);
++	m_surface_output = false;
++	m_sdl_renderer = SDL_CreateRenderer(m_output_window, "software");
++	notify_changed();
++	if (!m_sdl_renderer) {
++		osd_printf_error("SDL: software renderer recovery failed: %s\n", SDL_GetError());
++		return false;
++	}
++	m_actual_vsync = -2;
++	SDL_GetRenderVSync(m_sdl_renderer, &m_actual_vsync);
++	return true;
++}
++#endif
++
+ int renderer_sdl1::draw(int update)
+ {
+ 	uint8_t *surfptr;
+@@ -294,10 +336,22 @@
+ 	osd_dim wdim = window().get_size_pixels();
+ 	u8 const picture = battlecity_picture(-1);
+ 	bool texture_changed = false;
++	SDL_Surface *surface = nullptr;
+ #ifdef __ANDROID__
+ 	const auto started = m_meter.active ? battlecity_tv::now_ns() : 0;
+ 	const bool tracing = m_meter.instrumented && ATrace_isEnabled();
+ 	if (tracing) ATrace_beginSection("BattleCity.draw");
++	if (m_surface_output) {
++		surface = SDL_GetWindowSurface(m_output_window);
++		const SDL_PixelFormatDetails *details = surface ? SDL_GetPixelFormatDetails(surface->format) : nullptr;
++		// These are the layouts understood by the MAME rasterizer below.
++		if (!details || (details->bytes_per_pixel != 2 && details->bytes_per_pixel != 4)
++			|| !SDL_LockSurface(surface)) {
++			surface = nullptr;
++			if (!open_software_renderer()) return 1;
++		}
++	}
++	if (m_scale_mode.is_scale == 4 && !surface && !m_sdl_renderer && !open_software_renderer()) return 1;
+ 	if (m_scale_mode.is_scale == 2) {
+ 		bool native = !window().machine().ui().is_menu_active() && !picture;
+ 		if (native) {
+@@ -320,22 +374,22 @@
+ 		clear_flags(FI_CHANGED);
+ 		m_blittimer = 3;
+ 		m_last_dim = wdim;
+-		SDL_SetRenderViewport(m_sdl_renderer, nullptr);
+-		if (m_texture_id != nullptr)
+-			SDL_DestroyTexture(m_texture_id);
+-		setup_texture(m_blit_dim);
++		if (!surface) {
++			SDL_SetRenderViewport(m_sdl_renderer, nullptr);
++			setup_texture(m_blit_dim);
++		}
+ 		m_blittimer = 3;
+ 	}
+ 
+ 	// lock it if we need it
+-	const auto props = SDL_GetTextureProperties(m_texture_id);
+-	const SDL_PixelFormat format = (SDL_PixelFormat)SDL_GetNumberProperty(props, SDL_PROP_TEXTURE_FORMAT_NUMBER, 0);
++	const auto props = surface ? 0 : SDL_GetTextureProperties(m_texture_id);
++	const SDL_PixelFormat format = surface ? surface->format : (SDL_PixelFormat)SDL_GetNumberProperty(props, SDL_PROP_TEXTURE_FORMAT_NUMBER, 0);
+ 
+ 	SDL_GetMasksForPixelFormat(format, &bpp, &rmask, &gmask, &bmask, &amask);
+ 	bpp = bpp / 8; /* convert to bytes per pixels */
+ 
+ 	// Clear if necessary
+-	if (m_blittimer > 0)
++	if (!surface && m_blittimer > 0)
+ 	{
+ 		/* SDL Underlays need alpha = 0 ! */
+ 		SDL_SetRenderDrawColor(m_sdl_renderer, 0, 0, 0, 0);
+@@ -343,7 +397,13 @@
+ 		m_blittimer--;
+ 	}
+ 
+-	SDL_LockTexture(m_texture_id, nullptr, (void **) &surfptr, &pitch);
++	if (surface) {
++		surfptr = static_cast<uint8_t *>(surface->pixels);
++		pitch = surface->pitch;
++	} else if (!m_texture_id || !SDL_LockTexture(m_texture_id, nullptr, (void **) &surfptr, &pitch)) {
++		notify_changed();
++		return 1;
++	}
+ 
+ 	// get ready to center the image
+ 	vofs = hofs = 0;
+@@ -377,8 +437,8 @@
+ 
+ 	window().m_primlist->acquire_lock();
+ 
+-	auto mamewidth = SDL_GetNumberProperty(props, SDL_PROP_TEXTURE_WIDTH_NUMBER, 0);
+-	auto mameheight = SDL_GetNumberProperty(props, SDL_PROP_TEXTURE_HEIGHT_NUMBER, 0);
++	auto mamewidth = surface ? surface->w : SDL_GetNumberProperty(props, SDL_PROP_TEXTURE_WIDTH_NUMBER, 0);
++	auto mameheight = surface ? surface->h : SDL_GetNumberProperty(props, SDL_PROP_TEXTURE_HEIGHT_NUMBER, 0);
+ 
+ 	mamewidth /= m_scale_mode.mult_w;
+ 	mameheight /= m_scale_mode.mult_h;
+@@ -443,7 +503,8 @@
+ 	window().m_primlist->release_lock();
+ 
+ 	// unlock and flip
+-	SDL_UnlockTexture(m_texture_id);
++	if (surface) SDL_UnlockSurface(surface);
++	else SDL_UnlockTexture(m_texture_id);
+ 	{
+ 		SDL_FRect r;
+ 
+@@ -451,15 +512,17 @@
+ 		r.y=vofs;
+ 		r.w=blitwidth;
+ 		r.h=blitheight;
+-		[[maybe_unused]] const bool drawn = SDL_RenderTexture(m_sdl_renderer, m_texture_id, nullptr, &r);
++		[[maybe_unused]] const bool drawn = surface || SDL_RenderTexture(m_sdl_renderer, m_texture_id, nullptr, &r);
+ #ifdef __ANDROID__
+ 		const auto before_present = started ? battlecity_tv::now_ns() : 0;
+ 		if (tracing) { ATrace_endSection(); ATrace_beginSection("BattleCity.present"); }
+-		const bool presented = SDL_RenderPresent(m_sdl_renderer);
++		const bool presented = surface ? SDL_UpdateWindowSurface(m_output_window) : SDL_RenderPresent(m_sdl_renderer);
+ 		if (tracing) ATrace_endSection();
+ 		if (started) {
+ 			m_meter.finish(window().machine().time().as_double(), m_profile_screen ? m_profile_screen->frame_number() : 0,
+-					SDL_GetRendererName(m_sdl_renderer), m_native_frame, started, before_present, drawn && presented);
++					surface ? "window-surface" : SDL_GetRendererName(m_sdl_renderer), m_native_frame, started, before_present, drawn && presented,
++				m_actual_vsync, int(mamewidth), int(mameheight));
++		if (surface && !presented) open_software_renderer();
+ 		}
+ #else
+ 		SDL_RenderPresent(m_sdl_renderer);
+@@ -751,6 +814,8 @@
+ sdl_scale_mode const video_sdl3soft::s_scale_modes[] = {
+ 		{ "none",    0, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                    nullptr },
+ #ifdef __ANDROID__
++		{ "surface-tv", 4, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                  nullptr },
++		{ "gpu-full", 3, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                    nullptr },
+ 		{ "native-tv", 2, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                   nullptr },
+ #endif
+ 		{ "hwblit",  1, 0, 1, 1, DRAW2_SCALEMODE_LINEAR,  0,                    nullptr },

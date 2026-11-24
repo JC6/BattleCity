@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      previous_tv_run:
+        description: Optional previous Actions run for the Android save upgrade test
+        type: string
 
 permissions:
   contents: read
@@ -16,7 +20,12 @@ concurrency:
 
 jobs:
   runtime:
+    permissions:
+      contents: read
+      actions: read
     uses: ./.github/workflows/mame-runtime.yml
+    with:
+      previous_tv_run: ${{ inputs.previous_tv_run || '45364504056' }}
 
   build:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'

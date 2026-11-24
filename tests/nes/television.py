@@ -363,7 +363,15 @@ def compare_raster(base, other, w, h, width, height):
 def record_render(results, labels, directory, write_private, scenes_only=False):
     ini = (f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\n'
            'autoframeskip 0\nframeskip 0\npause_brightness 1.0\n')
-    modes = {'baseline': 'none', 'candidate': 'native-tv'}
+    # A missing override exercises the installed candidate's packaged default.
+    modes = {'baseline':'none', 'gpu-full':'gpu-full', 'native':'native-tv',
+             'candidate':None, 'low-buffer':None}
+    def select(mode, scale):
+        if mode == 'low-buffer':
+            write_private('tv-low-buffer', '1')
+        else:
+            private('rm','-f','files/tv-low-buffer')
+        write_private('nes.ini', ini + (f'scalemode {scale}\n' if scale else ''))
     def stop():
         adb('shell','am','force-stop',PACKAGE)
         private('rm','-f','files/tv-fixed','files/tv-profile.jsonl')
@@ -392,7 +400,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False):
     markers = {}
     for name, scale in (() if scenes_only else modes.items()):
         stop()
-        write_private('nes.ini', ini+f'scalemode {scale}\n')
+        select(name, scale)
         write_private('tv-observer.lua', render_fixture(labels, directory, 560))
         write_private('tv-profile.jsonl','')
         start_fixture()
@@ -409,7 +417,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False):
             row['gameSpeed'] = row['emu']/row['wall']
             row['pcmSpeed'] = row['samples']/row['sampleRate']/row['wall']
             row['pass'] = (0.99<=row['gameSpeed']<=1.01 and 0.99<=row['pcmSpeed']<=1.01
-                           and row['presented']==row['attempts'] and abs(row['presented']-row['frames'])<=1)
+                           and row['presented']==row['attempts'] and row['presented']==row['frames'])
         summaries[name] = rows
         layers = adb('shell','dumpsys','SurfaceFlinger','--list').decode().splitlines()
         prefix = results/(name+'-surface.txt')
@@ -425,7 +433,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False):
     if not scenes_only:
         assert len(set(markers.values()))==1, markers
         (results/'clock.json').write_text(json.dumps({'battle':markers,'windows':summaries},indent=2))
-    # A separate launch keeps tracing and screenshots out of both clock samples.
+    # Separate launches keep the frozen visual fixtures out of the clock samples.
     display = 'shared_prefs/display.xml'
     stop()
     existed = private('ls','-d',display,check=False).strip()==display.encode()
@@ -439,14 +447,15 @@ def record_render(results, labels, directory, write_private, scenes_only=False):
     if scenes_only:
         cases = [('firing',0,0,0),('blast',0,0,0)]
     visual = {}
+    small_visual = {}
     try:
         for case,aspect,picture,wallpaper in cases:
             pair = {}
-            for name,scale in modes.items():
+            for name,scale in [('baseline','none'),('repeat','none'),('candidate',None),('low-buffer',None)]:
                 stop()
                 set_display((f'<map><int name="mode" value="{aspect}"/><int name="picture" value="{picture}"/>'
                              f'<int name="wallpaper" value="{wallpaper}"/></map>').encode())
-                write_private('nes.ini', ini+f'scalemode {scale}\n')
+                select(name, scale)
                 tick = {'firing':621,'blast':696}.get(case,705)
                 write_private('tv-observer.lua',render_fixture(labels,directory,tick,True,case if scenes_only else None))
                 start_fixture()
@@ -464,27 +473,33 @@ def record_render(results, labels, directory, write_private, scenes_only=False):
                 rgb = screen_rgb(png,f'{w}:{h}')
                 pair[name] = (fingerprint,w,h,rgb)
             stamp,w,h,base = pair['baseline']
-            assert pair['candidate'][:3]==(stamp,w,h), (case,stamp,pair['candidate'][:3])
-            other = pair['candidate'][3]
+            repeat = pair['repeat'][3]
+            assert all(item[:3]==(stamp,w,h) for item in pair.values())
             ratio = 256/224 if aspect==2 else 4/3
             width = w if aspect==3 else min(w,math.floor(h*(1 if aspect==1 else .83)*ratio+.5))
             height = h if aspect==3 else math.floor(width/ratio+.5)
             xs = [int((w-width)/2+(x+.5)*width/256) for x in range(256)]
             ys = [int((h-height)/2+(y+.5)*height/224) for y in range(224)]
             pixels = [3*(y*w+x) for y in ys for x in xs]
-            mismatches = sum(base[i:i+3]!=other[i:i+3] for i in pixels)
-            visual[case] = {'battle':stamp,'size':[w,h],'nativePixels':len(pixels),'differentCenters':mismatches,
-                            **compare_raster(base,other,w,h,width,height)}
-            (results/'visual.json').write_text(json.dumps(visual,indent=2))
+            noise = compare_raster(base,repeat,w,h,width,height)
+            for mode,output in [('candidate',visual),('low-buffer',small_visual)]:
+                other = pair[mode][3]
+                mismatches = sum(base[i:i+3]!=other[i:i+3] for i in pixels)
+                excess = sum(any(abs(a-c)>abs(a-b) for a,b,c in zip(base[i:i+3],repeat[i:i+3],other[i:i+3]))
+                             for i in range(0,len(base),3) if base[i:i+3]!=other[i:i+3])
+                output[case] = {'battle':stamp,'size':[w,h],'nativePixels':len(pixels),'differentCenters':mismatches,
+                                'aboveRepeatNoise':excess,'repeat':noise,**compare_raster(base,other,w,h,width,height)}
+                dest = 'visual.json' if mode=='candidate' else 'low-buffer.json'
+                (results/dest).write_text(json.dumps(output,indent=2))
     finally:
         stop()
         if existed: set_display(original)
         else: private('rm','-f',display)
 
 
-def run(apk, labels, results, suite):
+def run(apk, labels, results, suite, previous=None):
     results.mkdir(parents=True,exist_ok=True)
-    adb('install','-r',str(apk))
+    adb('install','-r',str(previous or apk))
     directory = private('pwd').decode().strip()+'/files'
     private('mkdir','-p','files')
     with ZipFile(apk) as package:
@@ -494,7 +509,7 @@ def run(apk, labels, results, suite):
     slot = f'files/states/{digest}/nes/1.sta'
     # Leave existing player files intact. A completed run removes its own slot.
     test_files = ['files/'+name for name in ('nes.ini','tv-observer.lua','tv-observation',
-                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv','tv-profile.jsonl','tv-fixed')]
+                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv','tv-profile.jsonl','tv-fixed','tv-low-buffer')]
     test_files.extend((slot,slot+'.png',slot+'.lock'))
     for name in test_files:
         if private('ls','-d',name,check=False).strip()==name.encode():
@@ -517,7 +532,7 @@ def run(apk, labels, results, suite):
             return
         write_private('tv-observer.lua',observer(labels,directory))
         ini=f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\nwavwrite {directory}/tv-audio.wav\n'
-        if suite == 'candidate-controls': ini+='scalemode native-tv\n'
+        if suite == 'controls': ini+='scalemode none\n'
         if suite == 'auto-frameskip': ini+='autoframeskip 1\n'
         write_private('nes.ini',ini)
         (results/'device.txt').write_bytes(adb('shell','getprop'))
@@ -685,6 +700,15 @@ def run(apk, labels, results, suite):
             check(lambda s:s['menu'],'protected slot keeps the picker open')
             capture('protected-slot', (22,37,44,58))
             adb('shell','am','force-stop',PACKAGE)
+            if previous:
+                import hashlib
+                before = private('cat',slot)
+                adb('install','-r',str(apk))
+                assert before==private('cat',slot) and preview==private('cat',slot+'.png')
+                assert private('ls',slot+'.lock').strip()==(slot+'.lock').encode()
+                (results/'upgrade.json').write_text(json.dumps({'slotSha256':hashlib.sha256(before).hexdigest(),
+                                                              'thumbnailPreserved':True,'lockPreserved':True}))
+
             launch()
             open_system_menu(one)
             check(lambda s:s['menu'],'load menu')
@@ -746,12 +770,15 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('apk','labels','results'): parser.add_argument(name,type=Path)
     parser.add_argument('--suite',action='append',choices=('controls','timing','auto-frameskip','render','scenes','candidate-controls'))
+    parser.add_argument('--previous',type=Path)
+    parser.add_argument('--stable',type=Path)
     args=parser.parse_args()
     errors=[]
     for suite in args.suite or ('controls','timing','render','scenes','candidate-controls'):
         folder=args.results if suite=='controls' else args.results/suite
         try:
-            run(args.apk,args.labels,folder,suite)
+            app = args.stable if suite=='controls' and args.stable else args.apk
+            run(app,args.labels,folder,suite,args.previous if suite=='controls' else None)
         except Exception as error:
             errors.append(error)
     if errors:
