@@ -13,19 +13,21 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          run-id: 45337356115
+          run-id: 45351856048
           name: game-tv-emulator
           path: deliverable
       - uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          run-id: 45337356115
+          run-id: 45351856048
           name: cartridge
           path: build/shared
       - name: Verify the packaged x86 release and card identity
         run: |
           expected=72259aab96d617eb7c9feeba91ee9426c4d80e7d3b51b86edf204fecf6789741
           echo "$expected  build/shared/game.nes" | sha256sum -c -
+          mkdir -p build/tv-result
+          sha256sum deliverable/tv-emulator.apk build/shared/game.nes > build/tv-result/tested-sha256.txt
           python3 tests/nes/package.py deliverable/tv-emulator.apk build/shared/game.nes --abi x86
       - name: Enable emulator acceleration
         run: |
@@ -56,7 +58,7 @@ jobs:
           ANDROID_SERIAL: emulator-5554
         run: |
           exec > >(tee "$RUNNER_TEMP/battlecity-test.log") 2>&1
-          bash tests/nes/television-avd.sh deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result --suite timing
+          bash tests/nes/television-avd.sh deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result --suite scenes
       - name: Report the failed build or device check
         if: failure()
         shell: python
