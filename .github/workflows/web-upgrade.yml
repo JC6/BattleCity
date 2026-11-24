@@ -1,0 +1,77 @@
+name: Verify a packaged Web save upgrade
+
+on:
+  push:
+    branches: ['validation/web-upgrade-*']
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  sources:
+    runs-on: ubuntu-24.04
+    outputs:
+      current: ${{ steps.ids.outputs.current }}
+      previous: ${{ steps.ids.outputs.previous }}
+    steps:
+      - id: ids
+        shell: bash
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^validation/web-upgrade-([0-9]+)-([0-9]+)$ ]]
+          echo "current=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          echo "previous=${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+
+  upgrade:
+    needs: sources
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: game-web
+          run-id: ${{ needs.sources.outputs.current }}
+          github-token: ${{ github.token }}
+          path: current
+      - uses: actions/download-artifact@v4
+        with:
+          name: cartridge
+          run-id: ${{ needs.sources.outputs.current }}
+          github-token: ${{ github.token }}
+          path: cartridge
+      - uses: actions/download-artifact@v4
+        with:
+          name: game-web
+          run-id: ${{ needs.sources.outputs.previous }}
+          github-token: ${{ github.token }}
+          path: previous
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Check saves across both archived packages
+        env:
+          ENGINE: ${{ matrix.engine }}
+          BATTLECITY_UPGRADE_URL: http://127.0.0.1:8765/
+        run: |
+          set -o pipefail
+          mkdir -p observations "$RUNNER_TEMP/site/previous"
+          sha256sum {previous,current}/BattleCity-Web.zip cartridge/game.nes > observations/packages.sha256
+          python3 tests/nes/package.py current/BattleCity-Web.zip cartridge/game.nes
+          python3 -m zipfile -e current/BattleCity-Web.zip "$RUNNER_TEMP/site"
+          python3 -m zipfile -e previous/BattleCity-Web.zip "$RUNNER_TEMP/site/previous"
+          npm ci --prefix web
+          (cd web && npx playwright install --with-deps "$ENGINE")
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory "$RUNNER_TEMP/site" > "$RUNNER_TEMP/server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          curl --retry 8 --retry-connrefused -fsS "$BATTLECITY_UPGRADE_URL" -o /dev/null
+          node tests/nes/browser-game.cjs http://127.0.0.1:8765/previous/ cartridge/game.lbl "$ENGINE" controls 2>&1 | tee "observations/upgrade-$ENGINE.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upgrade-${{ matrix.engine }}
+          path: observations/
