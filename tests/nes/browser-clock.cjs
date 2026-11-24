@@ -63,6 +63,21 @@ async function measure() {
             start = end;
         }
         if (cadence === 'native') {
+            // A long foreground task drops display callbacks. Once rendering
+            // resumes, both the cartridge and its sound must repay that interval.
+            const beforeStall = await page.evaluate(() => {
+                const sample = clockSample;
+                const until = performance.now() + 650;
+                while (performance.now() < until) { /* simulate a blocked main thread */ }
+                return sample;
+            });
+            await page.waitForFunction(t => clockSample.emu >= t + 2, beforeStall.emu);
+            const afterStall = await page.evaluate(() => clockSample);
+            const wall = afterStall.wall - beforeStall.wall;
+            const gameLag = wall - (afterStall.emu - beforeStall.emu);
+            const audioLag = wall - (afterStall.pcm - beforeStall.pcm) / afterStall.rate;
+            console.log(JSON.stringify({engine, lifecycle:'foreground stall', gameLag, audioLag}));
+            assert.ok(Math.abs(gameLag) < .2 && Math.abs(audioLag) < .2, 'foreground stall permanently lost game or audio time');
             async function escape() {
                 await page.keyboard.down('Escape');
                 await page.waitForTimeout(150);

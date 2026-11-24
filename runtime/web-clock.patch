@@ -1,6 +1,6 @@
 --- a/src/emu/machine.cpp
 +++ b/src/emu/machine.cpp
-@@ -1451,37 +1451,75 @@
+@@ -1451,37 +1451,77 @@
  
  running_machine * running_machine::emscripten_running_machine;
  
@@ -22,7 +22,7 @@
 +	// emulation target so that rounding up a CPU timeslice cannot cause drift.
 +	static double previous_ms = -1;
 +	static attotime previous_emu;
-+	auto &target = browser_deadline;
++	static attotime target;
 +	double const now = emscripten_get_now();
 +	double const elapsed_ms = now - previous_ms;
 +	auto &scheduler = machine->scheduler();
@@ -53,9 +53,11 @@
 -		while (!machine->m_paused && !machine->scheduled_event_pending() && scheduler->time() < stoptime)
 +		if (interrupted || scheduler.time() != previous_emu)
 +			target = scheduler.time();
-+		target += interrupted ? attotime::from_hz(60) : attotime::from_double(std::min(elapsed_ms, 250.0) / 1000.0);
++		target += interrupted ? attotime::from_hz(60) : attotime::from_double(elapsed_ms / 1000.0);
++		// Bound work per callback while retaining debt after a foreground stall.
++		browser_deadline = std::min(target, scheduler.time() + attotime::from_msec(250));
 +
-+		while (!machine->m_paused && !machine->scheduled_event_pending() && scheduler.time() < target)
++		while (!machine->m_paused && !machine->scheduled_event_pending() && scheduler.time() < browser_deadline)
  		{
 +			auto const before = scheduler.time();
  			run_timeslice(*machine);
@@ -87,7 +89,7 @@
  
  	// cancel the emscripten loop if the system has been told to exit
  	if (machine->exit_pending())
-@@ -1495,6 +1531,7 @@
+@@ -1495,6 +1533,7 @@
  	emscripten_running_machine = machine;
  	EM_ASM (
  		JSMESS.running = true;
@@ -107,7 +109,7 @@
 +
  void sdl_osd_interface::update(bool skip_redraw)
  {
-+	#ifdef __EMSCRIPTEN__
++#ifdef __EMSCRIPTEN__
 +	if (!skip_redraw)
 +		skip_redraw = emscripten_intermediate_frame(machine());
 +#endif
