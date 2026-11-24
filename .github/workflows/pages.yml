@@ -43,9 +43,12 @@ jobs:
           cd ffmpeg-7.1.1
           ./configure --disable-everything --disable-autodetect --disable-doc --disable-debug \
             --disable-ffplay --disable-ffprobe --disable-network --disable-x86asm --enable-zlib \
-            --enable-decoder=png --enable-demuxer=png_pipe,image2pipe --enable-protocol=pipe \
+            --enable-decoder=png --enable-parser=png --enable-demuxer=image_png_pipe --enable-protocol=pipe \
             --enable-filter=scale,format,buffer,buffersink --enable-encoder=rawvideo --enable-muxer=rawvideo
           make -j"$(nproc)" ffmpeg
+          ./ffmpeg -loglevel error -i pipe:0 -vf scale=320:180 -frames:v 1 -threads 1 \
+            -f rawvideo -pix_fmt rgb24 pipe:1 < "$GITHUB_WORKSPACE/runtime/android/src/main/res/drawable-xhdpi/game_icon.png" > sample.rgb
+          test "$(wc -c < sample.rgb)" -eq 172800
           echo "$PWD" >> "$GITHUB_PATH"
       - name: Boot the Android SDK television image and test both gamepads
         timeout-minutes: 30
@@ -53,7 +56,7 @@ jobs:
           ANDROID_SERIAL: emulator-5554
         run: |
           exec > >(tee "$RUNNER_TEMP/battlecity-test.log") 2>&1
-          bash tests/nes/television-avd.sh deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result --suite controls --suite auto-frameskip
+          bash tests/nes/television-avd.sh deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result --suite controls --suite timing --suite auto-frameskip
       - name: Report the failed build or device check
         if: failure()
         shell: python
