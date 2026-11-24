@@ -6,7 +6,7 @@ for line in io.lines(assert(os.getenv("BATTLECITY_LABELS"))) do
     local v,n=line:match("^al (%x+) %._([%w_]+)$")
     if n then labels[n]=tonumber(v,16) end
 end
-local cues={{15},{11,7},{19,20},{24,25,26}}
+local cues={{15},{7},{19,20},{24,25,26}}
 local frame=0
 cue_recording=emu.add_machine_frame_notifier(function()
     frame=frame+1

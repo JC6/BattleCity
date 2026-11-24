@@ -14,7 +14,7 @@ Web 解压后通过 HTTP 打开，按 Enter 启动。标题滚动时可按 Enter
 
 ## 复验
 
-红白机参考程序与复刻卡带从开机连续打过 70 关并回到第一关，274,114 次战斗更新逐次匹配。另有 35 场单人和 1 场双人录像，合计核对 179,466 次更新。Web 通过 Chromium 和 WebKit 键盘测试，Android TV 通过 API 34 电视镜像上的双手柄、热重连和重启读档测试。[验收记录](runtime/cartridge/README.md) · [电视截图和录音](https://github.com/JC6/BattleCity/actions/runs/45192497635)
+红白机参考程序与复刻卡带从开机连续打过 70 关并回到第一关，274,114 次战斗更新逐次匹配。另有 35 场单人和 1 场双人录像，合计核对 179,466 次更新。Web 通过 Chromium 和 WebKit 键盘测试，Android TV 通过 API 34 电视镜像上的双手柄、热重连和重启读档测试。[验收记录](runtime/cartridge/README.md) · [电视截图和录音](https://github.com/JC6/BattleCity/actions/runs/45310454441)
 
 在已安装 cc65 和 MAME 0.285 的 Linux 环境中，以下命令从同一张卡带复验战场图块、敌车编成和固定手柄输入。原生测试按第一次出现差异的战斗更新报告关卡、字段、期望值和实测值。
 
