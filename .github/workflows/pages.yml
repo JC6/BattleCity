@@ -13,19 +13,20 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          run-id: 45351856048
+          run-id: 45357491258
           name: game-tv-emulator
           path: deliverable
       - uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          run-id: 45351856048
+          run-id: 45357491258
           name: cartridge
           path: build/shared
       - name: Verify the packaged x86 release and card identity
         run: |
           expected=72259aab96d617eb7c9feeba91ee9426c4d80e7d3b51b86edf204fecf6789741
           echo "$expected  build/shared/game.nes" | sha256sum -c -
+          python3 tests/nes/switch_lettering.py build/shared/game.nes build/shared/game.lbl --secondary
           mkdir -p build/tv-result
           sha256sum deliverable/tv-emulator.apk build/shared/game.nes > build/tv-result/tested-sha256.txt
           python3 tests/nes/package.py deliverable/tv-emulator.apk build/shared/game.nes --abi x86

@@ -344,6 +344,22 @@ end)
 """
 
 
+def compare_raster(base, other, w, h, width, height):
+    changed = outside = significant = largest = 0
+    x0, y0 = (w-width)//2, (h-height)//2
+    for i in range(0,len(base),3):
+        old,new = base[i:i+3],other[i:i+3]
+        if old==new: continue
+        changed += 1
+        diff = max(abs(a-b) for a,b in zip(old,new))
+        largest = max(largest,diff)
+        significant += diff>8
+        y,x = divmod(i//3,w)
+        outside += not (x0<=x<x0+width and y0<=y<y0+height)
+    return {'differentOutputPixels':changed,'deltaAbove8':significant,'differentWallpaperPixels':outside,
+            'maxChannelError':largest,'identical':changed==0}
+
+
 def record_render(results, labels, directory, write_private, scenes_only=False):
     ini = (f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\n'
            'autoframeskip 0\nframeskip 0\npause_brightness 1.0\n')
@@ -352,8 +368,23 @@ def record_render(results, labels, directory, write_private, scenes_only=False):
         adb('shell','am','force-stop',PACKAGE)
         private('rm','-f','files/tv-fixed','files/tv-profile.jsonl')
     def marker():
-        return wait(lambda: private('cat','files/tv-fixed',check=False).decode().strip(),
-                    lambda s: re.fullmatch(r'\d+,1,[a-f0-9]{8}', s), 'fixed solo battle frame')
+        last_launch = time.monotonic()
+        def read():
+            nonlocal last_launch
+            stamp = private('cat','files/tv-fixed',check=False).decode().strip()
+            if re.fullmatch(r'\d+,1,[a-f0-9]{8}',stamp):
+                return stamp
+            # The API 34 launcher can asynchronously open its first-run store
+            # dialog over a newly resumed game. Recover only that known window.
+            focus = adb('shell','dumpsys','window','displays').decode(errors='replace')
+            current = next((line for line in focus.splitlines() if 'mCurrentFocus=' in line),'')
+            if 'com.google.android.tvlauncher/' in current and time.monotonic()-last_launch>2:
+                if 'ShowDialogsActivity' in current:
+                    adb('shell','input','keyevent','KEYCODE_BACK')
+                start_fixture()
+                last_launch = time.monotonic()
+            return None
+        return wait(read,bool,'fixed solo battle frame',interval=.8)
     def profile_rows():
         raw = private('cat','files/tv-profile.jsonl',check=False)
         return [json.loads(line) for line in raw.splitlines(keepends=True) if line.endswith(b'\n')]
@@ -387,10 +418,14 @@ def record_render(results, labels, directory, write_private, scenes_only=False):
                 if PACKAGE in layer and 'SurfaceView' in layer:
                     f.write((layer+'\n').encode())
                     f.write(adb('shell','dumpsys','SurfaceFlinger','--latency',shlex.quote(layer),check=False))
+        # The foreground process and GL context are already warm. This trace
+        # starts after every wall-clock sample and cannot perturb its counters.
+        with gzip.open(results/(name+'-atrace.txt.gz'),'wb') as output:
+            output.write(adb('shell','atrace','-b','4096','-t','3','-a',PACKAGE,'gfx',check=False))
     if not scenes_only:
         assert len(set(markers.values()))==1, markers
         (results/'clock.json').write_text(json.dumps({'battle':markers,'windows':summaries},indent=2))
-    # A separate launch keeps tracing and screenshots out of both clock samples.
+    # Separate launches keep the frozen visual fixtures out of the clock samples.
     display = 'shared_prefs/display.xml'
     stop()
     existed = private('ls','-d',display,check=False).strip()==display.encode()
@@ -414,24 +449,20 @@ def record_render(results, labels, directory, write_private, scenes_only=False):
                 write_private('nes.ini', ini+f'scalemode {scale}\n')
                 tick = {'firing':621,'blast':696}.get(case,705)
                 write_private('tv-observer.lua',render_fixture(labels,directory,tick,True,case if scenes_only else None))
-                trace = case=='standard'
-                if trace:
-                    write_private('tv-profile.jsonl','')
-                    adb('shell','atrace','--async_start','-b','2048','-a',PACKAGE,'gfx',check=False)
+                start_fixture()
                 try:
-                    start_fixture()
                     fingerprint = marker()
-                    time.sleep(.4)
-                    png = adb('exec-out','screencap','-p')
-                    assert png.startswith(b'\x89PNG')
-                    (results/f'{case}-{name}.png').write_bytes(png)
-                    w,h = struct.unpack('>II',png[16:24])
-                    rgb = screen_rgb(png,f'{w}:{h}')
-                    pair[name] = (fingerprint,w,h,rgb)
-                finally:
-                    if trace:
-                        with gzip.open(results/(name+'-atrace.txt.gz'),'wb') as output:
-                            output.write(adb('shell','atrace','--async_stop',check=False))
+                except RuntimeError:
+                    (results/f'{case}-{name}-foreground.txt').write_bytes(adb('shell','dumpsys','window','displays'))
+                    (results/f'{case}-{name}-failure.png').write_bytes(adb('exec-out','screencap','-p'))
+                    raise
+                time.sleep(.4)
+                png = adb('exec-out','screencap','-p')
+                assert png.startswith(b'\x89PNG')
+                (results/f'{case}-{name}.png').write_bytes(png)
+                w,h = struct.unpack('>II',png[16:24])
+                rgb = screen_rgb(png,f'{w}:{h}')
+                pair[name] = (fingerprint,w,h,rgb)
             stamp,w,h,base = pair['baseline']
             assert pair['candidate'][:3]==(stamp,w,h), (case,stamp,pair['candidate'][:3])
             other = pair['candidate'][3]
@@ -442,9 +473,8 @@ def record_render(results, labels, directory, write_private, scenes_only=False):
             ys = [int((h-height)/2+(y+.5)*height/224) for y in range(224)]
             pixels = [3*(y*w+x) for y in ys for x in xs]
             mismatches = sum(base[i:i+3]!=other[i:i+3] for i in pixels)
-            max_error = max(abs(a-b) for a,b in zip(base,other))
             visual[case] = {'battle':stamp,'size':[w,h],'nativePixels':len(pixels),'differentCenters':mismatches,
-                            'maxChannelError':max_error,'identical':base==other}
+                            **compare_raster(base,other,w,h,width,height)}
             (results/'visual.json').write_text(json.dumps(visual,indent=2))
     finally:
         stop()

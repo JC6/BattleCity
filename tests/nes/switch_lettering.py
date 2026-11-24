@@ -20,23 +20,31 @@ WORDS = (
 )
 
 
-def verify(image, labels):
+def cartridge_tables(image, labels):
     address = int(re.search(r'^al ([0-9a-fA-F]+) \._large_letters$', labels, re.M)[1], 16)
-    tilemap = image[16 + address - 0x8000:]
-    chr_data = image[16 + image[4] * 16384:]
-    for name, start, stride, dx, dy, expected in WORDS:
-        def colored(x, y):
-            if not 0 <= x < stride * 8:
-                return False
-            tile = tilemap[start + y // 8 * stride + x // 8]
-            row = tile * 16 + y % 8
-            return (chr_data[row] | chr_data[row + 8]) & (128 >> (x % 8)) != 0
+    return image[16 + address - 0x8000:], image[16 + image[4] * 16384:]
 
-        mask = bytearray()
-        for cy in range(7):
-            for cx in range(len(name) * 8):
-                count = sum(colored(4*cx + dx + u, 4*cy + dy + v) for u in range(4) for v in range(4))
-                mask.append(count >= 9)
+
+def compiled_cells(tilemap, chr_data, start, stride, dx, dy, columns):
+    def colored(x, y):
+        if not 0 <= x < stride * 8:
+            return False
+        tile = tilemap[start + y // 8 * stride + x // 8]
+        row = tile * 16 + y % 8
+        return (chr_data[row] | chr_data[row + 8]) & (128 >> (x % 8)) != 0
+
+    mask = bytearray()
+    for cy in range(7):
+        for cx in range(columns):
+            count = sum(colored(4*cx + dx + u, 4*cy + dy + v) for u in range(4) for v in range(4))
+            mask.append(count >= 9)
+    return mask
+
+
+def verify(image, labels):
+    tilemap, chr_data = cartridge_tables(image, labels)
+    for name, start, stride, dx, dy, expected in WORDS:
+        mask = compiled_cells(tilemap, chr_data, start, stride, dx, dy, len(name)*8)
         assert sha256(mask).hexdigest() == expected, name + ' outline differs from the Switch frame'
     print('1008 title/ending and 672 high-score lettering cells match the Switch recordings')
 
