@@ -121,6 +121,10 @@ jobs:
         run: |
           apt-get update && apt-get install -y --no-install-recommends mame python3
           /usr/games/mame -version | head -1 | grep -E '^0[.]285([ .(]|$)'
+          BATTLECITY_LABELS="$PWD/build/shared/game.lbl" SDL_VIDEODRIVER=dummy /usr/games/mame nes \
+            -cart build/shared/game.nes -video none -sound none -nothrottle -seconds_to_run 60 \
+            -autoboot_delay 0 -autoboot_script tests/nes/shells.lua | tee shells.log
+          grep -F 'BATTLECITY_SHELLS_OK four anchored OAM silhouettes' shells.log
           python3 tests/nes/verify_stages.py build/shared/game.nes --suite loop --report loop.csv
       - uses: actions/upload-artifact@v4
         if: always()

@@ -42,13 +42,14 @@ def report(player, motion, audio, tv, output, ci, clocks):
           '<title>坦克大战 · Switch 实时时序和战斗动画对照</title><style>body{max-width:960px;margin:2rem auto;padding:0 1rem;font:16px/1.65 system-ui;color:#17222a}table{border-collapse:collapse;margin:1rem 0;display:block;overflow:auto;font-variant-numeric:tabular-nums}td,th{padding:.25rem .6rem;border:1px solid #bbc6ca;text-align:left;white-space:nowrap}th{background:#eef3f5}img{max-width:100%;height:auto;image-rendering:pixelated}audio{vertical-align:middle;max-width:100%}h2{margin-top:2rem}code{overflow-wrap:anywhere}figure{margin:1em 0}a{color:#24558b}</style>',
           '<h1>《坦克大战》英文 Switch 版对照</h1>',
           '<p>目标为《南梦宫博物馆档案 Vol. 2》。Web 与 Android TV 使用同一份卡带。以下数据取自本轮成品、原生 NES 核心和标明出处的 Switch 录像。</p>',
-          '<h2>游戏速度与声音</h2><p>在解压后的 Web 成品中同步记录模拟器时钟、实际经过时间和交给音频输出的 PCM。native 使用浏览器实际刷新回调，60 和 120 使用标称刷新率调度。每组连续测三次，每次约 30 秒。目标为游戏及音频速度均在实际时间的 ±1% 以内。</p>']
+          '<h2>游戏速度与声音</h2><p>在解压后的 Web 成品中同步记录模拟器时钟、实际经过时间和交给音频输出的 PCM。native 使用浏览器实际刷新回调，60 和 120 使用标称刷新率调度。每组连续测三次，每次约 30 秒。另在同一 Chromium 以 30 Hz 对比上版与本版，各约 15 秒。目标为游戏及音频速度均在实际时间的 ±1% 以内。</p>']
     data=[]
     for path in sorted(clocks.glob('*.jsonl')):
         for line in path.read_text().splitlines():
             entry=json.loads(line)
             if 'speed' not in entry: continue
-            data.append((entry['engine'],entry['cadence'],entry['run'],f"{entry['wall']:.3f}",f"{entry['emu']:.3f}",entry['frames'],
+            label={'old-30':'（上版对照）','new-30':'（本版对照）'}.get(path.stem,'')
+            data.append((entry['engine']+label,entry['cadence'],entry['run'],f"{entry['wall']:.3f}",f"{entry['emu']:.3f}",entry['frames'],
                          entry['sampleRate'],f"{entry['pcm']:.3f}",f"{(entry['speed']-1)*100:+.2f}%",f"{(entry['audioSpeed']-1)*100:+.2f}%"))
     if tv and (tv/'clock.jsonl').exists():
         for line in (tv/'clock.jsonl').read_text().splitlines():
@@ -57,12 +58,25 @@ def report(player, motion, audio, tv, output, ci, clocks):
     html.append('<h2>基地失守后的三条路径</h2><p>各平台运行相同的最后一击和控制器输入。以下各时刻均以中弹为第 0 帧。逐帧读取屏幕中完整字样的像素并记录音频寄存器，显示帧数包含首帧，止于第一次消失。</p>')
     routes=('neutral','record','skip-over')
     data=[]
+    expected={}
     for source,folder in [('native',player),('web',player),('tv',tv)]:
         if folder is None: continue
         for route in routes:
             path=folder/(source+'-'+route)
-            if not (path/'events.csv').exists(): continue
             values=list(timeline(path))
+            # Whole events up to the first blank after the complete word, plus
+            # title/mode transitions. Pixels in a partially drawn title can be
+            # sampled on different PPU scanlines by different MAME versions.
+            records=rows(path/'events.csv')
+            hit=int(next(r['frame'] for r in records if r['event']=='shot'))
+            events=[(int(r['frame'])-hit,r['event'],r['value']) for r in records
+                    if r['event'].startswith('cue-') or r['event'] in ('mode','shot','tally','game-over','start','title')]
+            signature=(tuple(values[:-1]),events)
+            if source=='native':
+                expected[route]=signature
+            elif signature!=expected[route]:
+                raise ValueError(f'{source}/{route} ending differs from native')
+
             values[5]='是' if values[5] else '否'
             data.append((source,route,*values))
     html.append(table(('平台','路径','爆炸音','结算','结束乐指令','字样出现','字样持续','最高分','返标题','PCM Hz'),data))
@@ -80,12 +94,14 @@ def report(player, motion, audio, tv, output, ci, clocks):
                          ('shield','护盾的连续两帧。上、中、下分别为实录、上版和本版。坦克遮住护盾的一部分。'),
                          ('player','任天堂第一关截图中的右向玩家坦克、本版及官方截图轮廓。'),
                          ('treads','清晰可见的连续履带姿态。上行为实录，中行为同向卡带图块，下行为轮廓。'),
+                         ('shot','向上飞行的炮弹。六个连续采集帧，按弹体边界对齐。上行实录，中行上版，下行本版。'),
                          ('blast','玩家爆炸的两个阶段。上行为 Switch 录像，下行为本版亮部遮罩。')]:
         html.append('<figure><img alt="'+caption+'" src="'+inline(motion/(file+'.png'),'image/png')+'"><figcaption>'+caption+'</figcaption></figure>')
     html.append(table(('出生点','阶段','上版错格','本版错格'),[(r['spawn'],r['phase'],r['previous_pixel_errors'],r['current_pixel_errors']) for r in rows(motion/'spawn.csv')]))
     html.append(table(('护盾阶段','上版白色区域交并比','本版白色区域交并比'),[(r['phase'],r['previous_white_iou'],r['current_white_iou']) for r in rows(motion/'shield.csv')]))
     html.append(table(('爆炸采集帧','亮部交并比'),[(r['frame_after_seek_123_15s'],r['white_core_iou']) for r in rows(motion/'blast.csv')]))
-    html.append(table(('向上炮弹采集帧','场地 X','场地 Y','宽','高','可见像素'),[(r['frame_after_seek_34_8s'],r['left'],r['top'],r['width'],r['height'],r['visible_pixels']) for r in rows(motion/'shot.csv')]))
+    html.append(table(('向上炮弹采集帧','场地 X','场地 Y','宽','高','可见像素','上版错格','本版错格'),[(r['frame_after_seek_34_8s'],r['left'],r['top'],r['width'],r['height'],r['visible_pixels'],r['previous_pixel_errors'],r['current_pixel_errors']) for r in rows(motion/'shot.csv')]))
+    html.append('<p>向上炮弹在连续六个采集帧中均有 10 个可见像素，占 3×4。卡带按方向选择形状、翻转和锚点。其余三向通过红白机对照核对，尚缺独立的 Switch 录像逐格验证。</p>')
     html.append('<h2>证据边界与成品</h2><p>高分大字 2、3、4、6、7，完整的双人 Switch 结局、无人演示、每次回退的准确跨度及实体电视输入延迟仍缺直接测量。公开视频只提供离散姿态，压缩和遮挡会改变颜色分界。</p>')
     if tv and (tv/'rewind.csv').is_file():
         loads=[r for r in csv.reader((tv/'rewind.csv').read_text().splitlines()) if r and r[0]=='load']

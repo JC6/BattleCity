@@ -107,17 +107,39 @@ def compare(video, still, previous, current, out):
 
     # Track the non-overlapping upward projectile through the empty corridor.
     shots=rgb_frames(video,34.8,.24)
+    shot_panels=[]
+    # The old sprite starts at the nominal shell coordinate. The directional
+    # sprite is anchored three pixels earlier on each axis in the OAM.
+    def shell_mask(rom, anchor):
+        tile=chr_square(rom,440)
+        return {(x+anchor,y+anchor) for y in range(8) for x in range(8) if tile[y*16+x]}
+    old_shell, new_shell = shell_mask(old,0),shell_mask(new,-3)
     with (out/'shot.csv').open('w',newline='') as f:
-        writer=csv.writer(f);writer.writerow(('frame_after_seek_34_8s','left','top','width','height','visible_pixels'))
+        writer=csv.writer(f)
+        writer.writerow(('frame_after_seek_34_8s','left','top','width','height','visible_pixels',
+                         'previous_pixel_errors','current_pixel_errors'))
         for n in range(1,7):
             frame=shots[n*size:(n+1)*size]
-            points=[]
+            points=set()
             for y in range(85,150):
                 for x in range(130,140):
                     pixel=frame[3*(208*y+x):3*(208*y+x)+3]
-                    if min(pixel)>60 and max(pixel)-min(pixel)<26: points.append((x,y))
+                    if min(pixel)>60 and max(pixel)-min(pixel)<26: points.add((x,y))
             xs,ys=zip(*points)
-            writer.writerow((n,min(xs),min(ys),max(xs)-min(xs)+1,max(ys)-min(ys)+1,len(points)))
+            left,top=min(xs),min(ys)
+            # Align the visible tip and compare the rest of the silhouette.
+            def aligned(shape):
+                dx=left-min(x for x,y in shape)
+                dy=top-min(y for x,y in shape)
+                return {(x+dx,y+dy) for x,y in shape}
+            previous,current=aligned(old_shell),aligned(new_shell)
+            writer.writerow((n,left,top,max(xs)-left+1,max(ys)-top+1,len(points),
+                             len(points^previous),len(points^current)))
+            assert points==current, f'Switch upward shell differs in capture frame {n}'
+            shot_panels.append([crop(frame,left-6,top-6),*[
+                b''.join(bytes([170 if (left+x-6,top+y-6) in shape else 0])*3
+                         for y in range(16) for x in range(16)) for shape in (previous,current)]])
+    output_strip(out/'shot.png',shot_panels)
     # Consecutive poses in an unobstructed corridor after the shield has expired.
     tread_frames=rgb_frames(video,38,.07)
     positions=((163,88,1),(164,88,0))

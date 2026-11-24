@@ -2,7 +2,32 @@
 
 目标是《南梦宫博物馆档案 Vol. 2》中的《坦克大战》。Web 与 Android TV 使用同一份卡带和同一套 C++ 菜单。下文分别标明直接观察 Switch、用红白机固定输入复验和仍需实机测量的项目。
 
-## 2026-11-24 双端复验
+## 2026-11-24 战场动画、时钟与回退
+
+本轮卡带 SHA-256 为 `72259aab96d617eb7c9feeba91ee9426c4d80e7d3b51b86edf204fecf6789741`。浏览器按实际经过的时间推进游戏。在回到前台、读档或回退时重设时钟。连续回退在核心处理存读档的边界执行，逐次比较战场的全部 2,048 字节工作 RAM。[离线对照报告](../../build/battlecity/Switch-Runtime-Comparison.html) · [时钟测量](../../tests/nes/browser-clock.cjs) · [回退核对](../../tests/nes/rewind-state.lua)
+
+| 项目 | 实测 |
+| --- | --- |
+| 出生动画 | 对照 Switch 第一关两个独立出生点的四种轮廓。八张 16×16 图共 2,048 个像素，轮廓错格从 228 降至 0。 |
+| 护盾与履带 | 含车身遮挡的连续两帧，护盾白色区域的交并比分别从 0.000、0.288 提升到 0.661、0.674。右向玩家坦克轮廓与任天堂截图相符，履带的两个姿态另与移动实录并排展示。 |
+| 炮弹与爆炸 | Switch 向上炮弹连续六个取样均为 3×4、10 个可见像素。方向、灰色和相对中心的偏移另在原生核心读取四向 OAM 并解码图块检查。两个大爆炸阶段亮部的交并比为 0.831、0.913。 |
+| 结束音乐 | 将同一场基地失守后的卡带录音与 Switch 录音对齐，1.48 秒乐段的平均频谱余弦相似度为 0.824。首段和最后变音段在 5 毫秒搜索步长下给出相同起点。每窗去除直流分量，以峰值 1.2% 判断安静，尾音分别为 1.58 和 1.63 秒。 |
+| GAME OVER | 自然结束及进入最高分时完整字样可见 117 个模拟帧，本次固定 Start 输入得到 36 帧。三条路径从同一个基地中弹状态起步，同时记录逐帧事件和 PCM。 |
+
+向上炮弹的逐格结论来自 Switch；另外三个方向的形状与定位来自红白机对照。数字 2、3、4、6、7 的最高分大字、Switch 无人演示与双人片尾、回退的原机跨度及实体电视输入延迟仍缺直接测量。参考材料使用任天堂一方截图、发行方说明及能看清相关帧的英文实录。[任天堂原图](https://www.nintendo.com/eu/media/images/06_screenshots/games_5/nintendo_switch_download_software_2/nswitchds_namcomuseumarchivesvolume2/NSwitchDS_NamcoMuseumArchivesVolume2_01.jpg) · [第一关录像](https://www.youtube.com/watch?v=S26lUv598_o&t=349s) · [回退说明](https://nc.bn-ent.net/product/useful.php)
+
+用同批次卡带、录音和留存的 Switch 片段可复算图像和音频。画面脚本先核验两个来源文件的 SHA-256。报告内嵌了对照图和声音，可直接离线打开。
+
+```sh
+data=build/stage-validation/switch-clock/delivery
+old=build/stage-validation/switch-menu-round
+video="$old/references/battle.mp4"
+python3 tests/nes/switch_motion.py "$video" build/stage-validation/switch-clock/references/official.jpg \
+  "$old/game.nes" "$data/game.nes" "$data/motion"
+python3 tests/nes/ending_audio.py "$video" "$data/native-neutral/events.csv" "$data/native-neutral/game.wav" "$data/audio"
+```
+
+## 2026-11-24 菜单与画面对照基线
 
 显示设置现在使用同一张按英文录像重绘的射击场景。按 1280×720 图像测得，四档缩略图的场景尺寸依次为 76×56、86×75、65×56、134×75。选中 Zoom 时主预览为 164×144。四档均区分当前生效项和正在浏览的光标。两端共用常规字重的菜单字库、滚动提示及圆角边框。Web 成品在 720p 与 1080p 均核验四个缩略图。在 1280×720 取样网格中，开启抗锯齿后主预览选区的 RGB 通道平均绝对变化为 2.25，随后开启扫描线为 15.47（每通道满刻度 255）。字库由固定版本 MAME 文档随附的 Lato Regular 制作，授权文本随 Web 与 APK 分发。片尾仍展示合集原版英文署名，成品可读出 Jérôme Châtelain 和末尾制作方。[片尾姓名](../../build/battlecity/Staff-Accent.png) · [末尾制作方](../../build/battlecity/Staff-Credits-Final.png)。[显示设置实拍](https://www.youtube.com/watch?v=S26lUv598_o&t=65s) · [Switch／上版／本版对照](../../build/battlecity/Switch-Comparison.html)
 
@@ -16,7 +41,7 @@ Web ZIP 已由 Chromium 与 WebKit 从解压目录驱动键盘验收，覆盖单
 
 Android TV API 34 的 x86 模拟器用两只独立手柄逐档确认预览，采集片尾中段与末尾制作方，并通过手柄热重连、回退、后台恢复和重启读档。重新加载后两名玩家的纵坐标均恢复到 182。附件包含 48 kHz 游戏录音。ARM64 APK 另行通过签名与内置卡带校验。本轮验收共 10 项通过，Pages 的两项发布任务按验收分支规则跳过。[电视任务](https://github.com/JC6/BattleCity/actions/runs/45310454441/job/138164751261) · [设备附件](../../build/battlecity/TV-Acceptance.zip) · [70 关连续回放 CSV](../../build/battlecity/Campaign-Loop.csv)
 
-成品卡带 SHA-256 为 `b76693002049acbe2a972abe0d5ee71c1b4a409306606bc1116553a70310a41f`。标题和 GAME OVER 原有的 1,008 格继续通过。每个卡带摘要使用各自的存档目录。下方命令使用本轮留存的录像片段、卡带音轨和成品截图离线复算，报告会校验录像文件摘要。要重新录制独立音效，可用 MAME 0.285，令 BATTLECITY_LABELS 指向同批次 game.lbl，以 -wavwrite 录制并通过 -autoboot_delay 0 -autoboot_script 加载 [录音脚本](../../tests/nes/record_switch_cues.lua)。
+该基线卡带 SHA-256 为 `b76693002049acbe2a972abe0d5ee71c1b4a409306606bc1116553a70310a41f`。标题和 GAME OVER 原有的 1,008 格继续通过。每个卡带摘要使用各自的存档目录。下方命令使用本轮留存的录像片段、卡带音轨和成品截图离线复算，报告会校验录像文件摘要。要重新录制独立音效，可用 MAME 0.285，令 BATTLECITY_LABELS 指向同批次 game.lbl，以 -wavwrite 录制并通过 -autoboot_delay 0 -autoboot_script 加载 [录音脚本](../../tests/nes/record_switch_cues.lua)。
 
 ```sh
 samples=build/stage-validation/switch-menu-round

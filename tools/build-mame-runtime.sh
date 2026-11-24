@@ -40,11 +40,24 @@ if grep -qx 'struct State' "$tree/3rdparty/residfp/State.h"; then
 }' "$tree/3rdparty/residfp/State.h"
 fi
 python3 "$tree/scripts/build/file2str.py" "$repo/runtime/menu-regular.bdc" "$tree/src/emu/battlecity-menu-font.h" battlecity_menu_font uint8_t
-for patch in "$repo/runtime/menu-font.patch" "$repo/runtime/rewind.patch" "$repo/runtime/save.patch" "$repo/runtime/web-audio.patch" "$repo/runtime/web-video.patch" "$repo/runtime/menu-input.patch" "$repo/runtime/rewind-scheduler.patch" "$repo/runtime/direct-rewind.patch" "$repo/runtime/web-clock.patch" "$repo/runtime/nes-palette.patch" "$repo/runtime/slot-preview.patch" "$repo/runtime/picture.patch" "$repo/runtime/menu-viewport.patch" "$repo/runtime/tv-startup.patch" "$repo/runtime/tv-gamepads.patch" "$repo/runtime/rewind-boundary.patch"; do
-    if ! git -C "$tree" apply --reverse --check "$patch" 2>/dev/null; then
-        git -C "$tree" apply "$patch"
-    fi
-done
+# Rebuild the patched files from the pinned tree. Later patches deliberately
+# touch earlier hunks, so reverse-checking each patch separately is ambiguous.
+(
+    patches=(
+        menu-font rewind save web-audio web-video menu-input rewind-scheduler
+        direct-rewind web-clock nes-palette slot-preview picture menu-viewport
+        tv-startup tv-gamepads rewind-boundary
+    )
+    for i in "${!patches[@]}"; do patches[i]="$repo/runtime/${patches[i]}.patch"; done
+    mapfile -t files < <(sed -n 's|^--- a/||p' "${patches[@]}" | sort -u)
+    stage=$(mktemp -d)
+    trap 'rm -rf -- "$stage"' EXIT
+    git -C "$tree" archive "$revision" -- "${files[@]}" | tar -x -C "$stage"
+    for patch in "${patches[@]}"; do git -C "$stage" apply --no-index "$patch"; done
+    for file in "${files[@]}"; do
+        if ! cmp -s "$stage/$file" "$tree/$file"; then cp "$stage/$file" "$tree/$file"; fi
+    done
+)
 if ! cmp -s "$repo/runtime/wallpaper-previews.h" "$tree/src/frontend/mame/ui/wallpaper-previews.h"; then
     cp "$repo/runtime/wallpaper-previews.h" "$tree/src/frontend/mame/ui/wallpaper-previews.h"
 fi

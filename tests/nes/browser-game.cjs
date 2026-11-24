@@ -10,9 +10,13 @@ const labels = readFileSync(process.argv[3] || 'build/mame-runtime/web/game.lbl'
 const addresses = Object.fromEntries([...labels.matchAll(/^al ([\da-f]+) \._(\w+)$/gmi)]
     .map(([, address, name]) => [name, parseInt(address, 16)]));
 const fields = [['mode'], ['selection'], ['stage'], ['players'], ['frame'], ['tanks',1],
-    ['tanks',14], ['cursor_x'], ['design',1], ['board',1], ['shots',3], ['shots',7], ['tanks',11],['title_scroll'],['battle_ticks',1]];
+    ['tanks',14], ['cursor_x'], ['design'], ['board'], ['shots',3], ['shots',7], ['tanks',11],['title_scroll'],['battle_ticks',1]];
 const reads = fields.map(([name, offset = 0]) => {
     assert.ok(Number.isInteger(addresses[name]), name);
+    if (name === 'design' || name === 'board') {
+        // Read the cell the real keyboard cursor selected, including directional repeat.
+        return `ram:read_u8(${addresses[name]} + ram:read_u8(${addresses.cursor_y}) * 13 + ram:read_u8(${addresses.cursor_x}))`;
+    }
     return 'ram:read_u8(' + (addresses[name] + offset) + ')';
 });
 const menuKeys = ['Escape', 'Home', 'End', 'ArrowUp', 'ArrowDown', 'Enter', 'r', 'ArrowLeft', 'ArrowRight', 'Delete', 'Backspace'];
@@ -538,7 +542,7 @@ async function verify(engine, suite) {
         await press(page, 's', () => gameState.selection === 1);
         await press(page, 's', () => gameState.selection === 2);
         await press(page, 'Enter', () => gameState.mode === 2);
-        await press(page, 'd', () => gameState.cursor === 1);
+        await press(page, 'd', () => gameState.cursor > 0);
         await press(page, 'j', () => gameState.design === 26);
         await press(page, 'Enter', () => gameState.mode === 0);
         await press(page, 's', () => gameState.selection === 1);

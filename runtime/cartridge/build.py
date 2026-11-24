@@ -181,7 +181,12 @@ def art(logo_map):
     for phase, quarter in enumerate(shield_quarters):
         top = [row+row[::-1] for row in quarter]
         square(432+phase*4, colors(top+top[::-1], {'.':'0','#':'3'}))
-    tile(440, ['02200000','23320000','23320000','02200000'] + ['00000000']*4)
+    # One NES sprite per shell. Left is the horizontal reflection of right.
+    # Keep the uneven anchor of the original 8×16 sprite in an 8×8 cell.
+    for index, shape in ((440, ('00002000','00022200','00022200','00022200')),
+                         (510, ('00222000','00222200','00222000','00000000')),
+                         (511, ('00022200','00022200','00022200','00002000'))):
+        tile(index, ['00000000']*4 + list(shape))
     for phase, radius in enumerate((7,5,3)):
         tile(442+phase, [''.join('3' if abs(2*x-7)+abs(2*y-7)<radius else
                                  '2' if abs(2*x-7)==abs(2*y-7)<=radius else '0'

@@ -563,12 +563,14 @@ _draw_shots:
     tay
     lda _shots+3,y
     beq @blast
-    lda #2
+    lda _shots+2,y
+    tay
+    lda shell_attr,y
     sta tank_attr
-    lda #184
+    lda shell_tile,y
     sta tank_tile
-    lda #0
-    beq @emit
+    lda #$fd
+    bne @emit
 @blast:
     lda _shot_blast,x
     beq @next
@@ -693,6 +695,8 @@ _remember_end_shots:
     rts
 blast_sprite:
     .byte 0,0,0,0,0,0,$fb,$fb,$fb,$ef,$ef,$ef,$df,$df,$df,$fb,$fb,$fb,$f7,$f7,$f7,$f3,$f3,$f3
+shell_tile: .byte 184,254,255,254
+shell_attr: .byte 2,2,2,$42
 impact_tile: .byte 188,188,188,187,187,187,186,186,186
 .import _actor_slot, _freeze, _advance_effect, _drive_player, _enemy
 .export _move_actors
