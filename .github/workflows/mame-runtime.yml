@@ -292,6 +292,8 @@ jobs:
           ANDROID_SERIAL: emulator-5554
         run: |
           exec > >(tee "$RUNNER_TEMP/battlecity-test.log") 2>&1
+          mkdir -p build/tv-result
+          sha256sum deliverable/tv-emulator.apk build/shared/game.nes > build/tv-result/tested-sha256.txt
           bash tests/nes/television-avd.sh deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result
       - name: Report the failed build or device check
         if: failure()

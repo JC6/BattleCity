@@ -54,7 +54,33 @@ def peaks(samples):
             if magnitudes[i]>floor and magnitudes[i-1]<magnitudes[i]>=magnitudes[i+1]]
 
 
-def compare(video, trace, wave, out):
+def envelope(path, sources, notes):
+    # The two pulse voices share a pitch in the last chord. Report power in
+    # the mix at each distinct fundamental rather than assigning it to a voice.
+    last = max(frame for frame,_,_,_ in notes)
+    pitches = sorted({round(hz,1) for frame,_,_,hz in notes if frame==last})
+    length = round(.04*RATE)
+    weights = hann(length)
+    kernels = [[complex(math.cos(2*math.pi*hz*n/RATE),-math.sin(2*math.pi*hz*n/RATE))*weights[n]
+                for n in range(length)] for hz in pitches]
+    with path.open('w',newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(('source','center_s','rms',*(f'level_{hz}Hz' for hz in pitches)))
+        for source,recording,offset in sources:
+            samples = pcm(recording,offset,2.0)
+            for center in range(1100,1801,10):
+                pos = round(RATE*center/1000)-length//2
+                window = samples[pos:pos+length]
+                mean = sum(window)/length
+                rms = statistics.pstdev(window)
+                amps = [2*abs(sum((v-mean)*k for v,k in zip(window,kernel)))/sum(weights) for kernel in kernels]
+                writer.writerow((source,center/1000,round(rms,2),*(round(a,2) for a in amps)))
+
+
+def compare(video, trace, wave, out, search=(132.85,133.90)):
+    left,right = search
+    if not 0 <= left < right:
+        raise ValueError("expected increasing source times in seconds")
     events, notes=note_events(trace)
     start=notes[0][1]
     # Native WAV sample 0 is machine boot. Locate the first audible sample close to
@@ -64,7 +90,6 @@ def compare(video, trace, wave, out):
     first=next(i for i,v in enumerate(snippet) if abs(v-baseline)>150)
     native_onset=start-.05+first/RATE
     length=1.48
-    left,right=132.85,133.90
     reference=centered_frames(pcm(wave,native_onset,length),256)
     captured=pcm(video,left,right-left+length+.10)
     switch=centered_frames(captured,256)
@@ -105,6 +130,7 @@ def compare(video, trace, wave, out):
             limit=max(levels)*.012
             quiet=next((i for i in range(120,len(levels)-9) if max(levels[i:i+10])<limit),None)
             writer.writerow((name,round(quiet*.01,3) if quiet is not None else '',.012,10))
+    envelope(out/'envelope.csv',[('native',wave,native_onset),('switch',video,onset)],notes)
     for file,offset,name in ((wave,native_onset,'native'),(video,onset,'switch')):
         subprocess.run(['ffmpeg','-v','error','-y','-ss',str(offset-.12),'-i',str(file),'-t','1.96',
                         '-vn','-af','highpass=f=25','-ac','1','-ar','24000',str(out/(name+'.wav'))],check=True)
@@ -114,5 +140,6 @@ def compare(video, trace, wave, out):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for key in ('video','trace','wav','output'): parser.add_argument(key,type=Path)
+    parser.add_argument("--search",type=float,nargs=2,metavar=("START","END"),default=(132.85,133.90))
     a=parser.parse_args()
-    compare(a.video,a.trace,a.wav,a.output)
+    compare(a.video,a.trace,a.wav,a.output,a.search)

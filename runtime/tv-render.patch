@@ -127,17 +127,19 @@
  	if (!m_sdl_renderer)
  	{
  		fatalerror("Error creating renderer: %s\n", SDL_GetError());
-@@ -267,7 +292,27 @@
+@@ -267,7 +292,29 @@
  	int bpp;
  
  	osd_dim wdim = window().get_size_pixels();
 -	if (has_flags(FI_CHANGED) || (wdim != m_last_dim))
++	u8 const picture = battlecity_picture(-1);
 +	bool texture_changed = false;
 +#ifdef __ANDROID__
 +	const auto started = m_meter.active ? battlecity_tv::now_ns() : 0;
-+	if (started) ATrace_beginSection("BattleCity.draw");
++	const bool tracing = m_meter.instrumented && ATrace_isEnabled();
++	if (tracing) ATrace_beginSection("BattleCity.draw");
 +	if (m_scale_mode.is_scale == 2) {
-+		bool native = !window().machine().ui().is_menu_active() && !battlecity_picture(-1);
++		bool native = !window().machine().ui().is_menu_active() && !picture;
 +		if (native) {
 +			bool screen = false;
 +			window().m_primlist->acquire_lock();
@@ -156,18 +158,28 @@
  	{
  		destroy_all_textures();
  		clear_flags(FI_CHANGED);
-@@ -406,7 +451,18 @@
+@@ -351,7 +398,6 @@
+ 		prim.bounds.y1 = floor(fh * prim.bounds.y1 + 0.5f);
+ 	}
+ 
+-	u8 const picture = battlecity_picture(-1);
+ 	// render to it
+ 	if (!m_scale_mode.is_yuv)
+ 	{
+@@ -405,8 +451,19 @@
+ 		r.y=vofs;
  		r.w=blitwidth;
  		r.h=blitheight;
- 		SDL_RenderTexture(m_sdl_renderer, m_texture_id, nullptr, (const SDL_FRect *)&r);
+-		SDL_RenderTexture(m_sdl_renderer, m_texture_id, nullptr, (const SDL_FRect *)&r);
++		[[maybe_unused]] const bool drawn = SDL_RenderTexture(m_sdl_renderer, m_texture_id, nullptr, &r);
 +#ifdef __ANDROID__
 +		const auto before_present = started ? battlecity_tv::now_ns() : 0;
-+		if (started) { ATrace_endSection(); ATrace_beginSection("BattleCity.present"); }
++		if (tracing) { ATrace_endSection(); ATrace_beginSection("BattleCity.present"); }
 +		const bool presented = SDL_RenderPresent(m_sdl_renderer);
++		if (tracing) ATrace_endSection();
 +		if (started) {
-+			ATrace_endSection();
 +			m_meter.finish(window().machine().time().as_double(), m_profile_screen ? m_profile_screen->frame_number() : 0,
-+					SDL_GetRendererName(m_sdl_renderer), m_native_frame, started, before_present, presented);
++					SDL_GetRendererName(m_sdl_renderer), m_native_frame, started, before_present, drawn && presented);
 +		}
 +#else
  		SDL_RenderPresent(m_sdl_renderer);
@@ -175,7 +187,7 @@
  	}
  	return 0;
  }
-@@ -693,6 +749,9 @@
+@@ -693,6 +750,9 @@
  
  sdl_scale_mode const video_sdl3soft::s_scale_modes[] = {
  		{ "none",    0, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                    nullptr },

@@ -71,3 +71,17 @@ The diagnostic APK passed v2 signature verification, cartridge digest verificati
 ## Playable Android TV build
 
 Connect both gamepads before launching a two-player session. The official Android TV API 34 image exercised the installed x86 build with two independent kernel gamepads. It passed cold start, individual movement and firing, shoulder rewind, slot protection, loading a paused game after process restart, and second-player reconnection. After returning from Home, the same process retained the paused field and both player positions. Screenshots confirmed battlefield pixels in the restored game and in the first save slot. The job archived screen captures and a one-second, 48 kHz PCM recording. Physical TV controller latency and speaker output still require measurement. [Device run and artifacts](https://github.com/JC6/BattleCity/actions/runs/45310454441)
+
+## Measuring Android TV full frames
+
+The TV release uses SDL's software renderer at the output resolution. The Android-only MAME setting `scalemode native-tv` selects an SDL renderer at startup and offers nearest-neighbour scaling of a native-size texture during gameplay. Menus, textured overlays, antialiasing and scanlines use the output resolution.
+
+On a dedicated API 34 television emulator, run the following against the packaged x86 APK and the labels for its embedded cartridge.
+
+```sh
+bash tests/nes/television-avd.sh deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result
+```
+
+The full run exercises two gamepads on both renderers, records three endings, and compares the renderers with the same controller edges. Use `--suite render` for the paired timing and six fixed display settings, or `--suite scenes` for the shield, treads, shots, tank explosion and headquarters. The harness verifies cartridge state before comparing the 256 × 224 visible pixel centres and the whole output raster.
+
+The lightweight run creates an app-private measurement file, warms up for ten emulated seconds, and appends one JSON row per 30-second window. It counts vblanks, successful SDL texture-and-present submissions, and PCM frames handed to the first system sound sink. The system trace is taken after the third window, while the same process is in the foreground. The detailed `timing` suite records WAV and RAM separately. A compositor timestamp measures Android presentation. Physical input-to-display latency requires a device measurement.

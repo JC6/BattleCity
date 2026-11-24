@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstdint>
 #include <string>
 #include <time.h>
 
@@ -40,7 +41,7 @@ public:
         // Only the test harness creates this file in app-private storage.
         if (auto *file = std::fopen(path.c_str(), "r")) {
             std::fclose(file);
-            active = true;
+            instrumented = active = true;
             measuring.store(true, std::memory_order_relaxed);
         }
     }
@@ -82,6 +83,7 @@ public:
         }
     }
 
+    bool instrumented=false;
     bool active=false;
     inline static std::atomic<int64_t> core_ns{0};
 private:

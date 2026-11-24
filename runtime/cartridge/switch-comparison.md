@@ -112,3 +112,9 @@ python3 tests/nes/compare_switch_audio.py switch-5m18.mp4 opening.wav --switch-s
 上轮卡带 SHA-256 为 `3d4b221f7ccd1cab5312221efe6b0d520d5bd12e0cbb55cb6d32a4103affdfe2`。Web ZIP 和 Android TV ARM64 APK 均已核对内置卡带。[双手柄电视任务](https://github.com/JC6/BattleCity/actions/runs/45192497635/job/137754917134) · [Web 成品任务](https://github.com/JC6/BattleCity/actions/runs/45192497635/job/137754917372)
 
 在 API 34 电视模拟器上，两次截屏均识别出黑底青色的合集标题，并确认标题向上移动超过 12 个采样像素。完整附件另含手柄事件、保存确认截图、重启后双人战场及一秒 PCM 录音。[电视验收附件](../../build/battlecity/TV-Acceptance.zip)
+
+## 弹道和结局音乐的追加实录
+
+在英文 Switch 实录中连续跟踪向上 39 帧、向右 33 帧、向下 36 帧和向左 31 帧。每帧均有 10 个可见弹丸像素，四个方向的实录轮廓均与卡带图形一致。另取 31 帧护盾和 12 帧爆炸，按可见白色区域比较。护盾的交并比为 0.547–0.750，两种大爆炸为 0.831–0.913。可用 `tests/nes/switch_battle_samples.py` 对照同一录像片段和编译后的卡带，导出帧位置、像素差及截图。[原作者的英文实录](https://www.youtube.com/watch?v=S26lUv598_o&t=352s)
+
+两位作者的三次结束音乐在同一阈值下，首音至静音均为 1.63 秒，当前卡带为 1.58 秒。整段频谱余弦相似度为 0.824、0.814 和 0.768。末和弦的两个脉冲声道共享约 261.4 Hz 的基频。离线表保留混音包络和频谱，供复测这个约 50 毫秒的差异。[第二次结束音乐](https://www.youtube.com/watch?v=S26lUv598_o&t=650s) · [通关录像的结束音乐](https://www.youtube.com/watch?v=Xf02flMP7dc&t=2614s)
