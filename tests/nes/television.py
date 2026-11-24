@@ -133,6 +133,22 @@ def check(predicate, description):
     return wait(state, lambda row: row and predicate(row), description)
 
 
+def open_system_menu(pad):
+    deadline = time.monotonic() + TIMEOUT
+    while time.monotonic() < deadline:
+        if state().get('menu'): return
+        pad.event(1, MENU, 1)
+        try:
+            until = time.monotonic() + 1.5
+            while time.monotonic() < until:
+                if state().get('menu'): return
+                time.sleep(.08)
+        finally:
+            pad.event(1, MENU, 0)
+            presented(4)
+    raise RuntimeError('left shoulder failed to open the system menu')
+
+
 def presented(count):
     first = check(lambda s: True, 'display frame')['frame']
     check(lambda s: s['frame'] >= first + count, 'controller sampling')
@@ -269,7 +285,7 @@ def launch():
     check(lambda s:s['mode']==0 and not s['scroll'] and s['ready'], 'cold title')
 
 
-def run(apk, labels, results):
+def run(apk, labels, results, suite):
     results.mkdir(parents=True,exist_ok=True)
     adb('install','-r',str(apk))
     directory = private('pwd').decode().strip()+'/files'
@@ -302,13 +318,22 @@ def run(apk, labels, results):
         write_private('tv-observer.lua',observer(labels,directory))
         write_private('nes.ini',f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\nwavwrite {directory}/tv-audio.wav\n')
         (results/'device.txt').write_bytes(adb('shell','getprop'))
+        if suite == 'timing':
+            adb('shell','am','force-stop',PACKAGE)
+            clock_input = Path(__file__).with_name('clock-input.lua').read_text()
+            write_private('tv-observer.lua', clock_input+'\n'+observer(labels,directory))
+            launch()
+            check(lambda s:s['emu_us']>=9_000_000 and s['mode']==1,'clock entry into solo battle')
+            measure_clock(results)
+            record_endings(labels, directory, results, write_private)
+            return
         with (results/'gamepads.jsonl').open('w') as events:
             for n in (1,2):
                 pads.append(Pad(n,events))
             one,two=pads
             launch()
             capture('title')
-            one.tap(MENU)
+            open_system_menu(one)
             # A presented SDL frame does not guarantee the next menu has opened.
             # Wait for its cyan cursor before sending another directional edge.
             def cursor_at(x,y):
@@ -424,7 +449,7 @@ def run(apk, labels, results):
             capture('battle', (40,21,116,72))
             one.tap(START)
             saved=check(lambda s:s['mode']==5,'paused battle')
-            one.tap(MENU)
+            open_system_menu(one)
             check(lambda s:s['menu'],'save menu')
             one.tap(SOUTH)
             one.tap(SOUTH)
@@ -437,7 +462,7 @@ def run(apk, labels, results):
             preview = private('cat',slot+'.png')
             assert preview.startswith(b'\x89PNG\r\n\x1a\n'), 'missing game frame preview'
             (results/'slot-1.png').write_bytes(preview)
-            one.tap(MENU)
+            open_system_menu(one)
             one.tap(SOUTH)
             one.tap(WEST)
             wait(lambda: private('ls',slot+'.lock',check=False).strip(),
@@ -447,7 +472,7 @@ def run(apk, labels, results):
             capture('protected-slot', (22,37,44,58))
             adb('shell','am','force-stop',PACKAGE)
             launch()
-            one.tap(MENU)
+            open_system_menu(one)
             check(lambda s:s['menu'],'load menu')
             one.down()
             one.tap(SOUTH)
@@ -483,13 +508,6 @@ def run(apk, labels, results):
             capture('restored', (40,21,116,72))
             (results/'result.json').write_text(json.dumps(
                 {'saved':saved,'restored':restored,'background':background,'resumed':resumed,'result':'passed'},indent=2))
-        adb('shell','am','force-stop',PACKAGE)
-        clock_input = Path(__file__).with_name('clock-input.lua').read_text()
-        write_private('tv-observer.lua', clock_input+'\n'+observer(labels,directory))
-        launch()
-        check(lambda s:s['emu_us']>=9_000_000 and s['mode']==1,'clock entry into solo battle')
-        measure_clock(results)
-        record_endings(labels, directory, results, write_private)
     except Exception:
         # The system log identifies early SDL, linker and Java failures even
         # when the game never reaches the cartridge observer.
@@ -514,4 +532,11 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('apk','labels','results'): parser.add_argument(name,type=Path)
     args=parser.parse_args()
-    run(args.apk,args.labels,args.results)
+    errors=[]
+    for suite,folder in [('controls',args.results),('timing',args.results/'timing')]:
+        try:
+            run(args.apk,args.labels,folder,suite)
+        except Exception as error:
+            errors.append(error)
+    if errors:
+        raise ExceptionGroup('Android TV acceptance',errors)

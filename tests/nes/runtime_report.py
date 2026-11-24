@@ -51,15 +51,16 @@ def report(player, motion, audio, tv, output, ci, clocks):
             label={'old-30':'（上版对照）','new-30':'（本版对照）'}.get(path.stem,'')
             data.append((entry['engine']+label,entry['cadence'],entry['run'],f"{entry['wall']:.3f}",f"{entry['emu']:.3f}",entry['frames'],
                          entry['sampleRate'],f"{entry['pcm']:.3f}",f"{(entry['speed']-1)*100:+.2f}%",f"{(entry['audioSpeed']-1)*100:+.2f}%"))
-    if tv and (tv/'clock.jsonl').exists():
-        for line in (tv/'clock.jsonl').read_text().splitlines():
+    timing=tv/'timing' if tv and (tv/'timing').is_dir() else tv
+    if timing:
+        for line in (timing/'clock.jsonl').read_text().splitlines():
             v=json.loads(line);data.append(('TV API 34','模拟器',v['run'],f"{v['wall']:.3f}",f"{v['emu']:.3f}",v['frames'],v['sampleRate'],f"{v['pcm']:.3f}",f"{(v['speed']-1)*100:+.2f}%",f"{(v['audioSpeed']-1)*100:+.2f}%"))
     html.append(table(('平台','调度 Hz','次数','实际秒','模拟秒','帧数','采样率','PCM 秒','游戏偏差','音频偏差'),data))
     html.append('<h2>基地失守后的三条路径</h2><p>各平台运行相同的最后一击和控制器输入。以下各时刻均以中弹为第 0 帧。逐帧读取屏幕中完整字样的像素并记录音频寄存器，显示帧数包含首帧，止于第一次消失。</p>')
     routes=('neutral','record','skip-over')
     data=[]
     expected={}
-    for source,folder in [('native',player),('web',player),('tv',tv)]:
+    for source,folder in [('native',player),('web',player),('tv',timing)]:
         if folder is None: continue
         for route in routes:
             path=folder/(source+'-'+route)
