@@ -102,20 +102,30 @@ def build(run, research, output, commit, default, scenes_run):
     assert set(visual)>={'firing','blast'}
     assert set(visual)>={'standard','large','pixel','stretch','antialias','scanlines'}
     assert len(set(clock['battle'].values()))==1
-    assert set(clock['windows'])=={'baseline','candidate'}
+    assert {'baseline','candidate'}<=set(clock['windows'])
+    paired = 'gpu-full' in clock['windows']
+    if paired:
+        from tv_release_gate import decision
+        gate=decision(tv)
+        assert gate['default']==default
     for folder in [tv,tv/'candidate-controls']:
         assert json.loads((folder/'result.json').read_text())['result']=='passed', folder
     raw = []
-    for key,records in clock['windows'].items():
-        assert len(records)==3
-        for row in records:
-            raw.append({'mode':key,**row})
-    candidate = clock['windows']['candidate']
+    clocks=[clock]
+    if paired: clocks.append(json.loads((tv/'second/render/clock.json').read_text()))
+    for boot,series in enumerate(clocks,1):
+        for key,records in series['windows'].items():
+            assert len(records)==3
+            for row in records:
+                raw.append({'boot':boot,'mode':key,**row})
+    candidate = [r for r in raw if r['mode']=='candidate']
     speed_pass = all(r['pass'] for r in candidate) and all(r['nativeSize']>0 for r in candidate)
     pixel_pass = all(v['differentCenters']==0 and v['differentWallpaperPixels']==0 for v in visual.values())
     if default=='native-tv' and not (speed_pass and pixel_pass):
         raise ValueError('Candidate lacks passing full-frame and visual measurements.')
     labels = {'baseline':'默认对照','candidate':'原始分辨率候选'}
+    if paired:
+        labels.update({'candidate':'直接写入窗口缓冲','native':'原始纹理放大','gpu-full':'GPU 全分辨率','low-buffer':'系统放大小缓冲'})
     html = ['<!DOCTYPE html><html lang="zh-CN"><meta charset="utf-8"><title>Battle City 电视全帧验收</title>'
             '<style>body{font:16px/1.65 system-ui,sans-serif;margin:32px auto;padding:0 20px;max-width:1120px;color:#222}'
             'table{border-collapse:collapse;font-size:14px}th,td{border:1px solid #aaa;padding:4px 8px;text-align:right}'
@@ -126,19 +136,19 @@ def build(run, research, output, commit, default, scenes_run):
             f' <code>{escape(default)}</code>。源码 <code>{commit}</code>。'
             f'<a href="https://github.com/JC6/BattleCity/actions/runs/{run.name}">同提交验收记录</a></p>',
             '<h2>Android TV 的游戏时钟、PCM 和画面提交</h2>'
-            '<p>同一台 API 34、1080p x86 电视模拟器，两次冷启动使用相同的手柄输入。预热 10 个模拟秒后，每条路径连续测量三个至少 30 秒的窗口。'
-            '游戏倍率为模拟秒除以真实秒，PCM 倍率为交给首个系统音频输出流的采样帧数除以采样率和真实秒。SDL 提交计数来自 RenderPresent 成功返回。'
+            '<p>同一台 API 34、1080p x86 电视模拟器，各路径冷启动使用相同的手柄输入。预热 10 个模拟秒后，每条路径连续测量三个至少 30 秒的窗口。'
+            '游戏倍率为模拟秒除以真实秒，PCM 倍率为交给首个系统音频输出流的采样帧数除以采样率和真实秒。提交计数来自 SDL 成功呈现纹理或更新窗口缓冲。'
             '实体电视的显示时刻及按键到画面的延迟仍待实测。</p>']
-    html.append(table(('路径','窗口','SDL 驱动','秒','游戏倍率','PCM 倍率','NES 帧','成功提交','紧凑纹理帧',
+    html.append(table(('启动','路径','窗口','SDL 驱动','VSync','缓冲大小','秒','游戏倍率','PCM 倍率','NES 帧','成功提交','紧凑纹理帧',
                        '核心毫秒/帧','绘制毫秒/提交','呈现毫秒/提交','线程 CPU 毫秒/提交'),[
-        (labels[r['mode']],r['run'],r['driver'],f"{r['wall']:.3f}",f"{r['gameSpeed']:.4f}",f"{r['pcmSpeed']:.4f}",
+        (r['boot'],labels[r['mode']],r['run'],r['driver'],r.get('vsync','–'),f"{r.get('bufferWidth','–')}×{r.get('bufferHeight','–')}",f"{r['wall']:.3f}",f"{r['gameSpeed']:.4f}",f"{r['pcmSpeed']:.4f}",
          r['frames'],r['presented'],r['nativeSize'],f"{r['coreSliceMs']/r['frames']:.2f}",
          *(f"{r[k]/r['attempts']:.2f}" for k in ('drawMs','presentMs','threadCpuMs'))) for r in raw]))
     passed = sum(r['pass'] for r in candidate)
-    html.append(f'<p>候选有 {passed}/3 个窗口同时满足游戏和 PCM 在实时的 99% 至 101% 之间，且每个窗口完整提交画面。'
+    html.append(f'<p>候选有 {passed}/{len(candidate)} 个窗口同时满足游戏和 PCM 在实时的 99% 至 101% 之间，且每个窗口完整提交画面。'
                 f'定帧截图的全部游戏像素中心与游戏区外画面一致性检查结果为{"通过" if pixel_pass else "有差异"}。</p>')
     detailed = json_lines(tv/'timing/clock.jsonl')
-    html.append('<p>开着 WAV 录制和每三帧一次 RAM 文件观测的相同默认路径，三个窗口的游戏倍率为 '
+    html.append('<p>开着 WAV 录制和每三帧一次 RAM 文件观测的详细观测路径，三个窗口的游戏倍率为 '
                 + '、'.join(f"{r['speed']:.3f}" for r in detailed)+'。轻量窗口只在边界写一行累计计数。'
                 '系统跟踪在第三个窗口结束后从同一前台进程采集，核心、绘制与提交耗时按各自的计数归一化。</p>')
     html.append('<h2>同帧画质和手柄</h2><p>每对截图在相同 NES 帧暂停，并核对全部 2 KiB 工作 RAM 的摘要。'
@@ -163,9 +173,22 @@ def build(run, research, output, commit, default, scenes_run):
         (case_names.get(name,name),v['battle'],' × '.join(map(str,v['size'])),v['differentCenters'],v['differentOutputPixels'],v['deltaAbove8'],v['differentWallpaperPixels'],v['maxChannelError'],'是' if v['identical'] else '否')
         for name,v in visual.items()]))
     html.append('<div class="pair">'+''.join('<figure><img alt="'+labels[key]+'" src="'+inline(render/('standard-'+key+'.png'),'image/png')+'"><figcaption>'+labels[key]+'</figcaption></figure>'
-                                             for key in labels)+'</div>')
+                                             for key in ('baseline','candidate'))+'</div>')
     html.append('<div class="pair">'+''.join('<figure><img alt="'+case_names[key]+'" src="'+inline(scenes/(key+'-candidate.png'),'image/png')+'"><figcaption>'+case_names[key]+'</figcaption></figure>'
                                             for key in ('firing','blast'))+'</div>')
+    if paired:
+        html.append('<h2>逐次启动的完整画质验收</h2><p>每个场景独立取得两张默认路径截图。按像素、按颜色通道使用两次默认输出之间的差作为噪声上限。VSync 的 -2 表示驱动没有返回可用状态。</p>')
+        checks=[]
+        for i,folder in enumerate([tv,tv/'second'],1):
+            for scale,file in [('candidate','visual.json'),('low-buffer','low-buffer.json')]:
+                for suite in ['render','scenes']:
+                    entries=json.loads((folder/suite/file).read_text())
+                    for name,v in entries.items():
+                        checks.append((i,labels[scale],case_names[name],v['differentCenters'],v['differentWallpaperPixels'],
+                                       v['repeat']['differentOutputPixels'],v['aboveRepeatNoise']))
+        html.append(table(('启动','路径','场景','中心差异','壁纸差异','默认重复截图差异','超出重复噪声的像素'),checks))
+        if (tv/'upgrade.json').is_file():
+            html.append('<p>上一版保存的双人进度、缩略图与锁定标记在覆盖安装后已通过恢复验收。</p>')
     browser_rows = []
     for engine in ('chromium','webkit'):
         for cadence in ('native','60','120'):
@@ -261,7 +284,7 @@ def build(run, research, output, commit, default, scenes_run):
         for folder in ['motion','score','score-famicom-one','score-famicom-two','ending-first','ending-english','ending-last']:
             for path in sorted((research/folder).iterdir()):
                 if path.is_file(): archive.write(path,'switch/'+folder+'/'+path.name)
-        for name in ['tv_render_report.py','runtime_report.py','switch_battle_samples.py','switch_motion.py','switch_score_sample.py','switch_lettering.py','ending_audio.py','switch_cues.py','compare_switch_audio.py']:
+        for name in ['tv_render_report.py','tv_release_gate.py','tv_sampling.py','runtime_report.py','switch_battle_samples.py','switch_motion.py','switch_score_sample.py','switch_lettering.py','ending_audio.py','switch_cues.py','compare_switch_audio.py']:
             archive.write(Path(__file__).with_name(name),'scripts/'+name)
 
 
@@ -269,7 +292,7 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('run','research','output'): parser.add_argument(name,type=Path)
     parser.add_argument('--commit',required=True)
-    parser.add_argument('--default',choices=['none','native-tv'],required=True)
+    parser.add_argument('--default',choices=['none','native-tv','surface-tv'],required=True)
     parser.add_argument('--scenes-run',type=Path)
     args=parser.parse_args()
     build(args.run,args.research,args.output,args.commit,args.default,args.scenes_run or args.run)

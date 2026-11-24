@@ -135,7 +135,7 @@ public final class GameActivity extends SDLActivity {
         String renderer = BuildConfig.TV_SURFACE ? "surface-tv" : "none";
         try {
             Files.createDirectories(defaults.toPath());
-            Files.writeString(config.toPath(), "scalemode " + renderer + "\n");
+            Files.write(config.toPath(), ("scalemode " + renderer + "\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
         } catch (IOException error) {
             throw new IllegalStateException("Cannot prepare runtime defaults", error);
         }
