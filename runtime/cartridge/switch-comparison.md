@@ -16,13 +16,17 @@
 
 同机 Chromium 以 30 Hz 调度时，上版在 14.96 秒内推进 450 帧，本版在 14.97 秒内推进 900 帧，模拟速度为 0.5004× 和 1.0004×。本版连续过两轮，全部 274,114 次战斗更新与固定参考输入逐次相符。[连续回放 CSV](../../build/battlecity/Campaign-Runtime-Loop.csv) · [原始测量及录音](../../build/battlecity/Switch-Runtime-Measurements.zip)
 
-GitHub Actions 在干净环境中复验 Chromium、WebKit 的原生、60 Hz 和 120 Hz 调度。18 个 30 秒窗口全部达标，游戏速度为 0.99952–1.00046 倍，PCM 为 0.99930–1.00063 倍。三条结局的逐帧事件也与本地原生核心相符。[Web 作业](https://github.com/JC6/BattleCity/actions/runs/45327163577/job/138220921697)
+GitHub Actions 两次从源码构建并复验 Chromium、WebKit 的原生、60 Hz 和 120 Hz 调度。两次各 18 个 30 秒窗口，36 个窗口的游戏和 PCM 全部落在 ±1% 内。游戏速度合计为 0.99952–1.00046 倍，PCM 为 0.99920–1.00063 倍。三条结局的逐帧事件也与本地原生核心相符。[首轮 Web 作业](https://github.com/JC6/BattleCity/actions/runs/45327163577/job/138220921697) · [最终 Web 作业](https://github.com/JC6/BattleCity/actions/runs/45337356115/job/138252845359)
 
 Android TV API 34 的 1080p x86 模拟器以软件图形后端运行已安装的 APK。默认设置下，三个约 30 秒窗口的模拟速度为 0.524、0.535、0.534 倍，48 kHz PCM 与模拟时钟同步。三条结局的音频指令、完整字样的帧数及返回标题的帧号均与原生核心一致。这组采样包含运行观察器及写 WAV 的开销，实体电视速度和输入延迟仍待实测。[电视计时与结局任务](https://github.com/JC6/BattleCity/actions/runs/45330116914/job/138229595879)
 
 同一 APK 在独立验收机上通过双手柄测试。两次右肩键依次恢复到第 10 秒、第 9 秒的检查点，逐个字节核对全部 2,048 字节工作 RAM。重启后读档，两辆坦克的 Y 坐标均恢复为 186。二号手柄热重连后可继续移动。离开应用并返回，两辆坦克的 Y 坐标保持为 186 和 183。[电视双手柄任务](https://github.com/JC6/BattleCity/actions/runs/45333482160/job/138239902571)
 
 自动跳帧试验使用同一张卡带、同一 x86 APK 和相同的第一关输入。两台运行机分别测得 0.915–0.922 倍和 0.971–0.973 倍。跳帧会减少繁忙时提交的画面，两组时钟均低于实时目标。成品保留完整画面，以上读数用于评估负载。[第一组时钟附件](https://github.com/JC6/BattleCity/actions/runs/45335900237) · [第二组时钟附件](https://github.com/JC6/BattleCity/actions/runs/45333482160)
+
+在第三台运行机上，两种设置依次使用同一台 1080p 模拟器、同一份 APK、同一关卡输入，各测三次，每次 30 秒。默认完整绘制为 0.557–0.566 倍，自动跳帧为 0.975–0.981 倍。该机也通过了独立双手柄、连续两次回退和三条结局的测试。[配对复验及原始附件](https://github.com/JC6/BattleCity/actions/runs/45336728995/job/138250452886)
+
+集成任务的另一台模拟器在默认设置下测得 0.372–0.375 倍。两支手柄、回退和自然结局均已通过，最高分录制在旧的 90 秒主机时限处中断。该时刻已写出 33.64 秒 PCM，最高分路径需要约 34.49 秒模拟时间。验收现按 WAV 输出是否持续增长判断停滞，并按卡带用例自身的帧数上限排除脚本未结束的情况。同一集成 APK 复验后取得三条完整的 48 kHz WAV，时长分别为 26.98、34.74、25.64 秒，关键事件逐帧通过原生核心对照。[同一 APK 结局复验](https://github.com/JC6/BattleCity/actions/runs/45341282725/job/138265269210) · [集成设备记录](https://github.com/JC6/BattleCity/actions/runs/45337356115/job/138252845209)
 
 本地 Chromium 与 WebKit 的原生回调、标称 60 Hz 和 120 Hz 各测三次。首轮 18 个窗口中有 15 个的游戏和 PCM 同时落在 ±1% 内。报告保留 WebKit 的慢速窗口和追加采样的回调耗时。停止本项目已空闲的 Gradle 进程后，WebKit 60 Hz、120 Hz 共六个窗口的游戏和 PCM 全部回到 ±1%。这些读数描述具体主机当时的运行条件。[离线报告](../../build/battlecity/Switch-Runtime-Comparison.html) · [原始数据](../../build/battlecity/Switch-Runtime-Measurements.zip)
 
@@ -40,9 +44,14 @@ python3 tests/nes/switch_motion.py "$video" build/stage-validation/switch-clock/
   "$old/game.nes" "$data/game.nes" "$data/motion"
 python3 tests/nes/ending_audio.py "$video" "$data/native-neutral/events.csv" "$data/native-neutral/game.wav" "$data/audio"
 python3 tests/nes/runtime_report.py "$data" "$data/motion" "$data/audio" "$data/comparison.html" \
-  --ci-clocks build/stage-validation/switch-clock/45327163577/web-clock-and-endings \
-  --tv build/stage-validation/switch-clock/45330116914/tv-device-results \
-  --tv-controls build/stage-validation/switch-clock/45333482160/tv-device-results
+  --ci-clocks build/stage-validation/switch-clock/45337356115/web-clock-and-endings \
+  --tv build/stage-validation/switch-clock/45341282725/tv-device-results \
+  --tv-controls build/stage-validation/switch-clock/45333482160/tv-device-results \
+  --tv-repeat build/stage-validation/switch-clock/45336728995/tv-device-results \
+  --web-clock "GitHub Actions · 首轮" build/stage-validation/switch-clock/45327163577/web-clock-and-endings \
+  --tv-clock "首次默认采样" build/stage-validation/switch-clock/45330116914/tv-device-results/timing/clock.jsonl \
+  --tv-clock "独立自动跳帧试验" build/stage-validation/switch-clock/45335900237/tv-device-results/auto-frameskip/clock.jsonl \
+  --tv-clock "集成机默认采样" build/stage-validation/switch-clock/45337356115/tv-device-results/timing/clock.jsonl
 ```
 
 ## 2026-11-24 菜单与画面对照基线

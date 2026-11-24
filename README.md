@@ -16,9 +16,9 @@ Web 解压后通过 HTTP 打开，按 Enter 启动。标题滚动时可按 Enter
 
 本轮校准了出生闪光、护盾与四向炮弹，修正了 Web 在低刷新率下变慢和连续回退后时间线出错的问题。可在离线报告中逐帧对照 Switch 录像、播放两份结束音乐，并查看每次实时时钟测量。[Web 成品](build/battlecity/BattleCity-Web.zip) · [Android TV ARM64 安装包](build/battlecity/BattleCity-TV.apk) · [离线对照报告](build/battlecity/Switch-Runtime-Comparison.html) · [SHA-256](build/battlecity/SHA256SUMS)
 
-本轮卡带从第一关连续打过 70 关并回到第一关，274,114 次战斗更新逐次匹配红白机记录。35 场单人和 1 场双人独立回放共 179,466 次更新，无人演示另核对了 3,203 次更新。Chromium 和 WebKit 通过键盘、双人和重启读档测试。[本轮验收](https://github.com/JC6/BattleCity/actions/runs/45327163577) · [70 关 CSV](build/battlecity/Campaign-Runtime-Loop.csv) · [原始测量](build/battlecity/Switch-Runtime-Measurements.zip)
+本轮卡带从第一关连续打过 70 关并回到第一关，274,114 次战斗更新逐次匹配红白机记录。35 场单人和 1 场双人独立回放共 179,466 次更新，无人演示另核对了 3,203 次更新。Chromium 和 WebKit 通过键盘、双人和重启读档测试。两次独立构建的 36 个 30 秒窗口中，游戏与音频速度全部落在实时的 ±1% 内。[卡带与跨平台构建](https://github.com/JC6/BattleCity/actions/runs/45337356115) · [70 关 CSV](build/battlecity/Campaign-Runtime-Loop.csv) · [原始测量](build/battlecity/Switch-Runtime-Measurements.zip)
 
-Android TV API 34 的 1080p 模拟器已通过双手柄独立开火、二号手柄重连、重启读档和返回前台。连续两次回退分别恢复到模拟时钟第 10 秒和第 9 秒，两次的 2,048 字节工作 RAM 均与原检查点相同。[电视双手柄任务](https://github.com/JC6/BattleCity/actions/runs/45333482160/job/138239902571)
+Android TV API 34 的 1080p 模拟器已通过双手柄独立开火、二号手柄重连、重启读档和返回前台。连续两次回退分别恢复到模拟时钟第 10 秒和第 9 秒，两次的 2,048 字节工作 RAM 均与原检查点相同。1080p 模拟器的同机速度为完整绘制 0.557–0.566 倍、自动跳帧试验 0.975–0.981 倍。成品保留完整绘制。[电视双手柄任务](https://github.com/JC6/BattleCity/actions/runs/45333482160/job/138239902571) · [集成 APK 三条结局复验](https://github.com/JC6/BattleCity/actions/runs/45341282725/job/138265269210)
 
 在已安装 cc65 和 MAME 0.285 的 Linux 环境中，以下命令从同一张卡带复验战场图块、敌车编成和固定手柄输入。原生测试按第一次出现差异的战斗更新报告关卡、字段、期望值和实测值。
 

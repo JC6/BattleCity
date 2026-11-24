@@ -37,7 +37,7 @@ def timeline(path):
             word-hit,end-word,record,int(first('title')['frame'])-hit,rate)
 
 
-def report(player, motion, audio, tv, output, ci, clocks, ci_clocks=None, tv_ci=None, tv_controls=None, controls_ci=None, tv_repeat=None, repeat_ci=None):
+def report(player, motion, audio, tv, output, ci, clocks, ci_clocks=None, tv_ci=None, tv_controls=None, controls_ci=None, tv_repeat=None, repeat_ci=None, additional_tv_clocks=(), additional_web_clocks=()):
     html=['<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width">',
           '<title>坦克大战 · Switch 实时时序和战斗动画对照</title><style>body{max-width:960px;margin:2rem auto;padding:0 1rem;font:16px/1.65 system-ui;color:#17222a}table{border-collapse:collapse;margin:1rem 0;display:block;overflow:auto;font-variant-numeric:tabular-nums}td,th{padding:.25rem .6rem;border:1px solid #bbc6ca;text-align:left;white-space:nowrap}th{background:#eef3f5}img{max-width:100%;height:auto;image-rendering:pixelated}audio{vertical-align:middle;max-width:100%}h2{margin-top:2rem}code{overflow-wrap:anywhere}figure{margin:1em 0}a{color:#24558b}</style>',
           '<h1>《坦克大战》英文 Switch 版对照</h1>',
@@ -48,6 +48,7 @@ def report(player, motion, audio, tv, output, ci, clocks, ci_clocks=None, tv_ci=
     sources=[('本地',clocks)]
     if ci_clocks:
         sources.append(('GitHub Actions',ci_clocks))
+    sources.extend((label,Path(folder)) for label,folder in additional_web_clocks)
     for origin,folder in sources:
         for path in sorted(folder.glob('*.jsonl')):
             for line in path.read_text().splitlines():
@@ -71,9 +72,10 @@ def report(player, motion, audio, tv, output, ci, clocks, ci_clocks=None, tv_ci=
     if tv_repeat:
         tv_clocks.extend([('配对采样 · 默认',tv_repeat/'timing'),
                           ('配对采样 · 自动跳帧',tv_repeat/'auto-frameskip')])
-    for label,folder in tv_clocks:
-        if folder is None: continue
-        for line in (folder/'clock.jsonl').read_text().splitlines():
+    clock_files=[(label,folder/'clock.jsonl') for label,folder in tv_clocks if folder]
+    clock_files.extend((label,Path(path)) for label,path in additional_tv_clocks)
+    for label,path in clock_files:
+        for line in path.read_text().splitlines():
             entry=json.loads(line)
             samples.append(('GitHub Actions',label,dict(entry,engine='Android TV API 34',cadence='AVD')))
     main=[r for r in samples if r[1]=='本版' and r[2]['engine']!='Android TV API 34' and r[2]['cadence']!='30']
@@ -185,5 +187,7 @@ if __name__=='__main__':
     parser.add_argument('--controls-ci')
     parser.add_argument('--tv-repeat',type=Path)
     parser.add_argument('--repeat-ci')
+    parser.add_argument('--tv-clock', action='append', nargs=2, metavar=('LABEL','JSONL'), default=[])
+    parser.add_argument('--web-clock', action='append', nargs=2, metavar=('LABEL','DIRECTORY'), default=[])
     a=parser.parse_args()
-    report(a.player,a.motion,a.audio,a.tv,a.output,a.ci,a.clocks or a.player,a.ci_clocks,a.tv_ci,a.tv_controls,a.controls_ci,a.tv_repeat,a.repeat_ci)
+    report(a.player,a.motion,a.audio,a.tv,a.output,a.ci,a.clocks or a.player,a.ci_clocks,a.tv_ci,a.tv_controls,a.controls_ci,a.tv_repeat,a.repeat_ci,a.tv_clock,a.web_clock)
