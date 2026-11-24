@@ -22,6 +22,8 @@ Android TV API 34 的 1080p x86 模拟器以软件图形后端运行已安装的
 
 同一 APK 在独立验收机上通过双手柄测试。两次右肩键依次恢复到第 10 秒、第 9 秒的检查点，逐个字节核对全部 2,048 字节工作 RAM。重启后读档，两辆坦克的 Y 坐标均恢复为 186。二号手柄热重连后可继续移动。离开应用并返回，两辆坦克的 Y 坐标保持为 186 和 183。[电视双手柄任务](https://github.com/JC6/BattleCity/actions/runs/45333482160/job/138239902571)
 
+自动跳帧试验使用同一张卡带、同一 x86 APK 和相同的第一关输入。两台运行机分别测得 0.915–0.922 倍和 0.971–0.973 倍。跳帧会减少繁忙时提交的画面，两组时钟均低于实时目标。成品保留完整画面，以上读数用于评估负载。[第一组时钟附件](https://github.com/JC6/BattleCity/actions/runs/45335900237) · [第二组时钟附件](https://github.com/JC6/BattleCity/actions/runs/45333482160)
+
 本地 Chromium 与 WebKit 的原生回调、标称 60 Hz 和 120 Hz 各测三次。首轮 18 个窗口中有 15 个的游戏和 PCM 同时落在 ±1% 内。报告保留 WebKit 的慢速窗口和追加采样的回调耗时。停止本项目已空闲的 Gradle 进程后，WebKit 60 Hz、120 Hz 共六个窗口的游戏和 PCM 全部回到 ±1%。这些读数描述具体主机当时的运行条件。[离线报告](../../build/battlecity/Switch-Runtime-Comparison.html) · [原始数据](../../build/battlecity/Switch-Runtime-Measurements.zip)
 
 向上炮弹的逐格结论来自 Switch；另外三个方向的形状与定位来自红白机对照。数字 2、3、4、6、7 的最高分大字、Switch 无人演示与双人片尾、回退的原机跨度及实体电视输入延迟仍缺直接测量。参考材料使用任天堂一方截图、发行方说明及能看清相关帧的英文实录。[任天堂原图](https://www.nintendo.com/eu/media/images/06_screenshots/games_5/nintendo_switch_download_software_2/nswitchds_namcomuseumarchivesvolume2/NSwitchDS_NamcoMuseumArchivesVolume2_01.jpg) · [第一关录像](https://www.youtube.com/watch?v=S26lUv598_o&t=349s) · [回退说明](https://nc.bn-ent.net/product/useful.php)
