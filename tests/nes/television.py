@@ -251,6 +251,31 @@ def measure_clock(results):
     assert all(row['emu'] > 0 and abs(row['pcm']-row['emu']) < .2 for row in rows)
 
 
+def ending_trace(route):
+    # ending.lua writes the CSV on completion and has its own 3,900-frame
+    # limit. Slow AVDs can take longer than the host timeout to reach it.
+    last_size = 0
+    byte_rate = 0
+    last_progress = time.monotonic()
+    while time.monotonic() - last_progress < TIMEOUT:
+        trace = private('cat', 'files/ending.csv', check=False)
+        if trace.startswith(b'frame,emu_s,event,value') and b',title,' in trace:
+            return trace
+        size_text = private('stat', '-c', '%s', 'files/ending.wav', check=False).strip()
+        size = int(size_text) if size_text.isdigit() else 0
+        if size > last_size:
+            if not byte_rate:
+                header = private('head', '-c', '44', 'files/ending.wav', check=False)
+                if len(header) == 44 and header[:4] == b'RIFF':
+                    byte_rate, = struct.unpack_from('<I', header, 28)
+            if byte_rate and size - 44 > byte_rate * 66:
+                raise RuntimeError(f'TV ending {route} passed the cartridge fixture frame limit without a trace')
+            last_size = size
+            last_progress = time.monotonic()
+        time.sleep(.5)
+    raise RuntimeError(f'TV ending {route} stalled at {last_size} WAV bytes')
+
+
 def record_endings(labels, directory, results, write_private):
     script = Path(__file__).with_name('ending.lua').read_text()
     write_private('ending.lbl', labels.read_text())
@@ -266,8 +291,7 @@ def record_endings(labels, directory, results, write_private):
         write_private('nes.ini',f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\nwavwrite {directory}/ending.wav\n')
         adb('shell','am','start','-W','-a','android.intent.action.MAIN',
             '-c','android.intent.category.LEANBACK_LAUNCHER','-n',PACKAGE+'/.GameActivity')
-        trace = wait(lambda: private('cat','files/ending.csv',check=False), lambda v: b',title,' in v,
-                     'TV ending '+route)
+        trace = ending_trace(route)
         out = results/('tv-'+route)
         out.mkdir(exist_ok=True)
         (out/'events.csv').write_bytes(trace)

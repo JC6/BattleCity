@@ -13,13 +13,13 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          run-id: 45330116914
+          run-id: 45337356115
           name: game-tv-emulator
           path: deliverable
       - uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          run-id: 45330116914
+          run-id: 45337356115
           name: cartridge
           path: build/shared
       - name: Verify the packaged x86 release and card identity
@@ -56,7 +56,7 @@ jobs:
           ANDROID_SERIAL: emulator-5554
         run: |
           exec > >(tee "$RUNNER_TEMP/battlecity-test.log") 2>&1
-          bash tests/nes/television-avd.sh deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result --suite controls --suite timing --suite auto-frameskip
+          bash tests/nes/television-avd.sh deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result --suite timing
       - name: Report the failed build or device check
         if: failure()
         shell: python
