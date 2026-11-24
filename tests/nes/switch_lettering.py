@@ -41,7 +41,7 @@ def compiled_cells(tilemap, chr_data, start, stride, dx, dy, columns):
     return mask
 
 
-def verify(image, labels):
+def verify(image, labels, secondary=False):
     tilemap, chr_data = cartridge_tables(image, labels)
     for name, start, stride, dx, dy, expected in WORDS:
         mask = compiled_cells(tilemap, chr_data, start, stride, dx, dy, len(name)*8)
@@ -49,9 +49,24 @@ def verify(image, labels):
     print('1008 title/ending and 672 high-score lettering cells match the Switch recordings')
 
 
+    if secondary:
+        # 26800 in the Japanese commentary and 441900 in the Famicom capture.
+        # The capture-specific measurement also checks the shared English masks.
+        digits = {
+            '2': '21965a4a44a61e34772adf19563c1e57abb393e9f1d490ccc67bcd49ec3a4eb5',
+            '4': '389e132ba94aff0529d8ebeedf9613b902b03ecf2caea7e639e5d9c2e7f7e231',
+            '6': 'bed1982a27117578e70d99a3191a60cea150e4abb60354ad87c38505364a737d',
+        }
+        for key,expected in digits.items():
+            mask=compiled_cells(tilemap,chr_data,400+4*int(key),40,0,0,8)
+            assert sha256(mask).hexdigest()==expected, 'supplementary high-score digit '+key
+        print('168 additional high-score cells match the separately identified commentary and Famicom sources')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('rom', type=Path)
     parser.add_argument('labels', type=Path)
+    parser.add_argument("--secondary",action="store_true",help="also verify the separately measured 2, 4 and 6")
     args = parser.parse_args()
-    verify(args.rom.read_bytes(), args.labels.read_text())
+    verify(args.rom.read_bytes(), args.labels.read_text(), args.secondary)
