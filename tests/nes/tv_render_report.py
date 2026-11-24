@@ -187,6 +187,13 @@ def build(run, research, output, commit, default, scenes_run):
                         checks.append((i,labels[scale],case_names[name],v['differentCenters'],v['differentWallpaperPixels'],
                                        v['repeat']['differentOutputPixels'],v['aboveRepeatNoise']))
         html.append(table(('启动','路径','场景','中心差异','壁纸差异','默认重复截图差异','超出重复噪声的像素'),checks))
+        html.append(table(('冷启动','实时与逐帧提交','超出画质门槛的场景'),[
+            (i,'通过' if boot['clockPassed'] else '未通过','、'.join(case_names[k] for k in boot['differentScenes']) or '无')
+            for i,boot in enumerate(gate['boots'],1)]))
+        sample=json.loads((research/'surface-research/sampling.json').read_text())
+        html.append('<p>上一版原始分辨率纹理在 Zoom 和 Full Screen 模式的差异作了逐行复查。</p>'+
+                    table(('旧版场景','涉及的 NES 行数','有差异的中心','通道差大于 8','在下方一至两个输出像素内匹配'),
+                          [(case_names[k],v['affectedRows'],v['centers'],v['strong'],v['downMatch']) for k,v in sample.items()]))
         if (tv/'upgrade.json').is_file():
             html.append('<p>上一版保存的双人进度、缩略图与锁定标记在覆盖安装后已通过恢复验收。</p>')
     browser_rows = []
@@ -244,6 +251,18 @@ def build(run, research, output, commit, default, scenes_run):
                 '<a href="https://www.youtube.com/watch?v=fuMYsGiS33k&amp;t=2283s">一轮录像</a> · '
                 '<a href="https://www.youtube.com/watch?v=Xww2jXpQSwQ&amp;t=4128s">两轮录像</a></p>'
                 +table(('Famicom 分数','约播放量','采样时刻数','格差'),proxy_scores))
+    if paired:
+        supplementary=[]
+        for folder,platform,digit in [('score-archives-ps4','英文 PS4 合集','3'),('score-famicom-guide','Famicom 攻略','7')]:
+            items=[r for r in rows(research/folder/'digits.csv') if r['field']==digit]
+            assert len(items)==3 and all(r['mismatches']=='0' and r['cells']=='56' for r in items)
+            supplementary.append((platform,digit,'、'.join(r['source_seconds'] for r in items),56,0))
+        html.append(table(('补充来源','数字','原片采样秒','每个字的格数','格差'),supplementary))
+        html.append('<p>PS4 合集录像的分数是 430200，Famicom 录像是 256700。'
+                    '<a href="https://www.youtube.com/watch?v=LgMNFRP_LxE&amp;t=3826s">PS4 合集录像</a> · '
+                    '<a href="https://www.youtube.com/watch?v=mRNyb2IGjSY&amp;t=1769s">Famicom 攻略录像</a></p>')
+        html.append('<p>NES 双人录像中第 34 关结算显示 122800 和 89500，随后出现 GAME OVER、最高分 122800 和双人标题游标。'
+                    '取样截图随原始记录提供。<a href="https://www.youtube.com/watch?v=mV4AnvS300Y&amp;t=2093s">原始双人录像</a></p>')
     html.append('<h2>结束音乐</h2>')
     audio_rows=[]
     for folder,source,origin in [('ending-first','My Gameplay Videos，第一次',318),('ending-english','My Gameplay Videos，第二次',645),
@@ -255,6 +274,11 @@ def build(run, research, output, commit, default, scenes_run):
                            *(next(r['duration_to_quiet_s'] for r in tails if r['source']==k) for k in ('native','switch'))))
     html.append(table(('原始录像','原视频起音秒','整段频谱相似度','卡带至静音秒','录像至静音秒'),audio_rows))
     html.append(tail_chart(research))
+    if paired:
+        mute=rows(research/'surface-research/pulse-mute.csv')
+        html.append(table(('本作 APU 音量寄存器','末次静音写入帧','距首个音符指令 / 秒'),
+                          [(r['control'],r['nes_frame'],f"{float(r['seconds_after_first_timer']):.5f}") for r in mute]))
+        html.append('<p>两个声道的显式静音命令都晚于可听阈值。公开视频只有混音，无法据此定位到某一个声道指令。</p>')
     html.append('<p>曲线为混音中 261.4 Hz 的幅度，使用 40 毫秒 Hann 窗，按每条录音在 1.10 至 1.50 秒区间内的峰值归一化。'
                 '两个脉冲声道在末和弦具有相同的基频。</p>')
     html.append('<p>尾音按连续十个 10 毫秒窗口均低于该段峰值的 1.2% 判定。频谱来自完整混音。'
@@ -274,7 +298,7 @@ def build(run, research, output, commit, default, scenes_run):
         archive.writestr('SHA256SUMS',manifest)
         archive.writestr('source.txt',commit+'\nhttps://github.com/JC6/BattleCity/actions/runs/'+run.name+'\n')
         for path in sorted(run.rglob('*')):
-            if path.is_file() and (path.suffix in {'.csv','.json','.jsonl','.gz','.png','.wav'} or path.name.endswith('-surface.txt') or path.name in {'tested-sha256.txt','device.log','device.txt'}):
+            if path.is_file() and (path.suffix in {'.csv','.json','.jsonl','.gz','.png','.wav'} or path.name.endswith('-surface.txt') or path.name in {'tested-sha256.txt','previous-sha256.txt','device.log','device.txt'}):
                 archive.write(path,'actions/'+str(path.relative_to(run)))
         if scenes_run!=run:
             archive.writestr('scenes-run.txt','https://github.com/JC6/BattleCity/actions/runs/'+scenes_run.name+'\n')
@@ -284,7 +308,13 @@ def build(run, research, output, commit, default, scenes_run):
         for folder in ['motion','score','score-famicom-one','score-famicom-two','ending-first','ending-english','ending-last']:
             for path in sorted((research/folder).iterdir()):
                 if path.is_file(): archive.write(path,'switch/'+folder+'/'+path.name)
-        for name in ['tv_render_report.py','tv_release_gate.py','tv_sampling.py','runtime_report.py','switch_battle_samples.py','switch_motion.py','switch_score_sample.py','switch_lettering.py','ending_audio.py','switch_cues.py','compare_switch_audio.py']:
+        if paired:
+            for folder in ['score-archives-ps4','score-famicom-guide','ending-famicom-coop']:
+                for path in sorted((research/folder).iterdir()):
+                    if path.is_file(): archive.write(path,'supplementary/'+folder+'/'+path.name)
+            for name in ['sampling.json','sampling-rows.csv','pulse-mute.csv','tally-alignment.csv','sources.csv']:
+                archive.write(research/'surface-research'/name,'measurements/'+name)
+        for name in ['tv_render_report.py','tv_release_gate.py','tv_sampling.py','runtime_report.py','switch_battle_samples.py','switch_motion.py','switch_score_sample.py','switch_lettering.py','ending_audio.py','ending_calibration.py','switch_cues.py','compare_switch_audio.py']:
             archive.write(Path(__file__).with_name(name),'scripts/'+name)
 
 

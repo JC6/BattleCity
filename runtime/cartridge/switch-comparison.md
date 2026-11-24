@@ -121,4 +121,8 @@ python3 tests/nes/compare_switch_audio.py switch-5m18.mp4 opening.wav --switch-s
 
 另有一段日语解说录像显示最高分 26800。以英文实录已确认的 HISCORE、8 和两个 0 校准，三个闪烁相位下，2 和 6 各 56 格均匹配卡带。作者标题标注 Switch，录像片段未显示可独立确认英文合集版本的系统界面。复测脚本为 `tests/nes/switch_score_sample.py`。[日语解说原片，13 分 22 秒](https://www.youtube.com/watch?v=aRGjPGSfBmk&t=802s)
 
-Nenriki 发布的两段 Famicom 实录分别显示 196500 和 441900。本轮记录的播放量约为 171.8 万和 18.9 万。每段各验三个时刻，4 和 6 也与编译后的卡带逐格一致。以上为原版家用机游戏的辅助字形对照，3 和 7 仍缺这一级别的画面。[一轮录像](https://www.youtube.com/watch?v=fuMYsGiS33k&t=2283s) · [两轮录像](https://www.youtube.com/watch?v=Xww2jXpQSwQ&t=4128s)
+Nenriki 发布的两段 Famicom 实录分别显示 196500 和 441900。本轮记录的播放量约为 171.8 万和 18.9 万。每段各验三个时刻，4 和 6 也与编译后的卡带逐格一致。[一轮录像](https://www.youtube.com/watch?v=fuMYsGiS33k&t=2283s) · [两轮录像](https://www.youtube.com/watch?v=Xww2jXpQSwQ&t=4128s)
+
+英文 PS4 合集的 430200 和 KinjoGameChannel 的 Famicom 攻略录像（约 1.19 万次播放）中的 256700 分别补上了 3 和 7。用 HISCORE 和 0 定位后，三个采样时刻里两个数字各 56 格均与卡带匹配。英文 Switch 画面直接覆盖 0、1、5、8、9，其余五个数字按录像来源单列。可运行 `tests/nes/switch_lettering.py --secondary` 检查卡带。[PS4 合集 1:03:46](https://www.youtube.com/watch?v=LgMNFRP_LxE&t=3826s) · [Famicom 攻略 29:29](https://www.youtube.com/watch?v=mRNyb2IGjSY&t=1769s)
+
+另找到一段能连续看到双人结局的 NES 录像。第 34 关结算显示 1P 122800 和 2P 89500，随后依次出现 GAME OVER、HISCORE 122800 和标题的双人游标。该片能交叉核对画面顺序，英文 Switch 版本的按键与帧数仍待直接测量。[双人原片 34:53](https://www.youtube.com/watch?v=mV4AnvS300Y&t=2093s)

@@ -50,23 +50,24 @@ def verify(image, labels, secondary=False):
 
 
     if secondary:
-        # 26800 in the Japanese commentary and 441900 in the Famicom capture.
-        # The capture-specific measurement also checks the shared English masks.
+        # Masks read from the Japanese commentary, Famicom and PS4 recordings.
         digits = {
             '2': '21965a4a44a61e34772adf19563c1e57abb393e9f1d490ccc67bcd49ec3a4eb5',
+            '3': 'e6008ab4051912c9af33435d1af0a51d78c610171714f8beaf3c0a69c3171d20',
             '4': '389e132ba94aff0529d8ebeedf9613b902b03ecf2caea7e639e5d9c2e7f7e231',
             '6': 'bed1982a27117578e70d99a3191a60cea150e4abb60354ad87c38505364a737d',
+            '7': '5fa9096e9aae566cfe49e456d0b513261c772e46cdbd069a36364513af9ee682',
         }
         for key,expected in digits.items():
             mask=compiled_cells(tilemap,chr_data,400+4*int(key),40,0,0,8)
             assert sha256(mask).hexdigest()==expected, 'supplementary high-score digit '+key
-        print('168 additional high-score cells match the separately identified commentary and Famicom sources')
+        print('280 additional high-score cells match the commentary, Famicom and PS4 recordings')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('rom', type=Path)
     parser.add_argument('labels', type=Path)
-    parser.add_argument("--secondary",action="store_true",help="also verify the separately measured 2, 4 and 6")
+    parser.add_argument("--secondary",action="store_true",help="also verify the supplementary digit masks")
     args = parser.parse_args()
     verify(args.rom.read_bytes(), args.labels.read_text(), args.secondary)

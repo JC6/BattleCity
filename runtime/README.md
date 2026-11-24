@@ -74,14 +74,19 @@ Connect both gamepads before launching a two-player session. The official Androi
 
 ## Measuring Android TV full frames
 
-The TV release uses SDL's software renderer at the output resolution. The Android-only MAME setting `scalemode native-tv` selects an SDL renderer at startup and offers nearest-neighbour scaling of a native-size texture during gameplay. Menus, textured overlays, antialiasing and scanlines use the output resolution.
+The Android build produces a baseline APK using SDL's software renderer and a candidate APK using `scalemode surface-tv`. The candidate rasterizes directly into the SDL window surface at its negotiated resolution. If the surface is unavailable, incompatible or cannot be presented, subsequent frames use the software renderer. Both packages use the same cartridge and save directory.
 
 On a dedicated API 34 television emulator, run the following against the packaged x86 APK and the labels for its embedded cartridge.
 
 ```sh
-bash tests/nes/television-avd.sh deliverable/tv-emulator.apk build/shared/game.lbl build/tv-result
+mkdir -p build/tv-result/second
+sha256sum deliverable/tv-emulator{,-candidate}.apk build/shared/game.nes > build/tv-result/tested-sha256.txt
+bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result --stable deliverable/tv-emulator.apk
+sha256sum deliverable/tv-emulator{,-candidate}.apk build/shared/game.nes > build/tv-result/second/tested-sha256.txt
+bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result/second --suite render --suite scenes
+python3 tests/nes/tv_release_gate.py build/tv-result
 ```
 
-The full run exercises two gamepads on both renderers, records three endings, and compares the renderers with the same controller edges. Use `--suite render` for the paired timing and six fixed display settings, or `--suite scenes` for the shield, treads, shots, tank explosion and headquarters. The harness verifies cartridge state before comparing the 256 × 224 visible pixel centres and the whole output raster.
+The first cold boot exercises two gamepads on both packages, records three endings and tests five display configurations. The second uses a clean AVD and the same APK. Set the workflow input `previous_tv_run` to exercise a save created by a previous release through an in-place update. For each of the eight picture comparisons the harness freezes the same NES frame, checks a digest of 2 KiB RAM, samples all 256 × 224 visible pixel centres and checks the wallpaper. A second baseline screenshot supplies a per-pixel, per-channel tolerance for the full raster. The candidate qualifies as the release default only if both boots pass all picture checks and each of their three 30-second windows submits every frame while the NES and output PCM both run at 99–101% of real time. The low-resolution window, native-size texture and full-resolution GPU runs are diagnostic comparisons.
 
 The lightweight run creates an app-private measurement file, warms up for ten emulated seconds, and appends one JSON row per 30-second window. It counts vblanks, successful SDL texture-and-present submissions, and PCM frames handed to the first system sound sink. The system trace is taken after the third window, while the same process is in the foreground. The detailed `timing` suite records WAV and RAM separately. A compositor timestamp measures Android presentation. Physical input-to-display latency requires a device measurement.

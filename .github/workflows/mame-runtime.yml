@@ -37,7 +37,7 @@ jobs:
             sudo apt-get update && sudo apt-get install -y cc65
             python3 runtime/cartridge/build.py build/shared/game.nes --labels build/shared/game.lbl
             python3 tests/nes/catalogue.py build/shared/game.nes --labels build/shared/game.lbl
-            python3 tests/nes/switch_lettering.py build/shared/game.nes build/shared/game.lbl
+            python3 tests/nes/switch_lettering.py build/shared/game.nes build/shared/game.lbl --secondary
           else
             python3 tests/nes/probe.py build/shared/probe.nes
           fi
@@ -333,6 +333,13 @@ jobs:
           sha256sum deliverable/tv-emulator{,-candidate}.apk build/shared/game.nes > build/tv-result/second/tested-sha256.txt
           bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result/second --suite render --suite scenes
           python3 tests/nes/tv_release_gate.py build/tv-result
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          gate = json.loads(Path('build/tv-result/release-gate.json').read_text())
+          selected = '-candidate' if gate['default'] == 'surface-tv' else ''
+          print(f"Android TV default renderer `{gate['default']}`. Install `tv{selected}.apk` on ARM64 or `tv-emulator{selected}.apk` on x86.")
+          PY
       - name: Report the failed build or device check
         if: failure()
         shell: python

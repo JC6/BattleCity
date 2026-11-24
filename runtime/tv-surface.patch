@@ -85,7 +85,7 @@
  int renderer_sdl1::draw(int update)
  {
  	uint8_t *surfptr;
-@@ -294,10 +336,22 @@
+@@ -294,10 +336,25 @@
  	osd_dim wdim = window().get_size_pixels();
  	u8 const picture = battlecity_picture(-1);
  	bool texture_changed = false;
@@ -93,12 +93,16 @@
  #ifdef __ANDROID__
  	const auto started = m_meter.active ? battlecity_tv::now_ns() : 0;
  	const bool tracing = m_meter.instrumented && ATrace_isEnabled();
- 	if (tracing) ATrace_beginSection("BattleCity.draw");
+-	if (tracing) ATrace_beginSection("BattleCity.draw");
 +	if (m_surface_output) {
 +		surface = SDL_GetWindowSurface(m_output_window);
 +		const SDL_PixelFormatDetails *details = surface ? SDL_GetPixelFormatDetails(surface->format) : nullptr;
 +		// These are the layouts understood by the MAME rasterizer below.
-+		if (!details || (details->bytes_per_pixel != 2 && details->bytes_per_pixel != 4)
++		bool const compatible = details && (
++				(details->bytes_per_pixel == 4 && (details->Rmask == 0xff000000 || details->Rmask == 0x00ff0000
++					|| details->Rmask == 0x0000ff00 || details->Rmask == 0x000000ff))
++				|| (details->bytes_per_pixel == 2 && (details->Rmask == 0xf800 || details->Rmask == 0x7c00)));
++		if (!compatible
 +			|| !SDL_LockSurface(surface)) {
 +			surface = nullptr;
 +			if (!open_software_renderer()) return 1;
@@ -108,7 +112,7 @@
  	if (m_scale_mode.is_scale == 2) {
  		bool native = !window().machine().ui().is_menu_active() && !picture;
  		if (native) {
-@@ -320,22 +374,22 @@
+@@ -320,22 +377,22 @@
  		clear_flags(FI_CHANGED);
  		m_blittimer = 3;
  		m_last_dim = wdim;
@@ -138,11 +142,12 @@
  	{
  		/* SDL Underlays need alpha = 0 ! */
  		SDL_SetRenderDrawColor(m_sdl_renderer, 0, 0, 0, 0);
-@@ -343,7 +397,13 @@
+@@ -343,8 +400,17 @@
  		m_blittimer--;
  	}
  
 -	SDL_LockTexture(m_texture_id, nullptr, (void **) &surfptr, &pitch);
+-
 +	if (surface) {
 +		surfptr = static_cast<uint8_t *>(surface->pixels);
 +		pitch = surface->pitch;
@@ -150,10 +155,14 @@
 +		notify_changed();
 +		return 1;
 +	}
- 
++
++#ifdef __ANDROID__
++	if (tracing) ATrace_beginSection("BattleCity.draw");
++#endif
  	// get ready to center the image
  	vofs = hofs = 0;
-@@ -377,8 +437,8 @@
+ 	blitwidth = m_blit_dim.width();
+@@ -377,8 +443,8 @@
  
  	window().m_primlist->acquire_lock();
  
@@ -164,7 +173,7 @@
  
  	mamewidth /= m_scale_mode.mult_w;
  	mameheight /= m_scale_mode.mult_h;
-@@ -443,7 +503,8 @@
+@@ -443,7 +509,8 @@
  	window().m_primlist->release_lock();
  
  	// unlock and flip
@@ -174,7 +183,7 @@
  	{
  		SDL_FRect r;
  
-@@ -451,15 +512,17 @@
+@@ -451,16 +518,18 @@
  		r.y=vofs;
  		r.w=blitwidth;
  		r.h=blitheight;
@@ -189,13 +198,15 @@
  		if (started) {
  			m_meter.finish(window().machine().time().as_double(), m_profile_screen ? m_profile_screen->frame_number() : 0,
 -					SDL_GetRendererName(m_sdl_renderer), m_native_frame, started, before_present, drawn && presented);
+-		}
 +					surface ? "window-surface" : SDL_GetRendererName(m_sdl_renderer), m_native_frame, started, before_present, drawn && presented,
 +				m_actual_vsync, int(mamewidth), int(mameheight));
++		}
 +		if (surface && !presented) open_software_renderer();
- 		}
  #else
  		SDL_RenderPresent(m_sdl_renderer);
-@@ -751,6 +814,8 @@
+ #endif
+@@ -751,6 +820,8 @@
  sdl_scale_mode const video_sdl3soft::s_scale_modes[] = {
  		{ "none",    0, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                    nullptr },
  #ifdef __ANDROID__
