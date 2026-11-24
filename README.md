@@ -16,15 +16,15 @@ Web 解压后通过 HTTP 打开，按 Enter 启动。标题滚动时可按 Enter
 
 终局计分画面增加了 3 个 NES 帧。零击毁和十击毁的固定输入均测得从 TOTAL 数字出现到 GAME OVER 为 2.379 秒。五段英文 Switch 录像为 2.367–2.417 秒。Web 与 Android TV 支持从上一张卡带复制已有存档、预览和写保护。[英文 Switch 对照](runtime/cartridge/switch-comparison.md)
 
-电视原生窗口的初次试验中，普通战斗和连续爆炸分别达到实时的 57.01% 和 56.60%，锁定缓冲区占约 24 毫秒／帧。候选版改为整块写入窗口，并在窗口尺寸变化时重新提交。验收会分别测量两种负载，全部通过才进行两次冷启动和八场景逐像素比对。[第一次测量](https://github.com/JC6/BattleCity/actions/runs/45417789873) · [后续验收记录](https://github.com/JC6/BattleCity/actions/workflows/pages.yml?query=branch%3Avalidation%2Fswitch-parity-native-window-20261124-final)
+1080p Android TV 模拟器上，整块写入窗口的候选版在普通战斗和连续爆炸中，游戏速度分别为实时的 66.73%、67.06%，系统音频分别为 66.68%、66.95%。两种场景的缓冲锁定时间从首轮约 24 毫秒／帧分别降至 10.21 和 10.32 毫秒／帧。0/2 个原型时窗同时达到 99%–101% 实时与逐帧提交要求。第 626、633 帧各有 57,344 个像素中心，差异分别为 0、0 个，全图超出重复截图噪声的像素分别为 33,347、33,424 个。原型未达到晋级条件，两次额外冷启动未启动。本次交付默认使用 SDL 软件渲染。最初的 WebKit 存档升级在持续集成中超时，同一组新旧 ZIP 在独立运行机上通过 Chromium 和 WebKit 的补测。[同包补测](https://github.com/JC6/BattleCity/actions/runs/45434420495) · [同提交验收](https://github.com/JC6/BattleCity/actions/runs/45426153747) · [离线报告](build/battlecity/Switch-TV-Comparison.html) · [原始测量](build/battlecity/Switch-TV-Measurements.zip)
 
-上一轮在 1080p Android TV 模拟器对同一候选 APK 做了两次独立冷启动。全分辨率窗口缓冲的游戏速度为实时的 59.76%–60.86%，系统 PCM 输出为 59.63%–60.82%，共 0/6 个窗口同时达到实时与逐帧提交门槛。系统放大的 256×240 小缓冲测得游戏速度 99.76%–99.96%。每次启动均对八个场景核对 NES 帧、2 KiB RAM、57,344 个原生像素中心、壁纸和全图重复截图误差。该轮 Android TV 默认使用 SDL 软件渲染，这条路径在同一模拟器上的游戏速度为实时的 44.29%–56.82%。旧版双人存档、缩略图与写保护已通过覆盖安装和恢复测试。[离线报告](build/battlecity/Switch-TV-Comparison.html) · [原始记录](build/battlecity/Switch-TV-Measurements.zip) · [同提交验收](https://github.com/JC6/BattleCity/actions/runs/45394628713)
+上一轮在 1080p Android TV 模拟器对同一候选 APK 做了两次独立冷启动。全分辨率窗口缓冲的游戏速度为实时的 59.76%–60.86%，系统 PCM 输出为 59.63%–60.82%，共 0/6 个窗口同时达到实时与逐帧提交门槛。系统放大的 256×240 小缓冲测得游戏速度 99.76%–99.96%。上一轮每次启动均对八个场景核对 NES 帧、2 KiB RAM、57,344 个原生像素中心、壁纸和全图重复截图误差。该轮 Android TV 默认使用 SDL 软件渲染，这条路径在同一模拟器上的游戏速度为实时的 44.29%–56.82%。旧版双人存档、缩略图与写保护已通过覆盖安装和恢复测试。[上轮验收与原始记录](https://github.com/JC6/BattleCity/actions/runs/45394628713)
 
-[Android TV 默认安装包](build/battlecity/BattleCity-TV.apk) · [Android TV 窗口缓冲候选版](build/battlecity/BattleCity-TV-Candidate.apk) · [Web 成品](build/battlecity/BattleCity-Web.zip) · [SHA-256](build/battlecity/SHA256SUMS)
+[Android TV 默认安装包](build/battlecity/BattleCity-TV.apk) · [Android TV 原生窗口候选版](build/battlecity/BattleCity-TV-Candidate.apk) · [Web 成品](build/battlecity/BattleCity-Web.zip) · [SHA-256](build/battlecity/SHA256SUMS)
 
 此前已校准出生闪光、护盾与四向炮弹，修正了 Web 在低刷新率下变慢和连续回退后时间线出错的问题。可在离线报告中逐帧对照 Switch 录像、播放两份结束音乐，并查看每次实时时钟测量。[Web 成品](build/battlecity/BattleCity-Web.zip) · [Android TV ARM64 安装包](build/battlecity/BattleCity-TV.apk) · [离线对照报告](build/battlecity/Switch-Runtime-Comparison.html) · [SHA-256](build/battlecity/SHA256SUMS)
 
-本轮卡带从第一关连续打过 70 关并回到第一关，274,114 次战斗更新逐次匹配红白机记录。35 场单人和 1 场双人独立回放共 179,466 次更新，无人演示另核对了 3,203 次更新。Chromium 和 WebKit 通过键盘、双人和重启读档测试。两次独立构建的 36 个 30 秒窗口中，游戏与音频速度全部落在实时的 ±1% 内。[卡带与跨平台构建](https://github.com/JC6/BattleCity/actions/runs/45337356115) · [70 关 CSV](build/battlecity/Campaign-Runtime-Loop.csv) · [原始测量](build/battlecity/Switch-Runtime-Measurements.zip)
+此前的卡带验收从第一关连续打过 70 关并回到第一关，274,114 次战斗更新逐次匹配红白机记录。35 场单人和 1 场双人独立回放共 179,466 次更新，无人演示另核对了 3,203 次更新。Chromium 和 WebKit 通过键盘、双人和重启读档测试。两次独立构建的 36 个 30 秒窗口中，游戏与音频速度全部落在实时的 ±1% 内。[卡带与跨平台构建](https://github.com/JC6/BattleCity/actions/runs/45337356115) · [70 关 CSV](build/battlecity/Campaign-Runtime-Loop.csv) · [原始测量](build/battlecity/Switch-Runtime-Measurements.zip)
 
 Android TV API 34 的 1080p 模拟器已通过双手柄独立开火、二号手柄重连、重启读档和返回前台。连续两次回退分别恢复到模拟时钟第 10 秒和第 9 秒，两次的 2,048 字节工作 RAM 均与原检查点相同。1080p 模拟器的同机速度为完整绘制 0.557–0.566 倍、自动跳帧试验 0.975–0.981 倍。成品保留完整绘制。[电视双手柄任务](https://github.com/JC6/BattleCity/actions/runs/45333482160/job/138239902571) · [集成 APK 三条结局复验](https://github.com/JC6/BattleCity/actions/runs/45341282725/job/138265269210)
 

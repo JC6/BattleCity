@@ -119,6 +119,14 @@ def build(root,run,dest,commit,trial=None):
     sections.append(table(('浏览器','窗口数','游戏速度','音频速度'),[(engine,len(records),
         *(f"{min(r[k] for r in records)*100:.3f}%–{max(r[k] for r in records)*100:.3f}%" for k in ('speed','audioSpeed')))
         for engine in ('chromium','webkit') if (records:=[r for r in web_clocks if r['engine']==engine])]))
+    recheck_file=run/'web-upgrade-recheck.json'
+    recheck=json.loads(recheck_file.read_text()) if recheck_file.is_file() else None
+    if recheck:
+        assert recheck['packageRun']==run.name and recheck['digests']['cartridge/game.nes']==rom
+        assert recheck['digests']['current/BattleCity-Web.zip']==hashlib.sha256((dest/'BattleCity-Web.zip').read_bytes()).hexdigest()
+        assert recheck['engines']==['chromium','webkit']
+        sections.append(f'<p>首个运行的最后一项 WebKit 旧存档升级超时。两个浏览器分别在独立运行机上重测相同的旧版和新版 ZIP，校验包摘要、旧槽保留、恢复双人存档与玩家移动。'
+                        f'<a href="https://github.com/JC6/BattleCity/actions/runs/{recheck["run"]}">独立补测与原始记录</a></p>')
     endings=[]
     for route in ('neutral','record','skip-over'):
         w=timeline(web/('web-'+route));t=timeline(tv/'timing'/('tv-'+route))
@@ -154,6 +162,12 @@ def build(root,run,dest,commit,trial=None):
             z.write(trial/'tv-device-results/prototype/clock.json','trial/'+trial.name+'/clock.json')
         for name in ('upgrade-chromium.log','upgrade-webkit.log'):
             z.write(run/name,'browser/'+name)
+        if recheck:
+            z.write(recheck_file,'browser/web-upgrade-recheck.json')
+            for engine in recheck['engines']:
+                folder=run.parent/recheck['run']/('upgrade-'+engine)
+                for name in (f'upgrade-{engine}.log','packages.sha256','artifact.json'):
+                    z.write(folder/name,'browser/actions/'+engine+'/'+name)
         for name in ('native_window_report.py','tv_release_gate.py','terminal_tally.py','terminal_av_sync.py','ending_calibration.py','ending_audio.py','switch_cues.py','runtime_report.py','television.py','tv-scenes.lua','tv-blast-load.lua','ending.lua'):
             z.write(Path(__file__).with_name(name),'scripts/'+name)
 
