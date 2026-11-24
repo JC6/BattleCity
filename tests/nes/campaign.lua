@@ -48,6 +48,7 @@ local out=path and assert(io.open(path,"w"))
 path=os.getenv("BATTLECITY_GOLDENS")
 local expected=path and assert(io.open(path))
 local frame,tick,done,start=0,0,false,false
+local terminal_tally_seen=false
 local fields={"display frame","battle update","tanks","shots","player lives/stars/shield/score","kill counts","enemies left","base destroyed","terrain digest"}
 if demo then
     for _,field in ipairs({"clock","AI held/pressed","random reads"}) do fields[#fields+1]=field end
@@ -61,7 +62,7 @@ local function write(line)
     if out then out:write(line,"\n") end
     if expected then
         local want=expected:read("*l")
-        if want and labels.finish_loss_tally then
+        if want and terminal_tally_seen then
             want=want:gsub("^(%d+),end,title$",function(n) return (tonumber(n)+3)..",end,title" end)
         end
         if line~=want then
@@ -202,6 +203,11 @@ local function flush_demo()
     if not pending then return end
     write(table.concat({pending,clock or "",ai or "",table.concat(reads,".")},","))
     pending=nil
+end
+-- The attract demonstration returns directly to the title. Only a match that
+-- executed the Switch terminal tally has the three extra display frames.
+if labels.finish_loss_tally then
+    watch(labels.finish_loss_tally,function() terminal_tally_seen=true end)
 end
 if demo then
     if not classic then watch(sym("snapshot_occupancy"),function() if pending then demo_controls() end end) end
