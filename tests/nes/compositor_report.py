@@ -4,6 +4,7 @@ import csv
 import hashlib
 import html
 import json
+import wave
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -70,10 +71,19 @@ def build(root, run, dest, trials):
         [[name,item['firstDifference'],' / '.join(str(v.get('aboveRepeatNoise','尺寸不同')) for v in item['stages'].values()),
           ' / '.join(str(item['stages']['system'][k]) for k in ('atBoundary','awayFromBoundary')),
           f"{visuals[name]['differentCenters']} / {visuals[name]['differentWallpaperPixels']}"] for name,item in stages.items()]))
+    registration=stages['calibration']['stages']['system']
+    edge_rows=[]
+    for mode,title in [('baseline','软件基线'),('candidate','候选')]:
+        sample=registration[mode+'Registration']
+        for direction,label in [('left','左邻'),('right','右邻'),('above','上邻'),('below','下邻')]:
+            edge=sample['edgeLeakage'][direction]
+            edge_rows.append([title,label,edge['edges'],f"{edge['mean']:.3%}",f"{edge['p95']:.3%}"])
+    sections.append('<p>将缓冲与系统截图配准后，在黑白校准线两侧测量相邻像素对输出颜色的贡献。数值按黑白边缘的亮度差归一化。</p>')
+    sections.append(table(('显示路径','相邻方向','采样边数','平均贡献','第 95 百分位'),edge_rows))
     sections.append(picture(tv/'held-out/moving-633-baseline.png','软件基线，第 633 帧')+picture(tv/'held-out/moving-633-candidate.png','候选输出，同一帧'))
     sections.extend(['<h2>菜单、双手柄和存档</h2>',
         '<p>两种浏览器分别从上次发布的 ZIP 创建受保护的双人存档，再用本次 ZIP 读档、解锁并操作二号玩家。Android 以覆盖安装验证同一组数据。卡带摘要相同，本次直接使用原存档目录。</p>',
-        '<p>空槽标志、顶栏、选中框和画面预览使用同一套菜单代码。表中数值为指定区域颜色掩模的交并比，1 为重合。活动场景和当前选中项可影响局部测量。</p>'])
+        '<p>空槽标志、顶栏、选中框和画面预览使用同一套菜单代码。表中数值为指定区域颜色掩模的交并比，1 为重合。电视旧版截图取自覆盖安装前，本次电视截图取自当前候选 APK 的双手柄测试。</p>'])
     if (run/'menu-regions.csv').is_file():
         sections.append(table(('区域','设备/版本','交并比'),[[r['region'],r['platform'],r['intersection_over_union']] for r in rows(run/'menu-regions.csv')]))
     web_clocks=[]
@@ -87,16 +97,37 @@ def build(root, run, dest, trials):
             web_clocks.append([engine,cadence,len(samples),
                 '–'.join(f'{v:.2%}' for v in (min(r['speed'] for r in samples),max(r['speed'] for r in samples))),
                 '–'.join(f'{v:.2%}' for v in (min(r['audioSpeed'] for r in samples),max(r['audioSpeed'] for r in samples)))])
+    stage_rows=[r for i in range(5) for r in rows(run/f'stage-replay-{i}/stages.csv')]
+    assert sorted(int(r['stage']) for r in stage_rows)==list(range(1,36))
+    coop=rows(run/'stage-replay-0/coop.csv')
+    campaign=rows(run/'campaign-loop/loop.csv')
+    assert len(coop)==len(campaign)==1 and coop[0]['players']=='2' and campaign[0]['stage']=='1-70-1'
+    assert all(r['cartridge_sha256']==identity and r['result']=='passed' and not r['first_difference']
+               for r in stage_rows+coop+campaign)
+    sections.append(f"<p>35 关独立回放、首关双人回放均通过。连续 70 关再回到第一关，共核对 {int(campaign[0]['reference_updates']):,} 次战斗更新。</p>")
+    endings=[]
+    for route,label in [('neutral','自然结束'),('record','刷新最高分'),('skip-over','按键跳过')]:
+        events=[]
+        durations=[]
+        for folder in [run/f'web-clock-and-endings/web-{route}',tv/f'timing/tv-{route}']:
+            events.append([(r['frame'],r['event'],r['value']) for r in rows(folder/'events.csv')])
+            with wave.open(str(folder/'game.wav')) as stream:
+                durations.append(f'{stream.getnframes()/stream.getframerate():.2f}')
+        assert events[0] and events[0]==events[1], route
+        endings.append([label,len(events[0]),*durations])
+    sections.append(table(('结局','两端相同帧与事件数','Web 录音秒数','TV 录音秒数'),endings))
     sections.append(table(('浏览器','回调频率','窗口数','游戏','系统 PCM'),web_clocks))
-    sections.append('<p>电视双手柄测试：默认软件路径通过；候选路径'+('通过' if gate['candidateControlsPassed'] else '未通过')+'。覆盖安装后验证存档、缩略图和写保护，并用二号手柄恢复操作。</p>')
+    sections.append('<p>电视软件版覆盖安装保留了双人存档。当前候选版的完整双手柄测试'+('通过' if gate['candidateControlsPassed'] else '未通过')+'。覆盖安装后核对了缩略图与写保护，并用二号手柄恢复操作。</p>')
     for scene in ('system-menu','screen-settings'):
-        for file,label in ((root/'reference-frames'/(scene+'.png'),'英文 Switch'),(run/'web-clock-and-endings/screens'/(scene+'.png'),'Web'),(tv/(scene+'.png'),'Android TV')):
+        for file,label in ((root/'reference-frames'/(scene+'.png'),'英文 Switch'),(run/'web-clock-and-endings/screens'/(scene+'.png'),'Web'),(tv/'candidate-controls'/(scene+'.png'),'Android TV')):
             if file.is_file():sections.append(picture(file,label+' · '+scene))
+            elif label=='Android TV' and scene=='system-menu':sections.append(picture(tv/'candidate-controls/protected-slot.png','Android TV · 已写保护的存档槽'))
     sections+=['<h2>结算音乐与参考资料</h2><p>用本项目的无损 WAV，按五段参考视频各自的 AAC 码率、声道和采样率重新编码；先用有声音符定位起点，再测持续 100 ms 的低能量区间。另以 25 Hz 高通去除无损 WAV 的直流偏置，作为录制链路的对照。</p>']
     audio=[r for r in rows(root/'tail-codec.csv') if r['threshold']=='0.012']
     sections.append(table(('采样','编码输入','码率 bps','相关度','无损 s','再编码 s','Switch 录像 s'),
         [[r['source'],r['control'],r['bitrate'],r['onset_cosine'],r['lossless'],r['encoded'] or '无连续静音',r['switch_video']] for r in audio]))
     sections+=['<p>音色和音源释放时序维持现有实现。双人完整结局、确定无输入的待机过程、连续回退的逐次跨度以及大号 HISCORE 数字 2、3、4、6、7，仍缺英文 Switch 直接证据。</p>',
+        '<p>日版 Switch 录像中，第 35 关的单人结算接入下一关，后来在地图编辑器入口显示了原作隐藏留言。该录像采用日版合集界面。<a href="https://www.youtube.com/watch?v=90hI6s_3iZ4&t=7166s">日版关末</a> · <a href="https://www.youtube.com/watch?v=90hI6s_3iZ4&t=7375s">日版隐藏留言</a></p>',
         '<p><a href="https://www.nintendo.com/us/store/products/namco-museum-archives-vol-2-switch/">任天堂游戏页</a> · <a href="https://nc.bn-ent.net/product/useful.php">万代南梦宫功能说明</a> · <a href="https://www.youtube.com/watch?v=S26lUv598_o&t=657s">系统菜单原片</a> · <a href="https://www.youtube.com/watch?v=uc_If5fksfA&t=270s">Xupgeeks 英文 Switch 结算录像</a></p>',
         '<h2>安装包</h2><pre>'+html.escape('\n'.join(f'{sha(p)}  {p.name}' for p in sorted(dest.iterdir()) if p.suffix in ('.nes','.lbl','.apk') or p.name=='BattleCity-Web.zip'))+'</pre></html>']
     (dest/'Switch-TV-Comparison.html').write_text('\n'.join(sections))
@@ -104,7 +135,7 @@ def build(root, run, dest, trials):
         for folder in dict.fromkeys([*trials,run]):
             for f in sorted(folder.rglob('*')):
                 rel=f.relative_to(folder)
-                if not f.is_file() or not (rel.parts[0] in ('tv-device-results','web-clock-and-endings','upgrade-chromium','upgrade-webkit','campaign-loop') or rel.parts[0].startswith('stage-replay-') or f.name in ('artifact-receipts.json','job-status.json','stages.json','menu-regions.csv','commit.txt','run.txt','artifact.json')):continue
+                if not f.is_file() or not (rel.parts[0] in ('tv-device-results','web-clock-and-endings','upgrade-chromium','upgrade-webkit','campaign-loop') or rel.parts[0].startswith('stage-replay-') or f.name in ('artifact-receipts.json','job-status.json','gpu-shader.log','stages.json','menu-regions.csv','commit.txt','run.txt','artifact.json')):continue
                 if f.suffix not in ('.json','.csv','.png','.gz','.log','.txt','.jsonl','.sha256','.wav'):continue
                 z.write(f,str(Path(folder.name)/rel))
         for f in [root/'tail-codec.csv',root/'audio-recheck/terminal-av-sync.csv',*sorted((root/'reference-frames').glob('*.png'))]:
@@ -112,8 +143,9 @@ def build(root, run, dest, trials):
         for f in (root/'research').glob('*'):
             if f.suffix in ('.tsv','.csv','.jpg'):
                 z.write(f,'research/'+f.name)
-        for n in ('compositor_report.py','tv_stage_analysis.py','tv_release_gate.py','tv_gpu_shader.cjs','tv_tail_codec.py','switch_menu_regions.py','television.py','tv-scenes.lua','tv-blast-load.lua','terminal_av_sync.py','ending_audio.py','ending_calibration.py','terminal_tally.py','switch_cues.py','compare_switch_audio.py'):
+        for n in ('compositor_report.py','tv_stage_analysis.py','tv_release_gate.py','native_window_report.py','tv_gpu_shader.cjs','tv_tail_codec.py','switch_menu_regions.py','television.py','tv-scenes.lua','tv-blast-load.lua','terminal_av_sync.py','ending_audio.py','ending_calibration.py','terminal_tally.py','switch_cues.py','compare_switch_audio.py'):
             z.write(Path(__file__).with_name(n),'methods/'+n)
+        z.write(Path(__file__).resolve().parents[2]/'runtime/tv-gpu-raster.h','methods/tv-gpu-raster.h')
 
 
 if __name__=='__main__':
