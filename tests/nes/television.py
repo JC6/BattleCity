@@ -336,7 +336,7 @@ def start_fixture():
         '-c', 'android.intent.category.LEANBACK_LAUNCHER', '-n', PACKAGE+'/.GameActivity')
 
 
-def render_fixture(labels, directory, tick, freeze=False, scene=None):
+def render_fixture(labels, directory, tick, freeze=False, scene=None, before_pause=False):
     mode = int(re.search(r'^al (\w+) \._mode$', labels.read_text(), re.M)[1], 16)
     controls = Path(__file__).with_name('clock-input.lua').read_text()
     scenario = ''
@@ -355,13 +355,34 @@ def render_fixture(labels, directory, tick, freeze=False, scene=None):
         emu.pause()
         return
     end""" if scene else ''
+    # MACHINE_NOTIFY_FRAME follows the OSD draw. Arm the *previous* notification
+    # so the requested frame goes through the normal gameplay renderer before
+    # emu.pause() appends its zero-alpha UI primitive.
+    arm = f'''
+    if frames == {tick-1} then
+        local file=assert(io.open("{directory}/tv-fixed","w"))
+        file:write("ARMED")
+        file:close()
+    end''' if before_pause else ''
+    receipt = f'''
+    local receipt=io.open("{directory}/tv-swap.ppm","rb")
+    if not receipt then
+        local file=assert(io.open("{directory}/tv-fixed","w"))
+        file:write("ERROR window did not capture the live frame")
+        file:close()
+        emu.pause()
+        return
+    end
+    receipt:close()''' if before_pause else ''
     return controls + scenario + f"""
 local ram = manager.machine.devices[":maincpu"].spaces.program
 local frames = 0
 visual_fixture = emu.add_machine_frame_notifier(function()
     frames = frames + 1
     {'update_scene(frames)' if scene else ''}
+    {arm}
     if frames ~= {tick} then return end
+    {receipt}
     {scene_check}
     local hash = 0
     for address=0,2047 do hash = (hash * 33 + ram:read_u8(address)) & 0xffffffff end
@@ -566,7 +587,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
                              f'<int name="wallpaper" value="{wallpaper}"/></map>').encode())
                 select(name, scale)
                 tick = {'firing':621,'blast':696,'moving-626':626,'moving-633':633,'moving-648':648,'blast-700':700,'calibration':626}.get(case,705)
-                write_private('tv-observer.lua',render_fixture(labels,directory,tick,True,("blast" if case=="blast-700" else "motion" if held_out else case) if scenes_only else None))
+                write_private('tv-observer.lua',render_fixture(labels,directory,tick,True,("blast" if case=="blast-700" else "motion" if held_out else case) if scenes_only else None,before_pause=pipeline))
                 stages = pipeline or (held_out and (name in ('baseline','candidate','repeat') or case=='calibration'))
                 if stages:
                     write_private('tv-capture',{'calibration':'P','solid':'S','corners':'Q'}.get(case,'G'))

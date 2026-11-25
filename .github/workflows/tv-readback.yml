@@ -1,0 +1,73 @@
+name: Live television texture readback
+on:
+  push:
+    branches: ['validation/tv-live-readback-*']
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Acceptance run that built the TV APK
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+jobs:
+  readback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - name: Select the archived acceptance build
+        id: source
+        env:
+          DISPATCH_RUN: ${{ inputs.run_id }}
+        run: |
+          source_run="${DISPATCH_RUN:-${GITHUB_REF_NAME##*-}}"
+          [[ "$source_run" =~ ^[0-9]+$ ]]
+          echo "run=$source_run" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ steps.source.outputs.run }}
+          github-token: ${{ github.token }}
+          name: game-tv-emulator
+          path: deliverable
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ steps.source.outputs.run }}
+          github-token: ${{ github.token }}
+          name: cartridge
+          path: build/shared
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Prepare the PNG screenshot decoder
+        timeout-minutes: 12
+        run: |
+          if command -v ffmpeg >/dev/null; then exit 0; fi
+          cd "$RUNNER_TEMP"
+          curl -fLSs --retry 3 https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz -o ffmpeg-7.1.1.tar.xz
+          echo '733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1  ffmpeg-7.1.1.tar.xz' | sha256sum -c -
+          tar -xf ffmpeg-7.1.1.tar.xz
+          cd ffmpeg-7.1.1
+          ./configure --disable-everything --disable-autodetect --disable-doc --disable-debug \
+            --disable-ffplay --disable-ffprobe --disable-network --disable-x86asm --enable-zlib \
+            --enable-decoder=png --enable-parser=png --enable-demuxer=image_png_pipe --enable-protocol=pipe \
+            --enable-filter=scale,format,buffer,buffersink --enable-encoder=rawvideo --enable-muxer=rawvideo
+          make -j"$(nproc)" ffmpeg
+          ./ffmpeg -loglevel error -i pipe:0 -vf scale=320:180 -frames:v 1 -threads 1 \
+            -f rawvideo -pix_fmt rgb24 pipe:1 < "$GITHUB_WORKSPACE/runtime/android/src/main/res/drawable-xhdpi/game_icon.png" > sample.rgb
+          test "$(wc -c < sample.rgb)" -eq 172800
+          echo "$PWD" >> "$GITHUB_PATH"
+      - name: Read GPU textures on the active game frame before pausing
+        run: |
+          mkdir -p build/live-readback
+          sha256sum deliverable/tv-emulator{,-candidate}.apk build/shared/game.nes > build/live-readback/tested-sha256.txt
+          bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/live-readback --suite pipeline
+          PYTHONPATH=tests/nes python3 -c "from tv_release_gate import pipeline_pass; from pathlib import Path; assert pipeline_pass(Path('build/live-readback/pipeline'))"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-readback
+          path: build/live-readback/
