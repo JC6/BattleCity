@@ -1,5 +1,6 @@
 """Choose the Android release default from two cold boots of the same APK."""
 import argparse
+import gzip
 import json
 from pathlib import Path
 
@@ -34,13 +35,27 @@ def qualifying(row, driver="android-native-window"):
             .99<=row['samples']/row['sampleRate']/row['wall']<=1.01)
 
 
+def swap_readbacks(root):
+    from tv_stage_analysis import ppm
+    folder=root/'held-out'
+    for scene in COMPOSITOR_HOLDOUTS:
+        files=[folder/f'{scene}-{mode}-swap.ppm.gz' for mode in ('baseline','repeat','candidate')]
+        if not all(path.is_file() for path in files):return False
+        images=[ppm(gzip.decompress(path.read_bytes())) for path in files]
+        if len({item[:2] for item in images})!=1:return False
+        base,repeat,test=(item[2] for item in images)
+        if base!=test and any(abs(p-c)>abs(p-r) for p,r,c in zip(base,repeat,test)):return False
+    return True
+
+
 def preliminary(root,renderer):
     heldout=json.loads((root/'held-out/visual.json').read_text())
     assert set(heldout)==(COMPOSITOR_HOLDOUTS if renderer in ('compositor-tv','egl-tv') else HOLDOUTS)
     assert len({r['battle'] for k,r in heldout.items() if k!='calibration'})==len(heldout)-('calibration' in heldout)
     controls=json.loads((root/'candidate-controls/result.json').read_text())['result']
     assert controls in ('passed','failed')
-    return {'prototypePassed':probe_pass(root,renderer),
+    return {**({'windowReadbackPassed':swap_readbacks(root)} if renderer=='egl-tv' else {}),
+            'prototypePassed':probe_pass(root,renderer),
             'heldOutPassed':all(r['nativePixels']==256*224 and r.get('calibration',{'valid':True})['valid'] and not any(r[k] for k in
                  ('differentCenters','differentWallpaperPixels','aboveRepeatNoise')) for r in heldout.values()),
             'candidateControlsPassed':controls=='passed'}

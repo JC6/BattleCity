@@ -10,6 +10,9 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from native_window_report import picture, table
 from tv_release_gate import decision
+from tv_layer_geometry import layer_geometry
+from tv_presentation import reconcile
+import gzip
 from tv_stage_analysis import analyze
 
 
@@ -30,8 +33,10 @@ def sha(file):
 def build(root, run, dest, trials, previous=None):
     run_id=run.name
     tv=run/'tv-device-results'
-    gate=decision(tv,renderer='compositor-tv')
-    assert gate==read(tv/'release-gate.json')
+    renderer=read(tv/'release-gate.json').get('candidate','compositor-tv')
+    gate=decision(tv,renderer=renderer)
+    recorded=read(tv/'release-gate.json')
+    assert gate==recorded or (gate['default']==recorded['default']=='none' and {k:v for k,v in gate.items() if k!='windowReadbackPassed'}==recorded)
     identity=sha(dest/'game.nes')
     assert identity==sha(run/'cartridge/game.nes')
     web=sha(dest/'BattleCity-Web.zip')
@@ -54,6 +59,8 @@ def build(root, run, dest, trials, previous=None):
         f'<p>电视默认使用 <b>{html.escape(gate["default"] if gate["default"]!="none" else "SDL 软件渲染")}</b>。测量设备为 API 34、1080p、x86 Android TV 模拟器。ARM64 安装包验证签名及内嵌卡带。物理屏幕延迟和电视音响延迟仍待测量。</p>',
         f'<p><a href="https://github.com/JC6/BattleCity/actions/runs/{run_id}">验收运行 {run_id}</a> · <code>{(run/"commit.txt").read_text().strip()}</code></p>',
         '<h2>电视帧率与音频</h2><p>游戏和系统 PCM 输出均需落在实时的 99%–101%。每个 NES 帧须对应一次提交和一次合成完成回调，窗口结束时不得积压。回调时间测量到 Android 合成服务。</p>']
+    if renderer=='egl-tv':
+        sections[-1]='<h2>电视帧率与音频</h2><p>游戏和系统 PCM 均须达到实时的 99%–101%。每个 NES 帧须在同一 SurfaceView 逐一匹配 EGL 显示时间戳或 SurfaceFlinger 的 PRESENT_FENCE。应用交换缓冲的次数单列记录。</p>'
     values=[]
     for folder in dict.fromkeys([old,*trials,run]):
         clock=folder/'tv-device-results/prototype/clock.json'
@@ -74,6 +81,25 @@ def build(root, run, dest, trials, previous=None):
             [[r['run'],f"{r['wall']:.2f}",r['frames'],f"{r['speed']:.2%}",f"{r['audioSpeed']:.2%}"] for r in stable]))
     measurements=read(tv/'prototype/clock.json')
     samples=measurements['windows']
+    if renderer=='egl-tv':
+        measurements_rows=[]
+        for scene in ('battle','explosions'):
+            variants=['software-'+scene,'child-'+scene,scene]
+            if 'fifo-'+scene in samples:variants.append('fifo-'+scene)
+            for variant in variants:
+                row=samples[variant][0]
+                assert measurements['battle'][variant]==measurements['battle'][scene]
+                if variant in (scene,'fifo-'+scene):
+                    raw=tv/'prototype'
+                    reconcile([row],(raw/(variant+'-frame-map.csv')).read_bytes(),
+                              (raw/(variant+'-present.csv')).read_bytes(),
+                              gzip.decompress((raw/(variant+'-display.pftrace.gz')).read_bytes()),'org.jiangc.bc.runtime')
+                    if gate['default']==renderer and variant==scene:assert row['verifiedPresentations']==row['frames']
+                measurements_rows.append([variant,row['driver'],row['frames'],row['presented'],
+                    row.get('identifiedBuffers','—'),row.get('nativeTimestampCount','—'),
+                    row.get('individuallyObserved','—'),row.get('verifiedPresentations','—'),row.get('displayEvidence','未采集'),
+                    f"{row['swapMsPerFrame']:.2f}" if row.get('mappedFrames') else '—'])
+        sections.append(table(('场景','实际驱动','NES 帧','成功提交','已记录提交 ID','有效 EGL 时间戳','可逐帧关联','完整窗口确认','呈现凭据','交换耗时 ms/帧'),measurements_rows))
     if 'full-battle' in samples:
         timing=[]
         for scene in ('battle','explosions'):
@@ -93,8 +119,8 @@ def build(root, run, dest, trials, previous=None):
                 [mode,*[f"{records[0][key]/records[0]['frames']:.3f}" for key in fields]]
                 for mode,records in samples.items()]))
     visuals=read(tv/'held-out/visual.json')
-    sections.append(table(('场景','首个超出噪声的阶段','源 / 展开 / 系统超噪像素','系统色边 / 非色边误差','像素中心 / 壁纸误差'),
-        [[name,item['firstDifference'],' / '.join(str(v.get('aboveRepeatNoise','尺寸不同')) for v in item['stages'].values()),
+    sections.append(table(('场景','首个超出噪声的阶段',' / '.join(next(iter(stages.values()))['stages'])+' 超噪像素','系统色边 / 非色边误差','像素中心 / 壁纸误差'),
+        [[name,item['firstDifference'],' / '.join(str(v.get('aboveRepeatNoise','缺少回读' if 'missing' in v else '尺寸不同')) for v in item['stages'].values()),
           ' / '.join(str(item['stages']['system'][k]) for k in ('atBoundary','awayFromBoundary')),
           f"{visuals[name]['differentCenters']} / {visuals[name]['differentWallpaperPixels']}"] for name,item in stages.items()]))
     registration=stages['calibration']['stages']['system']
@@ -108,7 +134,9 @@ def build(root, run, dest, trials, previous=None):
     sections.append(table(('显示路径','相邻方向','采样边数','平均贡献','第 95 百分位'),edge_rows))
     if 'candidateBeforePresent' in registration:
         layers=[]
-        for mode,label in [('baseline','SDL 软件渲染器提交前回读'),('candidate','候选硬件缓冲区回读')]:
+        for mode,label in [('baseline','SDL 软件渲染器提交前回读'),('candidate','候选缓冲区回读')]:
+            if mode+'BeforePresent' not in registration:
+                continue
             item=registration[mode+'BeforePresent']
             direct=registration[mode+'LayerRegistration']
             layers.append([label,' × '.join(map(str,item['dimensions'][-1])),
@@ -116,6 +144,29 @@ def build(root, run, dest, trials, previous=None):
                            *[f"{direct['edgeLeakage'][d]['mean']:.3%}" for d in ('left','right','above','below')]])
         sections.append('<p>校准帧还记录 SDL_RenderPresent 调用之前的软件绘制结果，以及候选路径提交给 Android 的硬件缓冲区。下表分别将两者配准到各自的系统截图。</p>')
         sections.append(table(('采样位置','缓冲尺寸','与展开缓冲差异像素','系统配准偏移','左邻','右邻','上邻','下邻'),layers))
+    if renderer=='egl-tv':
+        evidence=[]
+        for mode,title in [('baseline','SDL 实际窗口'),('candidate','EGL 实际窗口')]:
+            result=registration.get(mode+'SwapRegistration')
+            if result:
+                evidence.append([title,registration[mode+'ExpandedToSwap'].get('differentPixels','尺寸不同'),
+                    str(result['offset']),*[f"{result['edgeLeakage'][d]['mean']:.3%}" for d in ('left','right','above','below')]])
+            else:evidence.append([title,'缺少交换前回读',*['—']*5])
+        sections.append('<p>SDL 在实际窗口纹理绘制后、交换前回读。候选版在 EGL 窗口交换前回读。后四列测量从该回读到系统截图之间的边缘变化。各路径的原始 SurfaceFlinger 图层记录随测量包提供。</p>')
+        sections.append(table(('采样位置','展开到交换前差异像素','截图配准偏移','左邻','右邻','上邻','下邻'),evidence))
+        geometry={}
+        for path in sorted((tv/'held-out').glob('calibration-*-layers.pb.gz')):
+            geometry[path.name.split('-')[1]]=layer_geometry(path)
+        (run/'layer-geometry.json').write_text(json.dumps(geometry,indent=2)+'\n')
+        layer_rows=[]
+        for mode,records in geometry.items():
+            for item in records:
+                layer_rows.append([mode,item['name'],str(item['activeBuffer']),str(item['hwcSource'] or item['sourceBounds']),
+                    str(item['hwcDestination'] or item['screenBounds']),str(item['effectiveTransform']),str(item['scalingMode'])])
+        if layer_rows:
+            sections.append(table(('校准路径','Android 图层','宽、高、步距和格式','源矩形','显示矩形','有效变换系数','缩放模式'),layer_rows))
+        else:
+            sections.append('<p>图层二进制记录未提供可解码的活动缓冲区几何。保留系统文本输出供核查。</p>')
     sections.append(picture(tv/'held-out/moving-633-baseline.png','软件基线，第 633 帧')+picture(tv/'held-out/moving-633-candidate.png','候选输出，同一帧'))
     sections.extend(['<h2>菜单、双手柄和存档</h2>',
         '<p>两种浏览器分别从上次发布的 ZIP 创建受保护的双人存档，再用本次 ZIP 读档、解锁并操作二号玩家。Android 以覆盖安装验证同一组数据。卡带摘要相同，本次直接使用原存档目录。</p>',
@@ -125,7 +176,7 @@ def build(root, run, dest, trials, previous=None):
     if (run/'menu-sizes.csv').is_file():
         sizes=rows(run/'menu-sizes.csv')
         assert len(sizes)==24
-        sections.append('<p>下表比较同一英文 Switch 截图上的六处菜单区域。每个分辨率均独立启动旧、新画面并重复截图。选中框和空槽标志的提升须超过重复截图波动，其他区域检查退步是否超出波动。</p>')
+        sections.append('<p>下表比较同一英文 Switch 截图上的六处菜单区域。每个分辨率均独立启动旧、新画面并重复截图。每项按预设标准与重复截图波动比较。</p>')
         sections.append(table(('平台','像素高度','区域','旧版 IoU','新版 IoU','变化','重复波动','达标'),
             [[r['platform'],r['height'],r['region'],r['old_iou'],r['new_iou'],r['delta'],r['repeat_variation'],'是' if r['passed']=='True' else '否'] for r in sizes]))
     web_clocks=[]
@@ -210,17 +261,18 @@ def build(root, run, dest, trials, previous=None):
         for folder in dict.fromkeys([*trials,run]):
             for f in sorted(folder.rglob('*')):
                 rel=f.relative_to(folder)
-                if not f.is_file() or not (rel.parts[0] in ('tv-device-results','web-clock-and-endings','upgrade-chromium','upgrade-webkit','campaign-loop') or rel.parts[0].startswith('stage-replay-') or rel.parts[0] in ('menu-evidence','reference-review') or (rel.parts[0]=='local-web' and f.suffix=='.log') or f.name in ('menu-sizes.csv','artifact-receipts.json','job-status.json','job-steps.json','gpu-shader.log','stages.json','menu-regions.csv','commit.txt','run.txt','artifact.json')):continue
-                if f.suffix not in ('.json','.csv','.png','.gz','.log','.txt','.jsonl','.sha256','.wav','.tsv','.jpg'):continue
+                if not f.is_file() or not (rel.parts[0] in ('tv-device-results','web-clock-and-endings','upgrade-chromium','upgrade-webkit','campaign-loop') or rel.parts[0].startswith('stage-replay-') or rel.parts[0] in ('menu-evidence','reference-review') or (rel.parts[0]=='local-web' and f.suffix=='.log') or f.name in ('menu-sizes.csv','artifact-receipts.json','job-status.json','job-steps.json','gpu-shader.log','native-payloads.json','layer-geometry.json','stages.json','menu-regions.csv','commit.txt','run.txt','artifact.json')):continue
+                if f.suffix not in ('.json','.csv','.png','.gz','.log','.txt','.jsonl','.sha256','.wav','.tsv','.jpg','.cpp','.sh'):continue
                 z.write(f,str(Path(folder.name)/rel))
         for f in [root/'tail-codec.csv',root/'audio-recheck/terminal-av-sync.csv',*sorted((root/'reference-frames').glob('*.png'))]:
             z.write(f,'references/'+f.name)
         for f in (root/'research').glob('*'):
             if f.suffix in ('.tsv','.csv','.jpg'):
                 z.write(f,'research/'+f.name)
-        for n in ('compositor_report.py','tv_stage_analysis.py','tv_release_gate.py','native_window_report.py','tv_gpu_shader.cjs','tv_tail_codec.py','switch_menu_regions.py','switch_score_sample.py','switch_lettering.py','switch_coop_terminal.py','ending.lua','browser-ending.cjs','browser-game.cjs','television.py','tv-scenes.lua','tv-blast-load.lua','terminal_av_sync.py','ending_audio.py','ending_calibration.py','terminal_tally.py','switch_cues.py','compare_switch_audio.py'):
+        for n in ('compositor_report.py','tv_stage_analysis.py','tv_layer_geometry.py','tv_presentation.py','test_tv_presentation.py','tv_release_gate.py','native_window_report.py','tv_gpu_shader.cjs','tv_tail_codec.py','switch_menu_regions.py','switch_score_sample.py','switch_lettering.py','switch_coop_terminal.py','ending.lua','browser-ending.cjs','browser-game.cjs','television.py','tv-scenes.lua','tv-blast-load.lua','terminal_av_sync.py','ending_audio.py','ending_calibration.py','terminal_tally.py','switch_cues.py','compare_switch_audio.py'):
             z.write(Path(__file__).with_name(n),'methods/'+n)
-        z.write(Path(__file__).resolve().parents[2]/'runtime/tv-gpu-raster.h','methods/tv-gpu-raster.h')
+        for name in ('tv-gpu-raster.h','tv-raster-shader.h','tv-egl-window.h','tv-sdl-swap.patch','tv-egl.patch'):
+            z.write(Path(__file__).resolve().parents[2]/'runtime'/name,'methods/'+name)
 
 
 if __name__=='__main__':

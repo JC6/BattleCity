@@ -313,9 +313,22 @@ def record_endings(labels, directory, results, write_private, routes=('neutral',
 
 def launch():
     private('rm','-f','files/tv-observation')
-    adb('shell','am','start','-W','-a','android.intent.action.MAIN',
-        '-c','android.intent.category.LEANBACK_LAUNCHER','-n',PACKAGE+'/.GameActivity')
-    check(lambda s:s['mode']==0 and not s['scroll'] and s['ready'], 'cold title')
+    start_fixture()
+    launched=time.monotonic()
+    def read():
+        nonlocal launched
+        row=state()
+        if row or time.monotonic()-launched<3:
+            return row
+        focus=adb('shell','dumpsys','window','displays').decode(errors='replace')
+        current=next((line for line in focus.splitlines() if 'mCurrentFocus=' in line),'')
+        if 'com.google.android.tvlauncher' in current and 'ShowDialogsActivity' in current and adb('shell','pidof',PACKAGE,check=False).strip():
+            print('Dismissed Google TV launcher promotion during cold start',flush=True)
+            adb('shell','input','keyevent','KEYCODE_BACK')
+            start_fixture()
+        launched=time.monotonic()
+        return row
+    wait(read,lambda s:s and s['mode']==0 and not s['scroll'] and s['ready'],'cold title')
 
 
 def start_fixture():
@@ -404,8 +417,13 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         modes = {'candidate':None}
     if prototype:
         modes = {'software-battle':'none','child-battle':'compositor-tv','battle':None,
-                 'software-explosions':'none','child-explosions':'compositor-tv','explosions':None}
+                 'software-explosions':'none','child-explosions':'compositor-tv','explosions':None,
+                 'fifo-battle':None,'fifo-explosions':None}
     def select(mode, scale):
+        if mode.startswith('fifo-'):
+            write_private('tv-egl-fifo','1')
+        else:
+            private('rm','-f','files/tv-egl-fifo')
         if mode.startswith('full-'):
             write_private('tv-force-full','1')
         else:
@@ -417,7 +435,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         write_private('nes.ini', ini + (f'scalemode {scale}\n' if scale else ''))
     def stop():
         adb('shell','am','force-stop',PACKAGE)
-        private('rm','-f','files/tv-fixed','files/tv-profile.jsonl','files/tv-capture','files/tv-expanded.ppm','files/tv-source.ppm','files/tv-expanded.tmp','files/tv-layer.ppm','files/tv-layer.tmp','files/tv-swap.tmp','files/tv-swap.ppm','files/tv-frame-map.csv','files/tv-present.csv')
+        private('rm','-f','files/tv-fixed','files/tv-profile.jsonl','files/tv-capture','files/tv-expanded.ppm','files/tv-source.ppm','files/tv-expanded.tmp','files/tv-layer.ppm','files/tv-layer.tmp','files/tv-swap.tmp','files/tv-swap.ppm','files/tv-frame-map.csv','files/tv-present.csv','files/tv-window.txt','files/tv-swap-renderer.txt')
     def marker():
         last_launch = time.monotonic()
         def read():
@@ -454,12 +472,14 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         write_private('tv-profile.jsonl','')
         trace_key='battlecity_display'
         trace_path='/data/misc/perfetto-traces/battlecity-display.pftrace'
-        trace_enabled=name in ('battle','explosions','candidate')
+        trace_enabled=name in ('battle','explosions','candidate','fifo-battle','fifo-explosions')
         if trace_enabled:
             adb('shell','perfetto','--attach='+trace_key,'--stop',check=False)
             adb('shell','rm','-f',trace_path)
-            config=b'buffers { size_kb: 16384 } data_sources { config { name: "android.surfaceflinger.frame" } } duration_ms: 240000'
-            adb('shell','-T','perfetto','--txt','-c','-','--detach='+trace_key,'-o',trace_path,data=config,check=False)
+            config=b'write_into_file: true file_write_period_ms: 500 buffers { size_kb: 16384 } data_sources { config { name: "android.surfaceflinger.frame" } } duration_ms: 240000'
+            command=[ADB,'shell','-T','perfetto','--txt','-c','-','--detach='+trace_key,'-o',trace_path]
+            started=subprocess.run(command,input=config,capture_output=True,timeout=30)
+            (results/(name+'-perfetto-start.txt')).write_bytes(str(started.returncode).encode()+b'\n'+started.stdout+started.stderr)
         start_fixture()
         markers[name] = marker()
         print('Measuring full frames:', name, markers[name], flush=True)
@@ -479,6 +499,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
             time.sleep(.5)
             adb('shell','perfetto','--attach='+trace_key,'--stop',check=False)
             trace=adb('exec-out','cat',trace_path,check=False)
+            (results/(name+'-window.txt')).write_bytes(private('cat','files/tv-window.txt',check=False))
             mapping=private('cat','files/tv-frame-map.csv',check=False)
             shown=private('cat','files/tv-present.csv',check=False)
             if not mapping[:1].isdigit():mapping=b''
@@ -507,7 +528,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         (results/'clock.json').write_text(json.dumps({'battle':markers,'windows':summaries},indent=2))
     if prototype:
         stop()
-        private('rm','-f','files/tv-force-full')
+        private('rm','-f','files/tv-force-full','files/tv-egl-fifo')
         return
     # Separate launches keep the frozen visual fixtures out of the clock samples.
     display = 'shared_prefs/display.xml'
@@ -560,6 +581,8 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
                         if any(swap_ready() or time.sleep(.2) for _ in range(15)):
                             channels.append('swap')
                     if case=='calibration':
+                        if name in ('baseline','repeat'):
+                            (results/f'{case}-{name}-renderer.txt').write_bytes(private('cat','files/tv-swap-renderer.txt',check=False))
                         (results/f'{case}-{name}-layers.txt.gz').write_bytes(gzip.compress(adb('shell','dumpsys','SurfaceFlinger'),mtime=0))
                         (results/f'{case}-{name}-layers.pb.gz').write_bytes(gzip.compress(adb('exec-out','dumpsys','SurfaceFlinger','--proto',check=False),mtime=0))
                     for stage in channels:
@@ -624,7 +647,7 @@ def run(apk, labels, results, suite, previous=None, formal=False):
         slot = f'files/states/{prior}/nes/1.sta'
     # Leave existing player files intact. A completed run removes its own slot.
     test_files = ['files/'+name for name in ('nes.ini','tv-observer.lua','tv-observation',
-                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv','tv-profile.jsonl','tv-fixed','tv-low-buffer','tv-capture','tv-expanded.ppm','tv-source.ppm','tv-expanded.tmp','tv-force-full','tv-layer.ppm','tv-layer.tmp')]
+                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv','tv-profile.jsonl','tv-fixed','tv-low-buffer','tv-egl-fifo','tv-capture','tv-expanded.ppm','tv-source.ppm','tv-expanded.tmp','tv-force-full','tv-layer.ppm','tv-layer.tmp')]
     test_files.extend((slot,slot+'.png',slot+'.lock'))
     if slot!=current_slot: test_files.extend((current_slot,current_slot+'.png',current_slot+'.lock'))
     for name in test_files:

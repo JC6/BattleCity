@@ -74,7 +74,7 @@ Connect both gamepads before launching a two-player session. The official Androi
 
 ## Measuring Android TV full frames
 
-The Android build produces an SDL software baseline and a candidate with the packaged `compositor-tv` renderer. The `surface-tv` diagnostic remains available for comparing full-window SDL rendering and system upscaling. Both packages use the same cartridge and save directory.
+The Android build produces an SDL software baseline and an `egl-tv` candidate that draws into the existing SurfaceView and swaps once per game frame. `compositor-tv` selects the previous SurfaceControl child for a same-device comparison. All three paths share the cartridge, save directory and controller code. The acceptance workflow builds SDL 3.4.12 from its pinned source archive and applies the window readback hook in `runtime/tv-sdl-swap.patch`. This exposes the actual SDL window texture after the final draw for frozen-frame comparisons.
 
 On a dedicated API 34 television emulator, run the following against the packaged x86 APK and the labels for its embedded cartridge.
 
@@ -83,16 +83,18 @@ mkdir -p build/tv-result
 sha256sum deliverable/tv-emulator{,-candidate}.apk build/shared/game.nes > build/tv-result/tested-sha256.txt
 bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result \
   --stable deliverable/tv-emulator.apk --record-candidate-failure --suite controls --suite prototype --suite candidate-controls --suite held-out --suite timing
-if PYTHONPATH=tests/nes python3 -c "import sys; from pathlib import Path; from tv_release_gate import preliminary; sys.exit(0 if all(preliminary(Path('build/tv-result'),'compositor-tv').values()) else 1)"; then
+if PYTHONPATH=tests/nes python3 -c "import sys; from pathlib import Path; from tv_release_gate import preliminary; sys.exit(0 if all(preliminary(Path('build/tv-result'),'egl-tv').values()) else 1)"; then
   bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result --formal --suite render --suite scenes
   mkdir -p build/tv-result/second
   cp build/tv-result/tested-sha256.txt build/tv-result/second/
   bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result/second --formal --suite render --suite scenes
 fi
-python3 tests/nes/tv_release_gate.py --renderer compositor-tv build/tv-result
+python3 tests/nes/tv_release_gate.py --renderer egl-tv build/tv-result
 ```
 
-The prototype boot exercises both packages with two gamepads, records three solo endings and two filmed co-op score outcomes and compares moving frames 626, 633 and 648, explosion frame 700, and a colour-bar/single-pixel-line target. The workflow starts two further clean AVDs after the 30-second battle and explosion probes, the full-screen comparisons and both controller checks pass. Set the workflow input `previous_tv_run` to exercise a save created by a previous release through an in-place update. For each of the eight picture comparisons the harness freezes the same NES frame, checks a digest of 2 KiB RAM, samples all 256 × 224 visible pixel centres and checks the wallpaper. A second baseline screenshot supplies a per-pixel, per-channel tolerance for the full raster. The candidate qualifies as the release default only if both boots pass all picture checks and each of their three 30-second windows submits every frame while the NES and output PCM both run at 99–101% of real time. The low-resolution window, native-size texture and full-resolution GPU runs are diagnostic comparisons.
+The first boot records ordinary battle and explosion loads on SDL, SurfaceControl and EGL starting from identical cartridge states. Two gamepads exercise each APK. Three solo endings and the two filmed co-op outcomes are recorded on the default APK. The frozen cases include battle frames 626, 633 and 648, explosion frame 700, and colour bars with single-pixel lines. The harness checks the 2 KiB RAM marker, 256 × 224 pixel centres, wallpaper and the full system screenshot against a repeated baseline. It captures the source, expanded buffer, actual SDL or EGL readback immediately before swap and Android's layer geometry in the same scene.
+
+The candidate requires a one-to-one association between sequential NES frames and display timestamps. The probe checks native `EGL_DISPLAY_PRESENT_TIME_ANDROID` or a single SurfaceView's SurfaceFlinger `PRESENT_FENCE` events. Missing identifiers and incomplete time series are reported as unverified. If the probe and controls pass, two fresh AVDs each measure three 30-second windows and eight picture cases. Every window must meet the 99%–101% game and PCM limits. The previous release used by the save upgrade check is selected by `previous_tv_run`. [Perfetto graphics frame events](https://github.com/google/perfetto/blob/main/protos/perfetto/trace/android/graphics_frame_event.proto)
 
 The lightweight run creates an app-private measurement file, warms up for ten emulated seconds, and appends one JSON row per 30-second window. It counts vblanks, successful window-buffer or SDL submissions, and PCM frames handed to the first system sound sink. The system trace is taken after the third window, while the same process is in the foreground. The detailed `timing` suite records WAV and RAM separately. A compositor timestamp measures Android presentation. Physical input-to-display latency requires a device measurement.
 

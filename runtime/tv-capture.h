@@ -81,6 +81,10 @@ public:
     static void SDLCALL before_software_swap(void *userdata, SDL_Renderer *renderer) {
         auto &capture=*static_cast<tv_stage_capture *>(userdata);
         if (!capture.needs_swap()) return;
+        if (FILE *file=std::fopen((capture.directory+"tv-swap-renderer.txt").c_str(),"w")) {
+            std::fprintf(file,"%s\n",SDL_GetRendererName(renderer));
+            std::fclose(file);
+        }
         if (auto *surface=SDL_RenderReadPixels(renderer,nullptr)) {
             capture.swap_input(surface->pixels,surface->w,surface->h,surface->pitch,surface->format);
             SDL_DestroySurface(surface);

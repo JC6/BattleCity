@@ -30,6 +30,8 @@ def compare(images):
     result={'dimensions':[[r[0],r[1]] for r in images],'rgbSha256':hashes}
     if (w,h)!=(bw,bh) or (w,h)!=(cw,ch):
         return {**result,'geometryMismatch':True}
+    if hashes[0]==hashes[1]==hashes[2]:
+        return {**result,**dict.fromkeys(("differentPixels","repeatPixels","aboveRepeatNoise","atBoundary","awayFromBoundary","maxChannelError"),0),"mostFrequentColorChanges":[]}
     errors=Counter()
     different=boundary=above_noise=noisy=0
     largest=0
@@ -89,11 +91,18 @@ def calibration_edges(expanded, system):
 def analyze(folder):
     rows={}
     cases=json.loads((folder/'visual.json').read_text())
+    expects_swap=any(folder.glob('*-layers.txt.gz'))
+    modes=('baseline','repeat','candidate')
     for name,visual in cases.items():
         stages={}
-        for stage in ('source','expanded','system'):
+        for stage in ('source','expanded','layer',*(('swap',) if expects_swap else ()), 'system'):
             tail='.png' if stage=='system' else '-'+stage+'.ppm.gz'
-            imgs=[load(folder/(name+'-'+mode+tail)) for mode in ('baseline','repeat','candidate')]
+            files=[folder/(name+'-'+mode+tail) for mode in modes]
+            missing=[mode for mode,path in zip(modes,files) if not path.is_file()]
+            if missing:
+                stages[stage]={'missing':missing}
+                continue
+            imgs=[load(path) for path in files]
             stages[stage]=compare(imgs)
             if name=='calibration' and stage=='source':
                 w,h,rgb=imgs[0]
@@ -101,16 +110,28 @@ def analyze(folder):
                 assert bars==['000000','ffffff','ff0000','00ff00','0000ff','cc7f35','456789','808080'],bars
         if name=='calibration':
             for mode in ('baseline','candidate'):
-                info=calibration_edges(load(folder/f'{name}-{mode}-expanded.ppm.gz'),load(folder/f'{name}-{mode}.png'))
+                expanded=load(folder/f'{name}-{mode}-expanded.ppm.gz')
+                info=calibration_edges(expanded,load(folder/f'{name}-{mode}.png'))
                 stages['system'][mode+'Registration']=info
                 layer=folder/f'{name}-{mode}-layer.ppm.gz'
                 if layer.is_file():
-                    expanded=load(folder/f'{name}-{mode}-expanded.ppm.gz')
                     before=load(layer)
                     stages['system'][mode+'BeforePresent']=compare([expanded,expanded,before])
                     stages['system'][mode+'LayerRegistration']=calibration_edges(before,load(folder/f'{name}-{mode}.png'))
+                swap=folder/f'{name}-{mode}-swap.ppm.gz'
+                if swap.is_file():
+                    buf=load(swap)
+                    stages['system'][mode+'SwapRegistration']=calibration_edges(buf,load(folder/f'{name}-{mode}.png'))
+                    stages['system'][mode+'ExpandedToSwap']=compare([expanded,expanded,buf])
         assert stages['system']['aboveRepeatNoise']==visual['aboveRepeatNoise']
-        first=next((k for k,v in stages.items() if v.get('geometryMismatch') or v['aboveRepeatNoise']),'identical')
+        first='identical'
+        for stage,result in stages.items():
+            if result.get('missing'):
+                first='unverified from '+stage
+                break
+            if result.get('geometryMismatch') or result['aboveRepeatNoise']:
+                first=stage
+                break
         rows[name]={'battle':visual['battle'],'firstDifference':first,'stages':stages}
     return rows
 

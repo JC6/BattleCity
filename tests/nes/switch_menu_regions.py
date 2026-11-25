@@ -60,7 +60,7 @@ def compare(reference, groups, output):
         w=csv.DictWriter(f,rows[0]);w.writeheader();w.writerows(rows)
 
 
-def compare_sizes(reference, samples, output):
+def compare_sizes(reference, samples, output, improving=('save-focus','empty-slot')):
     """Measure menu changes against the same Switch frame at each native display size.
 
     Each sample maps a scene to the old frame, its repeat, the new frame and its repeat.
@@ -84,7 +84,7 @@ def compare_sizes(reference, samples, output):
             old,old_repeat,new,new_repeat=values
             noise=max(abs(old-old_repeat),abs(new-new_repeat))
             delta=new-old
-            target=region in ('save-focus','empty-slot')
+            target=region in improving
             rows.append(dict(platform=platform,height=height,region=region,old_iou=round(old,6),new_iou=round(new,6),
                              delta=round(delta,6),repeat_variation=round(noise,6),
                              criterion='improvement' if target else 'no regression',

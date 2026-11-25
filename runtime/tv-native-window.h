@@ -181,31 +181,29 @@ public:
 		if (capture) capture->source(list,saved);
 		const auto *game = (picture || menu) ? nullptr : screen_quad(list);
         if (direct) {
-            auto &input=game ? source : image;
-            const int iw=game ? game->texture.width : w, ih=game ? game->texture.height : h;
-            input.resize(size_t(iw)*ih);
+            ARect dirty{0,0,w,h};
             if (game) {
-                auto p=*game;
-                p.bounds={0,0,float(iw),float(ih)};
-                raster::draw_game_quad(p,input.data(),iw,ih,iw,0);
+                dirty=draw_changes(*game,true);
             } else {
-                raster::draw_primitives<true>(list,input.data(),w,h,w,picture);
+                compact=false;
+                raster::draw_primitives<true>(list,image.data(),w,h,w,picture);
             }
             saved.restore();
             list.release_lock();
-            if (capture && !capture->done()) {
-                std::vector<uint16_t> expanded(size_t(w)*h);
-                map_axis(xs,w,iw); map_axis(ys,h,ih);
-                for (int y=0;y<h;++y) for (int x=0;x<w;++x)
-                    expanded[size_t(y)*w+x]=input[size_t(ys[y])*iw+xs[x]];
-                capture->expanded(expanded.data(),w,h,w*2,SDL_PIXELFORMAT_RGB565);
+            if (fresh) dirty={0,0,w,h};
+            expand_rgba(dirty);
+            if (capture) {
+                if (!capture->done()) capture->expanded(image.data(),w,h,w*2,SDL_PIXELFORMAT_RGB565);
+                if (capture->needs_present()) capture->present_input(rgba.data(),w,h,w*4,SDL_PIXELFORMAT_RGBA32);
             }
             int64_t before_swap=0;
-            const bool ok=egl.draw(input,iw,ih,w,h,meter ? frame : 0,capture,before_swap);
+            const bool ok=egl.draw(rgba,dirty,w,h,meter ? frame : 0,capture,before_swap);
+            fresh=!ok;
             if (meter) {
                 meter->draw=before_swap ? before_swap-begin : now()-begin;
                 meter->post=before_swap ? now()-before_swap : 0;
-                meter->area=int64_t(w)*h;
+                meter->area=dirty.right>dirty.left && dirty.bottom>dirty.top
+                    ? int64_t(dirty.right-dirty.left)*(dirty.bottom-dirty.top) : 0;
                 meter->fast=bool(game);
             }
             return ok;

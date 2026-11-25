@@ -9,7 +9,7 @@ class tv_egl_window {
     EGLContext context=EGL_NO_CONTEXT;
     bool own_surface=false;
     GLuint program=0, texture=0;
-    GLint geometry=-1, derivative=-1;
+    GLint viewport=-1;
     int texture_w=0, texture_h=0;
     PFNEGLGETNEXTFRAMEIDANDROIDPROC next_id=nullptr;
     PFNEGLGETFRAMETIMESTAMPSANDROIDPROC timestamps=nullptr;
@@ -70,16 +70,37 @@ public:
         own_surface=existing==EGL_NO_SURFACE;
         surface=own_surface ? eglCreateWindowSurface(display,config,window,nullptr) : existing;
         if (surface==EGL_NO_SURFACE || !eglMakeCurrent(display,surface,surface,context)) return false;
-        if (!eglSwapInterval(display,1)) return false;
-        program=battlecity_tv::raster_program();
+        const char *root=SDL_GetAndroidInternalStoragePath();
+        const bool fifo=root && ::access((std::string(root)+"/tv-egl-fifo").c_str(),F_OK)==0;
+        if (!eglSwapInterval(display,fifo ? 1 : 0)) return false;
+        // Match the SDL window texture's final normalized linear sample. Keep its
+        // top-to-bottom texture layout and two-triangle screen projection.
+        const char *vertex=R"(#version 300 es
+uniform highp vec2 viewport;
+out highp vec2 uv;
+void main() {
+    const vec2 corner[6]=vec2[6](vec2(0,0),vec2(1,0),vec2(1,1),vec2(0,0),vec2(1,1),vec2(0,1));
+    uv=corner[gl_VertexID];
+    vec2 pos=uv*viewport;
+    gl_Position=vec4(pos*(vec2(2.0,-2.0)/viewport)+vec2(-1.0,1.0),0.0,1.0);
+})";
+        const char *fragment=R"(#version 300 es
+precision mediump float;
+in highp vec2 uv;
+uniform sampler2D source;
+out vec4 color;
+void main() { color=texture(source,uv); }
+)";
+        program=battlecity_tv::link(vertex,fragment);
         if (!program) return false;
         glUseProgram(program);
-        geometry=glGetUniformLocation(program,"geometry");
-        derivative=glGetUniformLocation(program,"derivative");
+        viewport=glGetUniformLocation(program,"viewport");
         glUniform1i(glGetUniformLocation(program,"source"),0);
         glGenTextures(1,&texture); glBindTexture(GL_TEXTURE_2D,texture);
-        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
         glDisable(GL_BLEND); glDisable(GL_DITHER);
         ++generation;
         next_id=(PFNEGLGETNEXTFRAMEIDANDROIDPROC)eglGetProcAddress("eglGetNextFrameIdANDROID");
@@ -88,35 +109,47 @@ public:
         if (battlecity_tv::measuring.load(std::memory_order_relaxed)) {
             present_supported=timestamps && supported && eglSurfaceAttrib(display,surface,EGL_TIMESTAMPS_ANDROID,EGL_TRUE)
                 && supported(display,surface,EGL_DISPLAY_PRESENT_TIME_ANDROID);
-            const char *root=SDL_GetAndroidInternalStoragePath();
             if (root && !frames) frames=std::fopen((std::string(root)+"/tv-frame-map.csv").c_str(),"a");
             if (root && !presentations) presentations=std::fopen((std::string(root)+"/tv-present.csv").c_str(),"a");
+            EGLint minimum=0,maximum=0;
+            eglGetConfigAttrib(display,config,EGL_MIN_SWAP_INTERVAL,&minimum);
+            eglGetConfigAttrib(display,config,EGL_MAX_SWAP_INTERVAL,&maximum);
+            if (root) {
+                if (FILE *file=std::fopen((std::string(root)+"/tv-window.txt").c_str(),"a")) {
+                    std::fprintf(file,"generation=%u renderer=%s requestedInterval=%d configMin=%d configMax=%d displayTimestamps=%d\n",
+                        generation,reinterpret_cast<const char *>(glGetString(GL_RENDERER)),fifo ? 1 : 0,minimum,maximum,present_supported);
+                    std::fclose(file);
+                }
+            }
             SDL_Log("BattleCity EGL window: generation %u, display timestamp %d",generation,present_supported);
         }
         return glGetError()==GL_NO_ERROR;
     }
-    bool draw(const std::vector<uint16_t> &pixels,int iw,int ih,int w,int h,uint64_t frame,
+    bool draw(const std::vector<uint32_t> &pixels,ARect dirty,int w,int h,uint64_t frame,
               tv_stage_capture *capture,int64_t &before_swap) {
         if (eglGetCurrentContext()!=context && !eglMakeCurrent(display,surface,surface,context)) return false;
         EGLint sw=0,sh=0;
         if (!eglQuerySurface(display,surface,EGL_WIDTH,&sw) || !eglQuerySurface(display,surface,EGL_HEIGHT,&sh) || sw<=0 || sh<=0) return false;
         glViewport(0,0,sw,sh);
         glBindTexture(GL_TEXTURE_2D,texture);
-        if (iw!=texture_w || ih!=texture_h) {
-            glPixelStorei(GL_UNPACK_ALIGNMENT,2);
-            glTexImage2D(GL_TEXTURE_2D,0,GL_R16UI,iw,ih,0,GL_RED_INTEGER,GL_UNSIGNED_SHORT,nullptr);
-            texture_w=iw; texture_h=ih;
+        if (w!=texture_w || h!=texture_h) {
+            glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,nullptr);
+            texture_w=w; texture_h=h;
+            dirty={0,0,w,h};
         }
-        glTexSubImage2D(GL_TEXTURE_2D,0,0,0,iw,ih,GL_RED_INTEGER,GL_UNSIGNED_SHORT,pixels.data());
-        glUniform2i(geometry,sh,1);
-        glUniform2i(derivative,int(std::floor(65536.f*iw*(1.f/sw)+.5f)),int(std::floor(65536.f*ih*(1.f/sh)+.5f)));
-        glDrawArrays(GL_TRIANGLES,0,3);
+        if (dirty.right>dirty.left && dirty.bottom>dirty.top) {
+            glPixelStorei(GL_UNPACK_ROW_LENGTH,w);
+            glTexSubImage2D(GL_TEXTURE_2D,0,dirty.left,dirty.top,dirty.right-dirty.left,dirty.bottom-dirty.top,
+                GL_RGBA,GL_UNSIGNED_BYTE,pixels.data()+size_t(dirty.top)*w+dirty.left);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH,0);
+        }
+        glUniform2f(viewport,float(sw),float(sh));
+        glDrawArrays(GL_TRIANGLES,0,6);
         if (capture && capture->needs_swap() && sw==w && sh==h) {
             std::vector<uint32_t> rgba(size_t(sw)*sh);
             glReadPixels(0,0,sw,sh,GL_RGBA,GL_UNSIGNED_BYTE,rgba.data());
             for (int y=0;y<sh/2;++y)
                 std::swap_ranges(rgba.begin()+size_t(y)*sw,rgba.begin()+size_t(y+1)*sw,rgba.begin()+size_t(sh-1-y)*sw);
-            capture->present_input(rgba.data(),sw,sh,sw*4,SDL_PIXELFORMAT_RGBA32);
             capture->swap_input(rgba.data(),sw,sh,sw*4,SDL_PIXELFORMAT_RGBA32);
         }
         EGLuint64KHR id=0;
