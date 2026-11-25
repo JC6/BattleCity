@@ -3,6 +3,7 @@ import argparse
 import csv
 from functools import lru_cache
 from pathlib import Path
+import struct
 import subprocess
 
 
@@ -57,6 +58,42 @@ def compare(reference, groups, output):
                        measured_pixels=len(actual),intersection_over_union=round(len(target&actual)/len(union),4)))
     with output.open('w',newline='') as f:
         w=csv.DictWriter(f,rows[0]);w.writeheader();w.writerows(rows)
+
+
+def compare_sizes(reference, samples, output):
+    """Measure menu changes against the same Switch frame at each native display size.
+
+    Each sample maps a scene to the old frame, its repeat, the new frame and its repeat.
+    """
+    rows=[]
+    for (platform,height), scenes in samples.items():
+        width={720:1280,1080:1920}[height]
+        for region,scene,rect,kind in REGIONS:
+            reference_mask=mask(grid(reference/(scene+'.png')),rect,kind)
+            files=scenes[scene]
+            if not reference_mask or len(files)!=4:
+                raise ValueError(f'Incomplete menu region {platform} {height} {region}')
+            masks=[]
+            for file in files:
+                with file.open('rb') as f:
+                    header=f.read(24)
+                if header[:8]!=b'\x89PNG\r\n\x1a\n' or struct.unpack('>II',header[16:24])!=(width,height):
+                    raise ValueError(f'Expected {width} × {height} PNG at {file}')
+                masks.append(mask(grid(file),rect,kind))
+            values=[len(observed & reference_mask)/len(observed | reference_mask) for observed in masks]
+            old,old_repeat,new,new_repeat=values
+            noise=max(abs(old-old_repeat),abs(new-new_repeat))
+            delta=new-old
+            target=region in ('save-focus','empty-slot')
+            rows.append(dict(platform=platform,height=height,region=region,old_iou=round(old,6),new_iou=round(new,6),
+                             delta=round(delta,6),repeat_variation=round(noise,6),
+                             criterion='improvement' if target else 'no regression',
+                             passed=delta>noise if target else delta>=-noise))
+    with output.open('w',newline='') as f:
+        writer=csv.DictWriter(f,rows[0])
+        writer.writeheader()
+        writer.writerows(rows)
+    return rows
 
 
 if __name__=='__main__':

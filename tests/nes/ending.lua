@@ -6,7 +6,12 @@ local classic=os.getenv("BATTLECITY_CLASSIC")=="1"
 local scenario=assert(os.getenv("BATTLECITY_SCENARIO"))
 local buttons=os.getenv("BATTLECITY_END_INPUT") or "neutral"
 local win=scenario=="solo" or scenario=="coop"
-local coop=scenario=="coop"
+local pair_routes={
+    ["coop-stage42"]={stage=42,one=15000,two=45800,high=68100,kills={0,0,0,0,0,0,0,0}},
+    ["coop-stage18"]={stage=18,one=40400,two=68100,high=20000,kills={1,1,4,3,1,2,2,1}}
+}
+local switch_pair=pair_routes[buttons]
+local coop=scenario=="coop" or switch_pair
 local a,pads={},{}
 if not classic then
     for line in io.lines(assert(os.getenv("BATTLECITY_LABELS"))) do
@@ -21,7 +26,7 @@ for tag,port in pairs(m.ioport.ports) do
 end
 local frame,origin,done,score_frame=0,nil,false,nil
 local capture=os.getenv("BATTLECITY_CAPTURE_DIR")
-local record=buttons=="record"
+local record=buttons=="record" or (switch_pair and switch_pair.two>switch_pair.high)
 local record_seen=false
 local rows={}
 local finish_at
@@ -36,6 +41,16 @@ local function event(name)
     if origin and not done then rows[#rows+1]=(frame-origin)..","..name;av(name) end
 end
 local function finish()
+    if switch_pair then
+        assert(bus:read_u8(a.players)==2 and bus:read_u8(a.selection)==1 and bus:read_u8(a.mode)==0)
+        local vram=m.devices[":ppu"].spaces.videoram
+        local high=math.max(switch_pair.high,switch_pair.one,switch_pair.two)
+        for col,score in pairs({[5]=switch_pair.one,[15]=high,[24]=switch_pair.two}) do
+            local text=tostring(score)
+            for i=1,#text do assert(vram:read_u8(0x2060+col+i-1)==text:byte(i),"wrong title score") end
+        end
+        av("two-player-title",string.format("%d/%d/%d",switch_pair.one,high,switch_pair.two))
+    end
     if record then assert(record_seen,"high-score screen did not display the reference lettering and score") end
     if av_path then
         local out=assert(io.open(av_path,"w"))
@@ -86,7 +101,7 @@ local function setup()
     else
         for i=0,7 do put(a.tanks+13*i+3,0);put(a.kills+i,0) end
         for i=0,9 do put(a.shots+4*i+3,0);put(a.shot_blast+i,0) end
-        if record then
+        if buttons=="record" then
             for i=0,3 do put(a.scores+i,(185900 >> (8*i)) & 255) end
             for i,digit in ipairs({0,1,8,5,9,0,0}) do put(a.score_digits+i-1,digit) end
         end
@@ -97,6 +112,19 @@ local function setup()
             assert(not win and counts:match("^%d+,%d+,%d+,%d+$"),"expected four ending tally rows")
             local k=0
             for value in counts:gmatch("%d+") do put(a.kills+k,tonumber(value));k=k+1 end
+        end
+        if switch_pair then
+            -- Only the initial battle state is staged. The cartridge plays the loss.
+            assert(bus:read_u8(a.players)==2)
+            put(a.stage,switch_pair.stage-1)
+            for i,n in ipairs(switch_pair.kills) do put(a.kills+i-1,n) end
+            local function score(addr,decimal,value)
+                for i=0,3 do put(addr+i,(value >> (8*i)) & 255) end
+                for i=6,0,-1 do put(decimal+i,value%10);value=value//10 end
+            end
+            score(a.scores,a.score_digits,switch_pair.one)
+            score(a.scores+4,a.score_digits+7,switch_pair.two)
+            score(a.high_score,a.high_digits,switch_pair.high)
         end
         put(a.spawned,20);put(a.defeated,win and 19 or 0);put(a.freeze,0);put(a.freeze+1,16)
         put(a.lives,scenario=="lives" and 1 or 3);put(a.lives+1,coop and 3 or 0)
@@ -126,7 +154,7 @@ local function oncall(addr,name)
             event(name)
             if name=="tally" then score_frame=frame end
             if name=="next" or name=="title" then
-                if av_path then finish_at=frame+20 else finish() end
+                if av_path or switch_pair then finish_at=frame+20 else finish() end
             end
         end
     end)
@@ -209,7 +237,8 @@ ending_frames=emu.add_machine_frame_notifier(function()
             return hash
         end
         -- 4x4-cell outlines measured in the 185900 Switch frame at 43:36.
-        record_seen=outline(16,52,56)==0x5f1b57f1 and outline(48,104,48)==0xa79a5774
+        local digits=switch_pair and outline(80,104,40)==0x46777a6 or (not switch_pair and outline(48,104,48)==0xa79a5774)
+        record_seen=outline(16,52,56)==0x5f1b57f1 and digits
         if record_seen and capture then
             local f=assert(io.open(capture.."/record.bgra","wb"));f:write(data);f:close()
         end

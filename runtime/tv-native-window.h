@@ -151,7 +151,10 @@ public:
 	bool draw(render_primitive_list &list, int w, int h, uint8_t picture, bool menu, bool reset, timing *meter, uint64_t frame=0, bool drain=false, tv_stage_capture *capture=nullptr)
 	{
 		if (w <= 0 || h <= 0 || !window) return false;
-		if (exposed.exchange(false,std::memory_order_relaxed)) reset=true;
+		if (exposed.exchange(false,std::memory_order_relaxed)) {
+            if (layered) queue.close();
+            reset=true;
+        }
 		if (w != width || h != height || reset) {
 			if (layered) {
 				if (!queue.configure(window,w,h)) return false;
@@ -188,7 +191,11 @@ public:
 				}
 				expand_rgba({0,0,w,h});
 			};
-			const bool ok = queue.present(rgba,compact ? &previous : nullptr,dirty,frame,drain,txn,capture,restore_cpu_image);
+			if (gpu_game && capture && !capture->done()) {
+                restore_cpu_image();
+                capture->expanded(rgba.data(),w,h,w*4,SDL_PIXELFORMAT_RGBA32);
+            }
+            const bool ok = queue.present(rgba,compact ? &previous : nullptr,dirty,frame,drain,txn,capture,restore_cpu_image);
 			if (meter) *meter = {txn,drawn-begin,txn.lock,txn.copy,txn.post,txn.pixels,compact};
 			fresh = !ok;
 			return ok;

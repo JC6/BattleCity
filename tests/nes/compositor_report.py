@@ -27,7 +27,7 @@ def sha(file):
         return hashlib.file_digest(f,'sha256').hexdigest()
 
 
-def build(root, run, dest, trials):
+def build(root, run, dest, trials, previous=None):
     run_id=run.name
     tv=run/'tv-device-results'
     gate=decision(tv,renderer='compositor-tv')
@@ -35,7 +35,7 @@ def build(root, run, dest, trials):
     identity=sha(dest/'game.nes')
     assert identity==sha(run/'cartridge/game.nes')
     web=sha(dest/'BattleCity-Web.zip')
-    old=root.parent/'tv-native-window/ci/45426153747'
+    old=previous or root.parent/'tv-native-window/ci/45426153747'
     receipt_lines=(run/'upgrade-chromium/packages.sha256').read_text().splitlines()
     assert receipt_lines==(run/'upgrade-webkit/packages.sha256').read_text().splitlines()
     receipts={path:digest for digest,path in (l.split() for l in receipt_lines)}
@@ -55,7 +55,7 @@ def build(root, run, dest, trials):
         f'<p><a href="https://github.com/JC6/BattleCity/actions/runs/{run_id}">验收运行 {run_id}</a> · <code>{(run/"commit.txt").read_text().strip()}</code></p>',
         '<h2>电视帧率与音频</h2><p>游戏和系统 PCM 输出均需落在实时的 99%–101%。每个 NES 帧须对应一次提交和一次合成完成回调，窗口结束时不得积压。回调时间测量到 Android 合成服务。</p>']
     values=[]
-    for folder in [old,*trials,run]:
+    for folder in dict.fromkeys([old,*trials,run]):
         clock=folder/'tv-device-results/prototype/clock.json'
         if not clock.is_file():continue
         for name,samples in read(clock)['windows'].items():
@@ -65,7 +65,27 @@ def build(root, run, dest, trials):
                 ' / '.join(f"{row.get(k,0)/n:.2f}" for k in ('waitMs','lockMs','copyMs','postMs'))])
     sections+=[table(('运行','场景','游戏','系统 PCM','NES 帧','GPU 帧','尝试','提交','完成','积压','等待 / 锁定 / 绘制或复制 / 提交 ms/帧'),values),
         '<p>两次额外冷启动和八场景逐帧检查'+('已执行。' if gate['boots'] else '按预设条件跳过，前置检查未全部通过。')+'</p>',
-        '<h2>冻结帧的三次采样</h2><p>每个场景同时记录 NES 光栅、交给显示系统前的 RGB 图和整张系统截图。重复拍摄软件基线建立噪声范围。校准图包含八种颜色和单像素线。</p>']
+        '<h2>冻结帧的分阶段采样</h2><p>每个场景同时记录 NES 光栅、交给显示系统前的 RGB 图和整张系统截图。重复拍摄软件基线建立噪声范围。校准图包含八种颜色和单像素线。</p>']
+    measurements=read(tv/'prototype/clock.json')
+    samples=measurements['windows']
+    if 'full-battle' in samples:
+        timing=[]
+        for scene in ('battle','explosions'):
+            assert measurements['battle'][scene]==measurements['battle']['full-'+scene]
+            for variant in ('full-'+scene,scene):
+                row=samples[variant][0]
+                n=row['frames']
+                area=row['writtenPixels']/(row['bufferWidth']*row['bufferHeight']*n)
+                assert 0<=area<=1 and row['finishFallbacks']<=n
+                timing.append([variant,n,f'{area:.2%}',*[f"{row[k]/n:.3f}" for k in
+                    ('uploadMs','drawCallMs','fenceMs','releaseWaitMs','postMs')],row['finishFallbacks']])
+        sections.append('<h2>同一 APK 的整帧和局部绘制</h2><p>每对窗口从相同的战斗状态开始，按实际模拟帧数归一化。绘制栏测量 CPU 提交绘制调用所花的时间。同步栏包含取得 Android 原生栅栏或同步等待 GPU 完成所花的时间。</p>')
+        sections.append(table(('场景','NES 帧','缓冲区写入面积','上传 ms/帧','绘制调用 ms/帧','同步 ms/帧','等待释放 ms/帧','事务提交 ms/帧','同步回退次数'),timing))
+        if 'flushMs' in samples['battle'][0]:
+            fields=('drawCheckMs','createFenceMs','flushMs','exportFenceMs')
+            sections.append(table(('场景','检查 ms/帧','创建栅栏 ms/帧','提交 GPU 指令 ms/帧','导出与释放栅栏 ms/帧'),[
+                [mode,*[f"{records[0][key]/records[0]['frames']:.3f}" for key in fields]]
+                for mode,records in samples.items()]))
     visuals=read(tv/'held-out/visual.json')
     sections.append(table(('场景','首个超出噪声的阶段','源 / 展开 / 系统超噪像素','系统色边 / 非色边误差','像素中心 / 壁纸误差'),
         [[name,item['firstDifference'],' / '.join(str(v.get('aboveRepeatNoise','尺寸不同')) for v in item['stages'].values()),
@@ -80,12 +100,28 @@ def build(root, run, dest, trials):
             edge_rows.append([title,label,edge['edges'],f"{edge['mean']:.3%}",f"{edge['p95']:.3%}"])
     sections.append('<p>将缓冲与系统截图配准后，在黑白校准线两侧测量相邻像素对输出颜色的贡献。数值按黑白边缘的亮度差归一化。</p>')
     sections.append(table(('显示路径','相邻方向','采样边数','平均贡献','第 95 百分位'),edge_rows))
+    if 'candidateBeforePresent' in registration:
+        layers=[]
+        for mode,label in [('baseline','SDL 软件渲染器提交前回读'),('candidate','候选硬件缓冲区回读')]:
+            item=registration[mode+'BeforePresent']
+            direct=registration[mode+'LayerRegistration']
+            layers.append([label,' × '.join(map(str,item['dimensions'][-1])),
+                           item.get('differentPixels','尺寸不同'),str(direct['offset']),
+                           *[f"{direct['edgeLeakage'][d]['mean']:.3%}" for d in ('left','right','above','below')]])
+        sections.append('<p>校准帧还记录 SDL_RenderPresent 调用之前的软件绘制结果，以及候选路径提交给 Android 的硬件缓冲区。下表分别将两者配准到各自的系统截图。</p>')
+        sections.append(table(('采样位置','缓冲尺寸','与展开缓冲差异像素','系统配准偏移','左邻','右邻','上邻','下邻'),layers))
     sections.append(picture(tv/'held-out/moving-633-baseline.png','软件基线，第 633 帧')+picture(tv/'held-out/moving-633-candidate.png','候选输出，同一帧'))
     sections.extend(['<h2>菜单、双手柄和存档</h2>',
         '<p>两种浏览器分别从上次发布的 ZIP 创建受保护的双人存档，再用本次 ZIP 读档、解锁并操作二号玩家。Android 以覆盖安装验证同一组数据。卡带摘要相同，本次直接使用原存档目录。</p>',
-        '<p>空槽标志、顶栏、选中框和画面预览使用同一套菜单代码。表中数值为指定区域颜色掩模的交并比，1 为重合。电视旧版截图取自覆盖安装前，本次电视截图取自当前候选 APK 的双手柄测试。</p>'])
+        '<p>空槽标志、顶栏、选中框和画面预览使用同一套菜单代码。表中数值为指定区域颜色掩模的交并比，1 为重合。电视菜单的新旧软件版在同一台模拟器上以相同分辨率分别采样。</p>'])
     if (run/'menu-regions.csv').is_file():
         sections.append(table(('区域','设备/版本','交并比'),[[r['region'],r['platform'],r['intersection_over_union']] for r in rows(run/'menu-regions.csv')]))
+    if (run/'menu-sizes.csv').is_file():
+        sizes=rows(run/'menu-sizes.csv')
+        assert len(sizes)==24
+        sections.append('<p>下表比较同一英文 Switch 截图上的六处菜单区域。每个分辨率均独立启动旧、新画面并重复截图。选中框和空槽标志的提升须超过重复截图波动，其他区域检查退步是否超出波动。</p>')
+        sections.append(table(('平台','像素高度','区域','旧版 IoU','新版 IoU','变化','重复波动','达标'),
+            [[r['platform'],r['height'],r['region'],r['old_iou'],r['new_iou'],r['delta'],r['repeat_variation'],'是' if r['passed']=='True' else '否'] for r in sizes]))
     web_clocks=[]
     for engine in ('chromium','webkit'):
         for cadence in ('native','60','120'):
@@ -115,18 +151,50 @@ def build(root, run, dest, trials):
                 durations.append(f'{stream.getnframes()/stream.getframerate():.2f}')
         assert events[0] and events[0]==events[1], route
         endings.append([label,len(events[0]),*durations])
+    supplemental=run/'reference-review/tv-coop-endings'
+    for route,title in [('coop-stage18','双人第 18 关刷新纪录'),('coop-stage42','双人第 42 关保留纪录')]:
+        browser=run/f'web-clock-and-endings/web-{route}'
+        if not browser.is_dir(): browser=run/f'reference-review/web-{route}'
+        device=tv/f'timing/tv-{route}'
+        if not device.is_dir(): device=supplemental/f'coop-endings/tv-{route}'
+        if (run/'reference-review/coop-stage42.csv').is_file():
+            assert (browser/'events.csv').is_file() and (device/'events.csv').is_file(),route
+        if browser.is_dir() and device.is_dir():
+            events=[[(r['frame'],r['event'],r['value']) for r in rows(folder/'events.csv')] for folder in (browser,device)]
+            assert events[0] and events[0]==events[1],route
+            wavs=[]
+            for folder in (browser,device):
+                with wave.open(str(folder/'game.wav')) as stream:wavs.append(f'{stream.getnframes()/stream.getframerate():.2f}')
+            endings.append([title,len(events[0]),*wavs])
+    if supplemental.is_dir():
+        hashes=dict(line.split()[::-1] for line in (supplemental/'tested.sha256').read_text().splitlines())
+        assert hashes['cartridge/game.nes']==identity and hashes['deliverable/tv-emulator.apk']==sha(run/'game-tv-emulator/tv-emulator.apk')
+        run_ref=(supplemental/'run.txt').read_text().strip()
+        assert run_ref.isdecimal()
+        sections.append(f'<p>双人录像补测使用本次构建的电视 APK。<a href="https://github.com/JC6/BattleCity/actions/runs/{run_ref}">电视补测 {run_ref}</a></p>')
     sections.append(table(('结局','两端相同帧与事件数','Web 录音秒数','TV 录音秒数'),endings))
     sections.append(table(('浏览器','回调频率','窗口数','游戏','系统 PCM'),web_clocks))
     sections.append('<p>电视软件版覆盖安装保留了双人存档。当前候选版的完整双手柄测试'+('通过' if gate['candidateControlsPassed'] else '未通过')+'。覆盖安装后核对了缩略图与写保护，并用二号手柄恢复操作。</p>')
     for scene in ('system-menu','screen-settings'):
-        for file,label in ((root/'reference-frames'/(scene+'.png'),'英文 Switch'),(run/'web-clock-and-endings/screens'/(scene+'.png'),'Web'),(tv/'candidate-controls'/(scene+'.png'),'Android TV')):
+        for file,label in ((root/'reference-frames'/(scene+'.png'),'英文 Switch'),(run/'web-clock-and-endings/screens'/(scene+'.png'),'Web'),(tv/'menu-samples/1080/current'/(scene+'.png'),'Android TV')):
             if file.is_file():sections.append(picture(file,label+' · '+scene))
             elif label=='Android TV' and scene=='system-menu':sections.append(picture(tv/'candidate-controls/protected-slot.png','Android TV · 已写保护的存档槽'))
+    if (run/'reference-review/findings.csv').is_file():
+        findings=rows(run/'reference-review/findings.csv')
+        sections.append('<h2>目标版本与其他录像复核</h2>')
+        sections.append(table(('来源','观察到的播放量','画面或作者说明','可验证范围'),
+            [[r['title'],r['views'],r['observed'],r['scope']] for r in findings]))
+        sections.append('<p>'+ ' · '.join(f'<a href="{html.escape(r["url"],quote=True)}">{html.escape(r["title"])}</a>' for r in findings)+'</p>')
     sections+=['<h2>结算音乐与参考资料</h2><p>用本项目的无损 WAV，按五段参考视频各自的 AAC 码率、声道和采样率重新编码；先用有声音符定位起点，再测持续 100 ms 的低能量区间。另以 25 Hz 高通去除无损 WAV 的直流偏置，作为录制链路的对照。</p>']
     audio=[r for r in rows(root/'tail-codec.csv') if r['threshold']=='0.012']
     sections.append(table(('采样','编码输入','码率 bps','相关度','无损 s','再编码 s','Switch 录像 s'),
         [[r['source'],r['control'],r['bitrate'],r['onset_cosine'],r['lossless'],r['encoded'] or '无连续静音',r['switch_video']] for r in audio]))
-    sections+=['<p>音色和音源释放时序维持现有实现。双人完整结局、确定无输入的待机过程、连续回退的逐次跨度以及大号 HISCORE 数字 2、3、4、6、7，仍缺英文 Switch 直接证据。</p>',
+    if (run/'reference-review/coop-stage42.csv').exists():
+        pair=rows(run/'reference-review/coop-stage42.csv')[0]
+        sections.append(f'<p>英文 Switch 的双人第 42 关从最后两个总数出现到 GAME OVER 为 {float(pair["switch_total_to_over_s"]):.3f} 秒，本次 Web 卡带读屏实测 {float(pair["replica_total_to_over_s"]):.3f} 秒。第 18 关两名玩家分别获得 40400 和 68100 分，游戏显示 HISCORE 68100 后回到双人标题。同一屏摄中，大号 6 的 56 格笔画在三个时刻全部匹配。</p>')
+    outstanding=('无输入的待机过程、连续回退的逐次跨度以及大号 HISCORE 数字 2、3、4、7' if
+        (run/'reference-review/coop-stage42.csv').exists() else '双人完整结局、确定无输入的待机过程、连续回退的逐次跨度以及大号 HISCORE 数字 2、3、4、6、7')
+    sections+=[f'<p>音色和音源释放时序维持现有实现。{outstanding}，仍缺英文 Switch 直接证据。</p>',
         '<p>日版 Switch 录像中，第 35 关的单人结算接入下一关，后来在地图编辑器入口显示了原作隐藏留言。该录像采用日版合集界面。<a href="https://www.youtube.com/watch?v=90hI6s_3iZ4&t=7166s">日版关末</a> · <a href="https://www.youtube.com/watch?v=90hI6s_3iZ4&t=7375s">日版隐藏留言</a></p>',
         '<p><a href="https://www.nintendo.com/us/store/products/namco-museum-archives-vol-2-switch/">任天堂游戏页</a> · <a href="https://nc.bn-ent.net/product/useful.php">万代南梦宫功能说明</a> · <a href="https://www.youtube.com/watch?v=S26lUv598_o&t=657s">系统菜单原片</a> · <a href="https://www.youtube.com/watch?v=uc_If5fksfA&t=270s">Xupgeeks 英文 Switch 结算录像</a></p>',
         '<h2>安装包</h2><pre>'+html.escape('\n'.join(f'{sha(p)}  {p.name}' for p in sorted(dest.iterdir()) if p.suffix in ('.nes','.lbl','.apk') or p.name=='BattleCity-Web.zip'))+'</pre></html>']
@@ -135,15 +203,15 @@ def build(root, run, dest, trials):
         for folder in dict.fromkeys([*trials,run]):
             for f in sorted(folder.rglob('*')):
                 rel=f.relative_to(folder)
-                if not f.is_file() or not (rel.parts[0] in ('tv-device-results','web-clock-and-endings','upgrade-chromium','upgrade-webkit','campaign-loop') or rel.parts[0].startswith('stage-replay-') or f.name in ('artifact-receipts.json','job-status.json','gpu-shader.log','stages.json','menu-regions.csv','commit.txt','run.txt','artifact.json')):continue
-                if f.suffix not in ('.json','.csv','.png','.gz','.log','.txt','.jsonl','.sha256','.wav'):continue
+                if not f.is_file() or not (rel.parts[0] in ('tv-device-results','web-clock-and-endings','upgrade-chromium','upgrade-webkit','campaign-loop') or rel.parts[0].startswith('stage-replay-') or rel.parts[0] in ('menu-evidence','reference-review') or f.name in ('menu-sizes.csv','artifact-receipts.json','job-status.json','gpu-shader.log','stages.json','menu-regions.csv','commit.txt','run.txt','artifact.json')):continue
+                if f.suffix not in ('.json','.csv','.png','.gz','.log','.txt','.jsonl','.sha256','.wav','.tsv','.jpg'):continue
                 z.write(f,str(Path(folder.name)/rel))
         for f in [root/'tail-codec.csv',root/'audio-recheck/terminal-av-sync.csv',*sorted((root/'reference-frames').glob('*.png'))]:
             z.write(f,'references/'+f.name)
         for f in (root/'research').glob('*'):
             if f.suffix in ('.tsv','.csv','.jpg'):
                 z.write(f,'research/'+f.name)
-        for n in ('compositor_report.py','tv_stage_analysis.py','tv_release_gate.py','native_window_report.py','tv_gpu_shader.cjs','tv_tail_codec.py','switch_menu_regions.py','television.py','tv-scenes.lua','tv-blast-load.lua','terminal_av_sync.py','ending_audio.py','ending_calibration.py','terminal_tally.py','switch_cues.py','compare_switch_audio.py'):
+        for n in ('compositor_report.py','tv_stage_analysis.py','tv_release_gate.py','native_window_report.py','tv_gpu_shader.cjs','tv_tail_codec.py','switch_menu_regions.py','switch_score_sample.py','switch_lettering.py','switch_coop_terminal.py','ending.lua','browser-ending.cjs','television.py','tv-scenes.lua','tv-blast-load.lua','terminal_av_sync.py','ending_audio.py','ending_calibration.py','terminal_tally.py','switch_cues.py','compare_switch_audio.py'):
             z.write(Path(__file__).with_name(n),'methods/'+n)
         z.write(Path(__file__).resolve().parents[2]/'runtime/tv-gpu-raster.h','methods/tv-gpu-raster.h')
 
@@ -152,5 +220,6 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('root','run','destination'):parser.add_argument(name,type=Path)
     parser.add_argument('--trial',type=Path,action='append',default=[])
+    parser.add_argument('--previous',type=Path)
     args=parser.parse_args()
-    build(args.root,args.run,args.destination,args.trial)
+    build(args.root,args.run,args.destination,args.trial,args.previous)

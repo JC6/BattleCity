@@ -28,10 +28,12 @@ inline int64_t thread_ns()
 
 struct gpu_cost {
     int64_t upload=0, draw=0, sync=0, release_wait=0;
+    int64_t check=0, create=0, flush=0, export_fd=0;
     unsigned finishes=0;
 
     void accumulate(const gpu_cost &other) {
         upload+=other.upload; draw+=other.draw; sync+=other.sync;
+        check+=other.check; create+=other.create; flush+=other.flush; export_fd+=other.export_fd;
         release_wait+=other.release_wait; finishes+=other.finishes;
     }
 };
@@ -83,7 +85,7 @@ public:
                     "\"frames\":%llu,\"attempts\":%u,\"presented\":%u,\"nativeSize\":%u,\"vsync\":%d,\"bufferWidth\":%d,\"bufferHeight\":%d,"
                     "\"samples\":%llu,\"sampleRate\":%u,\"drawMs\":%.3f,\"presentMs\":%.3f,"
                     "\"coreSliceMs\":%.3f,\"threadCpuMs\":%.3f,\"lockMs\":%.3f,\"copyMs\":%.3f,\"postMs\":%.3f,\"writtenPixels\":%lld,\"waitMs\":%.3f,\"transactions\":%llu,\"completions\":%llu,\"pending\":%llu,\"lastCompletedFrame\":%llu,\"lastSubmittedFrame\":%llu,\"completionMs\":%.3f,\"frameIdErrors\":%llu,\"gpuFrames\":%llu,"
-                    "\"uploadMs\":%.3f,\"drawCallMs\":%.3f,\"fenceMs\":%.3f,\"releaseWaitMs\":%.3f,\"finishFallbacks\":%u}\n",
+                    "\"uploadMs\":%.3f,\"drawCallMs\":%.3f,\"fenceMs\":%.3f,\"releaseWaitMs\":%.3f,\"finishFallbacks\":%u,\"drawCheckMs\":%.3f,\"createFenceMs\":%.3f,\"flushMs\":%.3f,\"exportFenceMs\":%.3f}\n",
                     windows, driver, (end.wall-start.wall)/1e9, end.emulated-start.emulated,
                     static_cast<unsigned long long>(end.frame-start.frame), attempts, submissions, compact, vsync, width, height,
                     static_cast<unsigned long long>(end.pcm-start.pcm), pcm_rate.load(std::memory_order_relaxed),
@@ -93,7 +95,8 @@ public:
                     static_cast<unsigned long long>(sent-complete),static_cast<unsigned long long>(last_frame),
                     static_cast<unsigned long long>(frame),(latency-start_latency)/1e6,
                     static_cast<unsigned long long>(id_errors-start_id_errors),static_cast<unsigned long long>(gpu_frames-start_gpu_frames),
-                    gpu.upload/1e6,gpu.draw/1e6,gpu.sync/1e6,gpu.release_wait/1e6,gpu.finishes);
+                    gpu.upload/1e6,gpu.draw/1e6,gpu.sync/1e6,gpu.release_wait/1e6,gpu.finishes,
+                    gpu.check/1e6,gpu.create/1e6,gpu.flush/1e6,gpu.export_fd/1e6);
                 std::fclose(file);
             }
         }

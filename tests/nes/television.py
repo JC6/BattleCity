@@ -279,10 +279,10 @@ def ending_trace(route):
     raise RuntimeError(f'TV ending {route} stalled at {last_size} WAV bytes')
 
 
-def record_endings(labels, directory, results, write_private):
+def record_endings(labels, directory, results, write_private, routes=('neutral','record','skip-over','coop-stage42','coop-stage18')):
     script = Path(__file__).with_name('ending.lua').read_text()
     write_private('ending.lbl', labels.read_text())
-    for route in ('neutral', 'record', 'skip-over'):
+    for route in routes:
         adb('shell','am','force-stop',PACKAGE)
         private('rm','-f','files/ending.csv','files/ending.wav')
         values = {'BATTLECITY_LABELS':directory+'/ending.lbl','BATTLECITY_SCENARIO':'base',
@@ -295,6 +295,12 @@ def record_endings(labels, directory, results, write_private):
         adb('shell','am','start','-W','-a','android.intent.action.MAIN',
             '-c','android.intent.category.LEANBACK_LAUNCHER','-n',PACKAGE+'/.GameActivity')
         trace = ending_trace(route)
+        if route=='coop-stage42':
+            assert b',two-player-title,15000/68100/45800' in trace
+            assert [int(line.split(b',')[3]) for line in trace.splitlines() if b',mode,' in line]==[1,4,7,0]
+        if route=='coop-stage18':
+            assert b',two-player-title,40400/68100/68100' in trace
+            assert [int(line.split(b',')[3]) for line in trace.splitlines() if b',mode,' in line]==[1,4,7,8,0]
         out = results/('tv-'+route)
         out.mkdir(exist_ok=True)
         (out/'events.csv').write_bytes(trace)
@@ -604,6 +610,9 @@ def run(apk, labels, results, suite, previous=None, formal=False):
         assert image.startswith(b'\x89PNG') and len(image)>1000
         (results/(name+'.png')).write_bytes(image)
     try:
+        if suite=='coop-endings':
+            record_endings(labels,directory,results,write_private,('coop-stage42','coop-stage18'))
+            return
         if suite in ('render','scenes','prototype','held-out'):
             record_render(results,labels,directory,write_private,scenes_only=suite in ('scenes','held-out'),
                           prototype=suite=='prototype',held_out=suite=='held-out',formal=formal)
@@ -860,7 +869,7 @@ def run(apk, labels, results, suite, previous=None, formal=False):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('apk','labels','results'): parser.add_argument(name,type=Path)
-    parser.add_argument('--suite',action='append',choices=('controls','menu-samples','timing','auto-frameskip','render','scenes','candidate-controls','prototype','held-out'))
+    parser.add_argument('--suite',action='append',choices=('controls','menu-samples','coop-endings','timing','auto-frameskip','render','scenes','candidate-controls','prototype','held-out'))
     parser.add_argument('--formal',action='store_true',help='measure the packaged candidate and capture its software reference')
     parser.add_argument('--record-candidate-failure',action='store_true',
                         help='record a failing optional candidate control run for the release selector')
@@ -875,13 +884,14 @@ if __name__=='__main__':
                 size=adb('shell','wm','size').decode()
                 prior_size=re.search(r'Override size: (\d+x\d+)',size)
                 try:
-                    adb('shell','wm','size','1280x720')
-                    for tag,package in [('previous',args.previous),('current',args.apk)]:
-                        if package: run(package,args.labels,folder/tag,suite)
+                    for width,height in [(1280,720),(1920,1080)]:
+                        adb('shell','wm','size',f'{width}x{height}')
+                        for tag,package in [('previous',args.previous),('current',args.stable or args.apk)]:
+                            if package: run(package,args.labels,folder/str(height)/tag,suite)
                 finally:
                     adb('shell','wm','size',prior_size[1] if prior_size else 'reset')
                 continue
-            app = args.stable if suite=='controls' and args.stable else args.apk
+            app = args.stable if suite in ('controls','timing') and args.stable else args.apk
             run(app,args.labels,folder,suite,args.previous if suite=='controls' else None,formal=args.formal)
         except Exception as error:
             if args.record_candidate_failure and suite=='candidate-controls':

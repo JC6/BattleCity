@@ -140,3 +140,11 @@ Nenriki 发布的两段 Famicom 实录分别显示 196500 和 441900。本轮记
 11 月 25 日新增检查了一段作者明确标注为日版 Switch《Namcot Collection》的直播（核查时 1,218 次播放）。第 35 关按单人结算后进入下一关。约 2:02:55 可见地图编辑器的原作隐藏留言。该视频能确认日版的这两个画面，英文版隐藏留言的触发和显示仍待直接核对。[单人结算实录](https://www.youtube.com/watch?v=90hI6s_3iZ4&t=7166s) · [原作隐藏留言](https://www.youtube.com/watch?v=90hI6s_3iZ4&t=7375s)
 
 同一段复刻无损录音按五段英文 Switch 视频各自的声道数、采样率和 AAC 码率重新编码。以 100 ms 连续低能量段作为结束点，先加 25 Hz 高通抑制直流偏置后，五组复刻录音均在起音后 1.59 秒达到阈值，Switch 录像为 1.63–1.64 秒。起音频谱相关度至少 0.996。现有测量无法把这 40–50 ms 分配给原作音源、主机混音或采集链路，卡带的音符释放时序沿用现有实现。[录音与阈值测量](../../build/battlecity/Switch-TV-Measurements.zip)
+
+### 英文 Switch 双人终局
+
+Abuelos Gamers 的电视屏摄同时拍到了 Switch 底座、游戏盒和英文合集界面。第 18 关结束时，1P 得 40,400 分，2P 得 68,100 分，高于原纪录 20,000。画面依次出现双人计分、GAME OVER、HISCORE 68100 和双人标题。记录中的 21:44、21:46 和 21:48 三帧都能分辨大号 6 的 56 格笔画。它们与本项目卡带逐格一致。大号数字 2、3、4、7 仍待英文 Switch 实录核验。[英文 Switch 第 18 关与大号分数](https://www.youtube.com/watch?v=MnymnZA9zTc&t=1298s) · [字形采样](../../tests/nes/switch_score_sample.py)
+
+同一录像的第 42 关以 1P 15,000、2P 45,800 结束，已有纪录为 68,100。两人当关总击毁均为零。计分后出现 GAME OVER，随后返回双人游标，标题显示三项原分数。从两个总数可读到 GAME OVER 可读为 2.400 秒。复刻卡带的 Web 读屏实测 2.379 秒，差值 21 毫秒，录像每帧为 40 毫秒。[第 42 关双人结局](https://www.youtube.com/watch?v=MnymnZA9zTc&t=3073s) · [录像与卡带时间线测量](../../tests/nes/switch_coop_terminal.py)
+
+Crolister 的英文录像展示了普通编辑器的进入、退出、重新进入和绘图。它没有演示原作隐藏留言的触发与退出。无输入待机与连续回退各自跨过多少帧也仍需直接记录。[英文编辑器片段](https://www.youtube.com/watch?v=Xf02flMP7dc&t=2630s)

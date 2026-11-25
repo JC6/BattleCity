@@ -153,12 +153,7 @@ public:
 		lock.unlock();
 		auto ready=battlecity_tv::now_ns();
 		ARect dirty=s.damage;
-        if (source && !empty(dirty)) {
-            // Linear sampling can address one neighbouring texel across the changed edge.
-            dirty={std::max(0,dirty.left-1),std::max(0,dirty.top-1),
-                   std::min(width,dirty.right+1),std::min(height,dirty.bottom+1)};
-        }
-		if (capture && !capture->done() && empty(dirty)) dirty={0,0,width,height};
+		if (capture && capture->needs_present() && empty(dirty)) dirty={0,0,width,height};
 		if (full_redraw && !empty(dirty)) dirty={0,0,width,height};
 		battlecity_tv::gpu_cost cost;
 		bool accelerated=source && gpu.available();
@@ -182,7 +177,11 @@ public:
             }
             if (accelerated) {
                 accelerated=gpu.draw(index,*source,width,height,dirty,acquire,capture,frame ? &cost : nullptr);
-                if (!accelerated) { dirty={0,0,width,height}; restore_cpu_image(); }
+                if (!accelerated) {
+                    dirty={0,0,width,height};
+                    for (auto &other:p.slots) other.damage=dirty;
+                    restore_cpu_image();
+                }
             }
             if (!accelerated) {
                 status=AHardwareBuffer_lock(s.buffer,AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN,-1,&dirty,&pixels);
@@ -191,7 +190,7 @@ public:
                     for (int y=dirty.top;y<dirty.bottom;++y)
                         std::memcpy(static_cast<uint32_t *>(pixels)+size_t(y)*s.stride+dirty.left,
                             rgba.data()+size_t(y)*width+dirty.left,(dirty.right-dirty.left)*sizeof(uint32_t));
-                    if (capture && !capture->done()) {
+                    if (capture && (capture->needs_present() || !capture->done())) {
                         capture->expanded(pixels,width,height,s.stride*4,SDL_PIXELFORMAT_RGBA32);
                         capture->present_input(pixels,width,height,s.stride*4,SDL_PIXELFORMAT_RGBA32);
                     }

@@ -31,8 +31,9 @@ public:
         }
     }
     bool done() const { return captured; }
+    bool needs_present() const { return !presented; }
     bool armed() const {
-        return !directory.empty() && (!captured || pattern) && ::access((directory+"tv-fixed").c_str(),F_OK)==0;
+        return !directory.empty() && (!captured || !presented || pattern) && ::access((directory+"tv-fixed").c_str(),F_OK)==0;
     }
     // The primitive list can be shared. Restore the texture before releasing the list lock.
     struct replacement {
