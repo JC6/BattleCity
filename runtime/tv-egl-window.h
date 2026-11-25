@@ -9,6 +9,9 @@ class tv_egl_window {
     EGLContext context=EGL_NO_CONTEXT;
     bool own_surface=false;
     GLuint program=0, raster=0, native=0, expanded=0, framebuffer=0, corners=0;
+    GLuint window_texture=0, window_fbo=0;
+    int window_w=0,window_h=0;
+    bool cache_window=true;
     GLint geometry=-1, derivative=-1;
     int native_w=0,native_h=0;
     enum class profile_mode { game, prepared, upload, direct };
@@ -65,6 +68,7 @@ public:
         // SDL also uses the default display and owns its process-wide lifetime.
         display=EGL_NO_DISPLAY; own_surface=false;
         program=raster=native=expanded=framebuffer=corners=0;
+        window_texture=window_fbo=0; window_w=window_h=0; cache_window=true;
         texture_w=texture_h=native_w=native_h=0; prepared=false; mode=profile_mode::game;
         pending.clear(); present_supported=false;
     }
@@ -91,6 +95,7 @@ public:
         const bool immediate=measuring && root && ::access((std::string(root)+"/tv-egl-immediate").c_str(),F_OK)==0;
         if (!eglSwapInterval(display,immediate ? 0 : 1)) return false;
         if (measuring && root) {
+            cache_window=::access((std::string(root)+"/tv-egl-uncached").c_str(),F_OK)!=0;
             fixed_marker=std::string(root)+"/tv-fixed";
             if (::access((std::string(root)+"/tv-egl-prepared").c_str(),F_OK)==0) mode=profile_mode::prepared;
             if (::access((std::string(root)+"/tv-egl-upload").c_str(),F_OK)==0) mode=profile_mode::upload;
@@ -142,6 +147,10 @@ void main() {
         texture(native,GL_NEAREST);
         texture(expanded,GL_LINEAR);
         glGenFramebuffers(1,&framebuffer);
+        if (cache_window) {
+            texture(window_texture,GL_NEAREST);
+            glGenFramebuffers(1,&window_fbo);
+        }
         glDisable(GL_BLEND); glDisable(GL_DITHER);
         ++generation;
         next_id=(PFNEGLGETNEXTFRAMEIDANDROIDPROC)eglGetProcAddress("eglGetNextFrameIdANDROID");
@@ -197,21 +206,22 @@ void main() {
             glTexSubImage2D(GL_TEXTURE_2D,0,0,0,iw,ih,GL_RED_INTEGER,GL_UNSIGNED_SHORT,pixels.data());
         const auto uploaded=now();
         const bool direct=mode==profile_mode::direct;
-        if (!prepared && (direct || changed || capture)) {
+        if (!prepared && (direct || changed)) {
             glBindFramebuffer(GL_FRAMEBUFFER,direct ? 0 : framebuffer);
             glViewport(0,0,direct ? sw : w,direct ? sh : h);
             glDisableVertexAttribArray(0);
             glUseProgram(raster);
             glUniform2i(geometry,h,direct ? 1 : 0);
             glUniform2i(derivative,int(std::floor(65536.f*iw*(1.f/w)+.5f)),int(std::floor(65536.f*ih*(1.f/h)+.5f)));
-            if (!direct && !capture) {
+            if (!direct) {
                 glEnable(GL_SCISSOR_TEST);
                 glScissor(dirty.left,dirty.top,dirty.right-dirty.left,dirty.bottom-dirty.top);
             }
             glDrawArrays(GL_TRIANGLES,0,3);
             glDisable(GL_SCISSOR_TEST);
         }
-        if (capture && capture->needs_present()) {
+        if (capture && capture->needs_present() && !direct) {
+            glBindFramebuffer(GL_FRAMEBUFFER,framebuffer);
             std::vector<uint32_t> readback(size_t(w)*h);
             glReadPixels(0,0,w,h,GL_RGBA,GL_UNSIGNED_BYTE,readback.data());
             capture->present_input(readback.data(),w,h,w*4,SDL_PIXELFORMAT_RGBA32);
@@ -230,13 +240,40 @@ void main() {
         }
         const auto expanded_at=now();
         if (!direct) {
-            glBindFramebuffer(GL_FRAMEBUFFER,0);
-            glViewport(0,0,sw,sh);
-            glBindTexture(GL_TEXTURE_2D,expanded);
-            glUseProgram(program);
-            glEnableVertexAttribArray(0);
-            glUniform2f(viewport,float(sw),float(sh));
-            glDrawArrays(GL_TRIANGLES,0,6);
+            // Keep the fully sampled window, including unchanged pixels. A native
+            // same-size blit writes every pixel of each newly acquired back buffer.
+            const bool resized=window_w!=sw || window_h!=sh;
+            if (cache_window && resized) {
+                glBindTexture(GL_TEXTURE_2D,window_texture);
+                glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,sw,sh,0,GL_RGBA,GL_UNSIGNED_BYTE,nullptr);
+                glBindFramebuffer(GL_FRAMEBUFFER,window_fbo);
+                glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,window_texture,0);
+                if (glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE) return false;
+            }
+            window_w=sw; window_h=sh;
+            if (!cache_window || resized || (!prepared && changed)) {
+                glBindFramebuffer(GL_FRAMEBUFFER,cache_window ? window_fbo : 0);
+                glViewport(0,0,sw,sh);
+                glBindTexture(GL_TEXTURE_2D,expanded);
+                glUseProgram(program);
+                glEnableVertexAttribArray(0);
+                glUniform2f(viewport,float(sw),float(sh));
+                if (cache_window && !resized && sw==w && sh==h) {
+                    // Linear sampling can move a changed input texel into a neighbour.
+                    const int left=std::max(0,int(dirty.left)-1), right=std::min(w,int(dirty.right)+1);
+                    const int top=std::max(0,int(dirty.top)-1), bottom=std::min(h,int(dirty.bottom)+1);
+                    glEnable(GL_SCISSOR_TEST);
+                    glScissor(left,h-bottom,right-left,bottom-top);
+                }
+                glDrawArrays(GL_TRIANGLES,0,6);
+                glDisable(GL_SCISSOR_TEST);
+            }
+            if (cache_window) {
+                glBindFramebuffer(GL_READ_FRAMEBUFFER,window_fbo);
+                glBindFramebuffer(GL_DRAW_FRAMEBUFFER,0);
+                glBlitFramebuffer(0,0,sw,sh,0,0,sw,sh,GL_COLOR_BUFFER_BIT,GL_NEAREST);
+                glBindFramebuffer(GL_FRAMEBUFFER,0);
+            }
         }
         if (!prepared && (mode==profile_mode::prepared || mode==profile_mode::upload) &&
                 ::access(fixed_marker.c_str(),F_OK)==0) prepared=true;

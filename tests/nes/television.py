@@ -419,10 +419,10 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         modes={}
         for scene in ('battle','explosions'):
             for prefix,scale in [('software-','none'),('child-','compositor-tv'),('prepared-',None),
-                                 ('prepared-repeat-',None),('upload-',None),('direct-',None),('',None),('immediate-',None)]:
+                                 ('prepared-repeat-',None),('upload-',None),('direct-',None),('uncached-',None),('',None),('immediate-',None)]:
                 modes[prefix+scene]=scale
     def select(mode, scale):
-        markers=('prepared','upload','direct','immediate','legacy')
+        markers=('prepared','upload','direct','uncached','immediate','legacy')
         private('rm','-f',*['files/tv-egl-'+key for key in markers])
         for key in markers:
             if mode==key or mode.startswith(key+'-'):
@@ -531,7 +531,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         (results/'clock.json').write_text(json.dumps({'battle':markers,'windows':summaries},indent=2))
     if prototype:
         stop()
-        private('rm','-f','files/tv-force-full','files/tv-egl-immediate','files/tv-egl-prepared','files/tv-egl-upload','files/tv-egl-direct','files/tv-egl-legacy')
+        private('rm','-f','files/tv-force-full','files/tv-egl-immediate','files/tv-egl-prepared','files/tv-egl-upload','files/tv-egl-direct','files/tv-egl-uncached','files/tv-egl-legacy')
         return
     # Separate launches keep the frozen visual fixtures out of the clock samples.
     display = 'shared_prefs/display.xml'
@@ -655,7 +655,7 @@ def run(apk, labels, results, suite, previous=None, formal=False):
         slot = f'files/states/{prior}/nes/1.sta'
     # Leave existing player files intact. A completed run removes its own slot.
     test_files = ['files/'+name for name in ('nes.ini','tv-observer.lua','tv-observation',
-                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv','tv-profile.jsonl','tv-fixed','tv-low-buffer','tv-egl-legacy','tv-egl-prepared','tv-egl-upload','tv-egl-immediate','tv-egl-direct','tv-texture.ppm','tv-capture','tv-expanded.ppm','tv-source.ppm','tv-expanded.tmp','tv-force-full','tv-layer.ppm','tv-layer.tmp')]
+                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv','tv-profile.jsonl','tv-fixed','tv-low-buffer','tv-egl-legacy','tv-egl-prepared','tv-egl-upload','tv-egl-immediate','tv-egl-direct','tv-egl-uncached','tv-texture.ppm','tv-capture','tv-expanded.ppm','tv-source.ppm','tv-expanded.tmp','tv-force-full','tv-layer.ppm','tv-layer.tmp')]
     test_files.extend((slot,slot+'.png',slot+'.lock'))
     if slot!=current_slot: test_files.extend((current_slot,current_slot+'.png',current_slot+'.lock'))
     for name in test_files:
