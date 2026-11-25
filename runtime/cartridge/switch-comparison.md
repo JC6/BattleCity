@@ -30,7 +30,7 @@ Android TV API 34 的 1080p x86 模拟器以软件图形后端运行已安装的
 
 本地 Chromium 与 WebKit 的原生回调、标称 60 Hz 和 120 Hz 各测三次。首轮 18 个窗口中有 15 个的游戏和 PCM 同时落在 ±1% 内。报告保留 WebKit 的慢速窗口和追加采样的回调耗时。停止本项目已空闲的 Gradle 进程后，WebKit 60 Hz、120 Hz 共六个窗口的游戏和 PCM 全部回到 ±1%。这些读数描述具体主机当时的运行条件。[离线报告](../../build/battlecity/Switch-Runtime-Comparison.html) · [原始数据](../../build/battlecity/Switch-Runtime-Measurements.zip)
 
-向上炮弹的逐格结论来自 Switch；另外三个方向的形状与定位来自红白机对照。数字 2、3、4、6、7 的最高分大字、Switch 无人演示与双人片尾、回退的原机跨度及实体电视输入延迟仍缺直接测量。参考材料使用任天堂一方截图、发行方说明及能看清相关帧的英文实录。[任天堂原图](https://www.nintendo.com/eu/media/images/06_screenshots/games_5/nintendo_switch_download_software_2/nswitchds_namcomuseumarchivesvolume2/NSwitchDS_NamcoMuseumArchivesVolume2_01.jpg) · [第一关录像](https://www.youtube.com/watch?v=S26lUv598_o&t=349s) · [回退说明](https://nc.bn-ent.net/product/useful.php)
+向上炮弹的逐格结论来自 Switch；另外三个方向的形状与定位来自红白机对照。数字 2、3、4、7 的最高分大字、能确认无人操作的 Switch 演示、连续回退的逐次跨度及实体电视输入延迟仍缺直接测量。双人片尾和数字 6 的直接证据见文末。参考材料使用任天堂一方截图、发行方说明及能看清相关帧的英文实录。[任天堂原图](https://www.nintendo.com/eu/media/images/06_screenshots/games_5/nintendo_switch_download_software_2/nswitchds_namcomuseumarchivesvolume2/NSwitchDS_NamcoMuseumArchivesVolume2_01.jpg) · [第一关录像](https://www.youtube.com/watch?v=S26lUv598_o&t=349s) · [回退说明](https://nc.bn-ent.net/product/useful.php)
 
 电视验收工具将设备截图缩为 RGB 以识别光标。运行机缺少 FFmpeg 时，从 7.1.1 官方源码构建 PNG 解码器，并先用仓库图片核对输出字节数。它与原有 FFmpeg 对同一张 1080p 设备截图缩放后得到相同的 172,800 字节。[FFmpeg 官方源码](https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz) · [电视验收工作流](../../.github/workflows/mame-runtime.yml)
 
@@ -135,7 +135,7 @@ Nenriki 发布的两段 Famicom 实录分别显示 196500 和 441900。本轮记
 
 以同一音画文件里可见的最后一个击毁数和对应计分声估计采集偏移。四段可校准录像的起音残差在 −19 至 +27 毫秒之内，低于各自的单帧采集时长。首段最终计数为零，缺少这个独立音频标记。五份混音在 1.2% 峰值阈值下的尾音为 1.63–1.64 秒，当前卡带为 1.58 秒。音序与声道包络仍按当前卡带播放。[时间线测量脚本](../../tests/nes/terminal_tally.py) · [同一录音内的音画校准](../../tests/nes/terminal_av_sync.py)
 
-另复查了三段社区上传的时间线。两个可辨认英文 Switch 界面的片段进入了单人结算，读取到的 13 和 17 属于小号 TOTAL 字体。另一段合集直播的设备与输入无法从片段确认。英文 Switch 双人完整结局、两次回退的精确跨度、无人操作演示以及 HISCORE 大数字 2、3、4、6、7，继续保留为未验证项。万代南梦宫的 Switch 资料明确列出双人同时游玩和回退功能。[官方游戏介绍](https://nc.bn-ent.net/title-lineup/title.php?tit=battle-city) · [官方回退说明](https://nc.bn-ent.net/product/useful.php)
+另复查了三段社区上传的时间线。两个可辨认英文 Switch 界面的片段进入了单人结算，读取到的 13 和 17 属于小号 TOTAL 字体。另一段合集直播的设备与输入无法从片段确认。这三段材料未能确认双人片尾、连续回退的精确跨度、无人操作演示以及 HISCORE 大数字 2、3、4、6、7。下文的英文 Switch 屏摄补充了双人片尾和数字 6。万代南梦宫的 Switch 资料明确列出双人同时游玩和回退功能。[官方游戏介绍](https://nc.bn-ent.net/title-lineup/title.php?tit=battle-city) · [官方回退说明](https://nc.bn-ent.net/product/useful.php)
 
 11 月 25 日新增检查了一段作者明确标注为日版 Switch《Namcot Collection》的直播（核查时 1,218 次播放）。第 35 关按单人结算后进入下一关。约 2:02:55 可见地图编辑器的原作隐藏留言。该视频能确认日版的这两个画面，英文版隐藏留言的触发和显示仍待直接核对。[单人结算实录](https://www.youtube.com/watch?v=90hI6s_3iZ4&t=7166s) · [原作隐藏留言](https://www.youtube.com/watch?v=90hI6s_3iZ4&t=7375s)
 

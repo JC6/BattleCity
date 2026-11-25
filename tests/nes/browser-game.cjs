@@ -585,6 +585,13 @@ async function verify(engine, suite) {
         await press(page, 's', () => gameState.selection === 1);
         await press(page, 'Enter', () => gameState.mode === 6);
         await press(page, 'Enter', () => gameState.mode === 1 && gameState.players === 2 && gameState.board === 26);
+        // The editor fixture leaves a straight shot to the base. Start the input
+        // and save checks on the normal first map so the edited battlefield can
+        // finish independently of how quickly the host dispatches keyboard events.
+        await start(page);
+        await press(page, 's', () => gameState.selection === 1);
+        await press(page, 'Enter', () => gameState.mode === 6);
+        await press(page, 'Enter', () => gameState.mode === 1 && gameState.players === 2);
         await press(page, 'w', () => gameState.y1 < 188);
         await press(page, 'ArrowUp', () => gameState.y2 < 188);
         await press(page, 'n', () => window.seenShot2);
@@ -610,8 +617,8 @@ async function verify(engine, suite) {
         assert.equal(await slotDigest(page, 1), firstSlot, 'cancel changed slot one');
         const fourthSlot = await slotDigest(page, 4);
         await menu(page, ['Escape','Home','Enter','Home','Delete'], 'Slot lock saved.');
-        // The custom battlefield is mostly empty. Check the actual compositor
-        // output for the NES background and bright game pixels in its preview.
+        // Check the compositor output for the NES background and visible
+        // game pixels in the saved two-player preview.
         await renderFrames(page, 3);
         const viewport = await page.locator('canvas').boundingBox();
         const clip = {x: viewport.x + viewport.width * .134, y: viewport.y + viewport.height * .408,

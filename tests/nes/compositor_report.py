@@ -66,6 +66,12 @@ def build(root, run, dest, trials, previous=None):
     sections+=[table(('运行','场景','游戏','系统 PCM','NES 帧','GPU 帧','尝试','提交','完成','积压','等待 / 锁定 / 绘制或复制 / 提交 ms/帧'),values),
         '<p>两次额外冷启动和八场景逐帧检查'+('已执行。' if gate['boots'] else '按预设条件跳过，前置检查未全部通过。')+'</p>',
         '<h2>冻结帧的分阶段采样</h2><p>每个场景同时记录 NES 光栅、交给显示系统前的 RGB 图和整张系统截图。重复拍摄软件基线建立噪声范围。校准图包含八种颜色和单像素线。</p>']
+    if (tv/'menu-samples/1080/current').is_dir():
+        stable=[json.loads(line) for line in (tv/'timing/clock.jsonl').read_text().splitlines()]
+        assert [r['run'] for r in stable]==[1,2,3]
+        sections.append('<h2>默认电视安装包</h2><p>三个连续窗口分别记录默认 APK 的模拟时钟与应用输出的 WAV。设备为同一台 1080p x86 模拟器。上一表中候选路径的系统声音输出来自混音设备计数器。</p>')
+        sections.append(table(('窗口','实际秒数','NES 帧','游戏速度','录制 WAV 速度'),
+            [[r['run'],f"{r['wall']:.2f}",r['frames'],f"{r['speed']:.2%}",f"{r['audioSpeed']:.2%}"] for r in stable]))
     measurements=read(tv/'prototype/clock.json')
     samples=measurements['windows']
     if 'full-battle' in samples:
@@ -197,13 +203,14 @@ def build(root, run, dest, trials, previous=None):
     sections+=[f'<p>音色和音源释放时序维持现有实现。{outstanding}，仍缺英文 Switch 直接证据。</p>',
         '<p>日版 Switch 录像中，第 35 关的单人结算接入下一关，后来在地图编辑器入口显示了原作隐藏留言。该录像采用日版合集界面。<a href="https://www.youtube.com/watch?v=90hI6s_3iZ4&t=7166s">日版关末</a> · <a href="https://www.youtube.com/watch?v=90hI6s_3iZ4&t=7375s">日版隐藏留言</a></p>',
         '<p><a href="https://www.nintendo.com/us/store/products/namco-museum-archives-vol-2-switch/">任天堂游戏页</a> · <a href="https://nc.bn-ent.net/product/useful.php">万代南梦宫功能说明</a> · <a href="https://www.youtube.com/watch?v=S26lUv598_o&t=657s">系统菜单原片</a> · <a href="https://www.youtube.com/watch?v=uc_If5fksfA&t=270s">Xupgeeks 英文 Switch 结算录像</a></p>',
+        '<p>测量压缩包附本地复核脚本。托管验收所用源码以报告开头的提交为准。</p>',
         '<h2>安装包</h2><pre>'+html.escape('\n'.join(f'{sha(p)}  {p.name}' for p in sorted(dest.iterdir()) if p.suffix in ('.nes','.lbl','.apk') or p.name=='BattleCity-Web.zip'))+'</pre></html>']
     (dest/'Switch-TV-Comparison.html').write_text('\n'.join(sections))
     with ZipFile(dest/'Switch-TV-Measurements.zip','w',ZIP_DEFLATED,compresslevel=5) as z:
         for folder in dict.fromkeys([*trials,run]):
             for f in sorted(folder.rglob('*')):
                 rel=f.relative_to(folder)
-                if not f.is_file() or not (rel.parts[0] in ('tv-device-results','web-clock-and-endings','upgrade-chromium','upgrade-webkit','campaign-loop') or rel.parts[0].startswith('stage-replay-') or rel.parts[0] in ('menu-evidence','reference-review') or f.name in ('menu-sizes.csv','artifact-receipts.json','job-status.json','gpu-shader.log','stages.json','menu-regions.csv','commit.txt','run.txt','artifact.json')):continue
+                if not f.is_file() or not (rel.parts[0] in ('tv-device-results','web-clock-and-endings','upgrade-chromium','upgrade-webkit','campaign-loop') or rel.parts[0].startswith('stage-replay-') or rel.parts[0] in ('menu-evidence','reference-review') or (rel.parts[0]=='local-web' and f.suffix=='.log') or f.name in ('menu-sizes.csv','artifact-receipts.json','job-status.json','job-steps.json','gpu-shader.log','stages.json','menu-regions.csv','commit.txt','run.txt','artifact.json')):continue
                 if f.suffix not in ('.json','.csv','.png','.gz','.log','.txt','.jsonl','.sha256','.wav','.tsv','.jpg'):continue
                 z.write(f,str(Path(folder.name)/rel))
         for f in [root/'tail-codec.csv',root/'audio-recheck/terminal-av-sync.csv',*sorted((root/'reference-frames').glob('*.png'))]:
@@ -211,7 +218,7 @@ def build(root, run, dest, trials, previous=None):
         for f in (root/'research').glob('*'):
             if f.suffix in ('.tsv','.csv','.jpg'):
                 z.write(f,'research/'+f.name)
-        for n in ('compositor_report.py','tv_stage_analysis.py','tv_release_gate.py','native_window_report.py','tv_gpu_shader.cjs','tv_tail_codec.py','switch_menu_regions.py','switch_score_sample.py','switch_lettering.py','switch_coop_terminal.py','ending.lua','browser-ending.cjs','television.py','tv-scenes.lua','tv-blast-load.lua','terminal_av_sync.py','ending_audio.py','ending_calibration.py','terminal_tally.py','switch_cues.py','compare_switch_audio.py'):
+        for n in ('compositor_report.py','tv_stage_analysis.py','tv_release_gate.py','native_window_report.py','tv_gpu_shader.cjs','tv_tail_codec.py','switch_menu_regions.py','switch_score_sample.py','switch_lettering.py','switch_coop_terminal.py','ending.lua','browser-ending.cjs','browser-game.cjs','television.py','tv-scenes.lua','tv-blast-load.lua','terminal_av_sync.py','ending_audio.py','ending_calibration.py','terminal_tally.py','switch_cues.py','compare_switch_audio.py'):
             z.write(Path(__file__).with_name(n),'methods/'+n)
         z.write(Path(__file__).resolve().parents[2]/'runtime/tv-gpu-raster.h','methods/tv-gpu-raster.h')
 
