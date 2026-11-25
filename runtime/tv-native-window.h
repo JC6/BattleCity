@@ -181,23 +181,29 @@ public:
 		if (capture) capture->source(list,saved);
 		const auto *game = (picture || menu) ? nullptr : screen_quad(list);
         if (direct) {
+            const int iw=game ? game->texture.width : w, ih=game ? game->texture.height : h;
             ARect dirty{0,0,w,h};
-            if (game) {
-                dirty=draw_changes(*game,true);
-            } else {
-                compact=false;
-                raster::draw_primitives<true>(list,image.data(),w,h,w,picture);
+            if (!egl.hold_input(iw,ih,w,h) || capture || fresh) {
+                if (game) dirty=draw_changes(*game,false);
+                else {
+                    compact=false;
+                    raster::draw_primitives<true>(list,image.data(),w,h,w,picture);
+                }
             }
             saved.restore();
             list.release_lock();
             if (fresh) dirty={0,0,w,h};
-            expand_rgba(dirty);
-            if (capture) {
-                if (!capture->done()) capture->expanded(image.data(),w,h,w*2,SDL_PIXELFORMAT_RGB565);
-                if (capture->needs_present()) capture->present_input(rgba.data(),w,h,w*4,SDL_PIXELFORMAT_RGBA32);
+            const auto &input=game ? previous : image;
+            if (capture && !capture->done()) {
+                if (game) {
+                    for (int y=0;y<h;y++) for (int x=0;x<w;x++)
+                        image[size_t(y)*w+x]=previous[size_t(ys[y])*iw+xs[x]];
+                }
+                capture->expanded(image.data(),w,h,w*2,SDL_PIXELFORMAT_RGB565);
             }
             int64_t before_swap=0;
-            const bool ok=egl.draw(rgba,dirty,w,h,meter ? frame : 0,capture,before_swap);
+            const bool ok=egl.draw(input,iw,ih,dirty,w,h,meter ? frame : 0,capture,before_swap,
+                                   meter ? &meter->transaction.gpu_cost : nullptr);
             fresh=!ok;
             if (meter) {
                 meter->draw=before_swap ? before_swap-begin : now()-begin;

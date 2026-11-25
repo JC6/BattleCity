@@ -6,7 +6,8 @@ class tv_stage_capture
 {
     using raster = software_renderer<uint32_t,0,0,0,16,8,0>;
     std::string directory;
-    bool pattern = false, captured = false, presented = false, swapped = false;
+    int pattern = 0;
+    bool captured = false, presented = false, swapped = false;
     std::vector<uint32_t> calibration;
 
     bool write_ppm(const char *name, const void *pixels, int w, int h, int pitch, SDL_PixelFormat format)
@@ -25,7 +26,8 @@ public:
         if (!dir) return;
         const std::string path=std::string(dir)+"/tv-capture";
         if (FILE *file=std::fopen(path.c_str(),"r")) {
-            pattern=std::fgetc(file)=='P';
+            const int value=std::fgetc(file);
+            pattern=(value=='P' || value=='S' || value=='Q') ? value : 0;
             std::fclose(file);
             directory=std::string(dir)+"/";
         }
@@ -53,7 +55,9 @@ public:
                     calibration.resize(w*h);
                     constexpr uint32_t bars[]={0,0xffffff,0xff0000,0x00ff00,0x0000ff,0xcc7f35,0x456789,0x808080};
                     for (int y=0;y<h;++y) for(int x=0;x<w;++x)
-                        calibration[y*w+x] = y<h/2 ? bars[(8*x)/w] : ((x%17==0 || y%13==0) ? 0xffffff : 0);
+                        calibration[y*w+x] = pattern=='S' ? 0x00ff00 :
+                            pattern=='Q' ? bars[1+int(x>=w/2)+2*int(y>=h/2)] :
+                            y<h/2 ? bars[(8*x)/w] : ((x%17==0 || y%13==0) ? 0xffffff : 0);
                 }
                 saved={&p,p.texture,p.flags};
                 p.texture.base=calibration.data(); p.texture.rowpixels=w; p.texture.palette=nullptr;
@@ -68,6 +72,10 @@ public:
             }
             break;
         }
+    }
+    void texture_input(const uint16_t *pixels,int w,int h) {
+        if (write_ppm("tv-texture.tmp",pixels,w,h,w*2,SDL_PIXELFORMAT_RGB565))
+            std::rename((directory+"tv-texture.tmp").c_str(),(directory+"tv-texture.ppm").c_str());
     }
     void present_input(const void *pixels,int w,int h,int pitch,SDL_PixelFormat format) {
         if (!presented && write_ppm("tv-layer.tmp",pixels,w,h,pitch,format))

@@ -407,7 +407,7 @@ def calibration_grid(rgb, screen_width, xs, ys):
             'valid':colour_error<=8 and 30 in transitions and 5<=horizontal<=7}
 
 
-def record_render(results, labels, directory, write_private, scenes_only=False, prototype=False, held_out=False, formal=False):
+def record_render(results, labels, directory, write_private, scenes_only=False, prototype=False, held_out=False, formal=False, pipeline=False):
     ini = (f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\n'
            'autoframeskip 0\nframeskip 0\npause_brightness 1.0\n')
     # A missing override exercises the installed candidate's packaged default.
@@ -416,14 +416,17 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
     if formal:
         modes = {'candidate':None}
     if prototype:
-        modes = {'software-battle':'none','child-battle':'compositor-tv','battle':None,
-                 'software-explosions':'none','child-explosions':'compositor-tv','explosions':None,
-                 'fifo-battle':None,'fifo-explosions':None}
+        modes={}
+        for scene in ('battle','explosions'):
+            for prefix,scale in [('software-','none'),('child-','compositor-tv'),('prepared-',None),
+                                 ('prepared-repeat-',None),('upload-',None),('direct-',None),('',None),('immediate-',None)]:
+                modes[prefix+scene]=scale
     def select(mode, scale):
-        if mode.startswith('fifo-'):
-            write_private('tv-egl-fifo','1')
-        else:
-            private('rm','-f','files/tv-egl-fifo')
+        markers=('prepared','upload','direct','immediate','legacy')
+        private('rm','-f',*['files/tv-egl-'+key for key in markers])
+        for key in markers:
+            if mode==key or mode.startswith(key+'-'):
+                write_private('tv-egl-'+key,'1')
         if mode.startswith('full-'):
             write_private('tv-force-full','1')
         else:
@@ -435,7 +438,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         write_private('nes.ini', ini + (f'scalemode {scale}\n' if scale else ''))
     def stop():
         adb('shell','am','force-stop',PACKAGE)
-        private('rm','-f','files/tv-fixed','files/tv-profile.jsonl','files/tv-capture','files/tv-expanded.ppm','files/tv-source.ppm','files/tv-expanded.tmp','files/tv-layer.ppm','files/tv-layer.tmp','files/tv-swap.tmp','files/tv-swap.ppm','files/tv-frame-map.csv','files/tv-present.csv','files/tv-window.txt','files/tv-swap-renderer.txt')
+        private('rm','-f','files/tv-fixed','files/tv-profile.jsonl','files/tv-capture','files/tv-expanded.ppm','files/tv-source.ppm','files/tv-expanded.tmp','files/tv-layer.ppm','files/tv-layer.tmp','files/tv-texture.tmp','files/tv-texture.ppm','files/tv-swap.tmp','files/tv-swap.ppm','files/tv-frame-map.csv','files/tv-present.csv','files/tv-window.txt','files/tv-swap-renderer.txt')
     def marker():
         last_launch = time.monotonic()
         def read():
@@ -472,7 +475,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         write_private('tv-profile.jsonl','')
         trace_key='battlecity_display'
         trace_path='/data/misc/perfetto-traces/battlecity-display.pftrace'
-        trace_enabled=name in ('battle','explosions','candidate','fifo-battle','fifo-explosions')
+        trace_enabled=scale is None
         if trace_enabled:
             adb('shell','perfetto','--attach='+trace_key,'--stop',check=False)
             adb('shell','rm','-f',trace_path)
@@ -528,7 +531,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         (results/'clock.json').write_text(json.dumps({'battle':markers,'windows':summaries},indent=2))
     if prototype:
         stop()
-        private('rm','-f','files/tv-force-full','files/tv-egl-fifo')
+        private('rm','-f','files/tv-force-full','files/tv-egl-immediate','files/tv-egl-prepared','files/tv-egl-upload','files/tv-egl-direct','files/tv-egl-legacy')
         return
     # Separate launches keep the frozen visual fixtures out of the clock samples.
     display = 'shared_prefs/display.xml'
@@ -545,6 +548,8 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         cases = [('firing',0,0,0),('blast',0,0,0)]
     if held_out:
         cases = [('moving-626',0,0,0),('moving-633',0,0,0),('moving-648',0,0,0),('calibration',0,0,0),('blast-700',0,0,0)]
+    if pipeline:
+        cases=[(name,0,0,0) for name in ('solid','corners','calibration','moving-633')]
     visual = {}
     small_visual = {}
     try:
@@ -553,7 +558,8 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
             outputs = [('baseline','none'),('repeat','none'),('candidate',None)]
             if not (held_out or formal):
                 outputs.append(('low-buffer','surface-tv'))
-            if held_out and case=='calibration':outputs.append(('child','compositor-tv'))
+            if held_out and case=='calibration' and not pipeline:outputs.append(('child','compositor-tv'))
+            if pipeline and case=='corners':outputs.append(('legacy',None))
             for name,scale in outputs:
                 stop()
                 set_display((f'<map><int name="mode" value="{aspect}"/><int name="picture" value="{picture}"/>'
@@ -561,9 +567,9 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
                 select(name, scale)
                 tick = {'firing':621,'blast':696,'moving-626':626,'moving-633':633,'moving-648':648,'blast-700':700,'calibration':626}.get(case,705)
                 write_private('tv-observer.lua',render_fixture(labels,directory,tick,True,("blast" if case=="blast-700" else "motion" if held_out else case) if scenes_only else None))
-                stages = held_out and (name in ('baseline','candidate','repeat') or case=='calibration')
+                stages = pipeline or (held_out and (name in ('baseline','candidate','repeat') or case=='calibration'))
                 if stages:
-                    write_private('tv-capture','P' if case=='calibration' else 'G')
+                    write_private('tv-capture',{'calibration':'P','solid':'S','corners':'Q'}.get(case,'G'))
                 start_fixture()
                 try:
                     fingerprint = marker()
@@ -580,6 +586,8 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
                             return private('ls','files/tv-swap.ppm',check=False).strip()==b'files/tv-swap.ppm'
                         if any(swap_ready() or time.sleep(.2) for _ in range(15)):
                             channels.append('swap')
+                    if name in ('candidate','legacy') and private('ls','files/tv-texture.ppm',check=False).strip()==b'files/tv-texture.ppm':
+                        channels.append('texture')
                     if case=='calibration':
                         if name in ('baseline','repeat'):
                             (results/f'{case}-{name}-renderer.txt').write_bytes(private('cat','files/tv-swap-renderer.txt',check=False))
@@ -647,7 +655,7 @@ def run(apk, labels, results, suite, previous=None, formal=False):
         slot = f'files/states/{prior}/nes/1.sta'
     # Leave existing player files intact. A completed run removes its own slot.
     test_files = ['files/'+name for name in ('nes.ini','tv-observer.lua','tv-observation',
-                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv','tv-profile.jsonl','tv-fixed','tv-low-buffer','tv-egl-fifo','tv-capture','tv-expanded.ppm','tv-source.ppm','tv-expanded.tmp','tv-force-full','tv-layer.ppm','tv-layer.tmp')]
+                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv','tv-profile.jsonl','tv-fixed','tv-low-buffer','tv-egl-legacy','tv-egl-prepared','tv-egl-upload','tv-egl-immediate','tv-egl-direct','tv-texture.ppm','tv-capture','tv-expanded.ppm','tv-source.ppm','tv-expanded.tmp','tv-force-full','tv-layer.ppm','tv-layer.tmp')]
     test_files.extend((slot,slot+'.png',slot+'.lock'))
     if slot!=current_slot: test_files.extend((current_slot,current_slot+'.png',current_slot+'.lock'))
     for name in test_files:
@@ -669,9 +677,9 @@ def run(apk, labels, results, suite, previous=None, formal=False):
         if suite=='coop-endings':
             record_endings(labels,directory,results,write_private,('coop-stage42','coop-stage18'))
             return
-        if suite in ('render','scenes','prototype','held-out'):
-            record_render(results,labels,directory,write_private,scenes_only=suite in ('scenes','held-out'),
-                          prototype=suite=='prototype',held_out=suite=='held-out',formal=formal)
+        if suite in ('render','scenes','prototype','held-out','pipeline'):
+            record_render(results,labels,directory,write_private,scenes_only=suite in ('scenes','held-out','pipeline'),
+                          prototype=suite=='prototype',held_out=suite in ('held-out','pipeline'),formal=formal,pipeline=suite=='pipeline')
             return
         write_private('tv-observer.lua',observer(labels,directory))
         ini=f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\nwavwrite {directory}/tv-audio.wav\n'
@@ -925,7 +933,7 @@ def run(apk, labels, results, suite, previous=None, formal=False):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('apk','labels','results'): parser.add_argument(name,type=Path)
-    parser.add_argument('--suite',action='append',choices=('controls','menu-samples','coop-endings','timing','auto-frameskip','render','scenes','candidate-controls','prototype','held-out'))
+    parser.add_argument('--suite',action='append',choices=('pipeline','controls','menu-samples','coop-endings','timing','auto-frameskip','render','scenes','candidate-controls','prototype','held-out'))
     parser.add_argument('--formal',action='store_true',help='measure the packaged candidate and capture its software reference')
     parser.add_argument('--record-candidate-failure',action='store_true',
                         help='record a failing optional candidate control run for the release selector')

@@ -384,7 +384,7 @@ jobs:
             done
             previous=(--previous previous-tv/upgrade.apk)
           fi
-          bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result --stable deliverable/tv-emulator.apk "${previous[@]}" --record-candidate-failure --suite controls --suite prototype --suite candidate-controls --suite held-out --suite timing --suite menu-samples
+          bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result --stable deliverable/tv-emulator.apk "${previous[@]}" --record-candidate-failure --suite pipeline --suite held-out --suite controls --suite candidate-controls --suite prototype --suite timing --suite menu-samples
           passed=$(PYTHONPATH=tests/nes python3 -c "from tv_release_gate import preliminary;from pathlib import Path;print(int(all(preliminary(Path('build/tv-result'),'egl-tv').values())))")
           echo "BATTLECITY_PROBE_PASSED=$passed" >> "$GITHUB_ENV"
       - name: Two independent cold boots after passing the renderer prototype

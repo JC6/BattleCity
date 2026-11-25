@@ -126,6 +126,11 @@ async function windowUploads(page) {
         gl.linkProgram(program);
         if (!gl.getProgramParameter(program,gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(program));
         gl.useProgram(program);gl.disable(gl.DITHER);
+        const corners=gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER,corners);
+        gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([0,0,1,0,1,1,0,0,1,1,0,1]),gl.STATIC_DRAW);
+        gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+        gl.enableVertexAttribArray(0);
         const w=19,h=13,pixels=new Uint8Array(w*h*4);
         function texture() {
             const t=gl.createTexture();
