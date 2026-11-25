@@ -73,3 +73,14 @@
  		{ "compositor-tv", 6, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0, nullptr },
  		{ "dirty-tv", 5, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0, nullptr },
  		{ "surface-tv", 4, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                  nullptr },
+--- a/scripts/src/main.lua
++++ b/scripts/src/main.lua
+@@ -35,7 +35,7 @@
+ 		links {
+ 			"EGL",
+ 			"GLESv1_CM",
+-			"GLESv2",
++			"GLESv3",
+ 			"SDL3",
+ 		}
+ 
