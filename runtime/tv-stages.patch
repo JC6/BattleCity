@@ -57,3 +57,11 @@
  	window().m_primlist->release_lock();
  
  	// unlock and flip
+@@ -547,6 +558,7 @@
+ 		r.h=blitheight;
+ 		[[maybe_unused]] const bool drawn = surface || SDL_RenderTexture(m_sdl_renderer, m_texture_id, nullptr, &r);
+ #ifdef __ANDROID__
++		if (capture && drawn && !surface) m_stage_capture.software_present_input(m_sdl_renderer);
+ 		const auto before_present = started ? battlecity_tv::now_ns() : 0;
+ 		if (tracing) { ATrace_endSection(); ATrace_beginSection("BattleCity.present"); }
+ 		const bool presented = surface ? SDL_UpdateWindowSurface(m_output_window) : SDL_RenderPresent(m_sdl_renderer);

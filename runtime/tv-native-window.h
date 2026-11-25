@@ -16,6 +16,14 @@ class tv_native_window
 	ANativeWindow *window = nullptr;
 	tv_surface_queue queue;
 	bool layered = false;
+    bool watching = false;
+    std::atomic<bool> exposed{false};
+    static bool SDLCALL on_window_event(void *context,SDL_Event *event) {
+        if (event->type==SDL_EVENT_DID_ENTER_FOREGROUND || event->type==SDL_EVENT_WINDOW_RESTORED ||
+            event->type==SDL_EVENT_WINDOW_EXPOSED)
+            static_cast<tv_native_window *>(context)->exposed.store(true,std::memory_order_relaxed);
+        return true;
+    }
 	int width = 0, height = 0, source_w = 0, source_h = 0;
 	bool compact = false, fresh = true;
 	std::vector<uint16_t> image, source, previous;
@@ -106,7 +114,7 @@ class tv_native_window
 
 public:
 	struct timing { tv_surface_queue::timing transaction{}; int64_t draw = 0, lock = 0, copy = 0, post = 0, area = 0; bool fast = false; };
-	~tv_native_window() { close(); }
+	~tv_native_window() { if (watching) SDL_RemoveEventWatch(on_window_event,this); close(); }
 	void close()
 	{
 		queue.close();
@@ -124,7 +132,10 @@ public:
 		ANativeWindow_acquire(next);
 		window = next;
 		layered = use_layer;
-		if (layered) { width=height=0; return true; }
+		if (layered) {
+            if (!watching) watching=SDL_AddEventWatch(on_window_event,this);
+            width=height=0; return true;
+        }
 		for (int choice : { AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM, AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM,
 				AHARDWAREBUFFER_FORMAT_R5G6B5_UNORM }) {
 			if (ANativeWindow_setBuffersGeometry(window,0,0,choice) == 0) {
@@ -140,6 +151,7 @@ public:
 	bool draw(render_primitive_list &list, int w, int h, uint8_t picture, bool menu, bool reset, timing *meter, uint64_t frame=0, bool drain=false, tv_stage_capture *capture=nullptr)
 	{
 		if (w <= 0 || h <= 0 || !window) return false;
+		if (exposed.exchange(false,std::memory_order_relaxed)) reset=true;
 		if (w != width || h != height || reset) {
 			if (layered) {
 				if (!queue.configure(window,w,h)) return false;

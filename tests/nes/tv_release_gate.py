@@ -13,8 +13,9 @@ COMPOSITOR_HOLDOUTS = HOLDOUTS | {'moving-648', 'blast-700', 'calibration'}
 
 def probe_pass(root, renderer='dirty-tv'):
     windows = json.loads((root/'prototype/clock.json').read_text())['windows']
-    assert set(windows) == {'battle','explosions'}
-    return all(len(records)==1 and qualifying(records[0], DRIVERS[renderer]) for records in windows.values())
+    required={'battle','explosions'}
+    assert set(windows) in (required, required | {'full-battle','full-explosions'})
+    return all(len(windows[name])==1 and qualifying(windows[name][0],DRIVERS[renderer]) for name in required)
 
 
 def qualifying(row, driver="android-native-window"):

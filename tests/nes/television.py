@@ -396,8 +396,12 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
     if formal:
         modes = {'candidate':None}
     if prototype:
-        modes = {'battle':None, 'explosions':None}
+        modes = dict.fromkeys(('full-battle','battle','full-explosions','explosions'))
     def select(mode, scale):
+        if mode.startswith('full-'):
+            write_private('tv-force-full','1')
+        else:
+            private('rm','-f','files/tv-force-full')
         if mode == 'low-buffer':
             write_private('tv-low-buffer', '1')
         else:
@@ -405,7 +409,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         write_private('nes.ini', ini + (f'scalemode {scale}\n' if scale else ''))
     def stop():
         adb('shell','am','force-stop',PACKAGE)
-        private('rm','-f','files/tv-fixed','files/tv-profile.jsonl','files/tv-capture','files/tv-expanded.ppm','files/tv-source.ppm','files/tv-expanded.tmp')
+        private('rm','-f','files/tv-fixed','files/tv-profile.jsonl','files/tv-capture','files/tv-expanded.ppm','files/tv-source.ppm','files/tv-expanded.tmp','files/tv-layer.ppm','files/tv-layer.tmp')
     def marker():
         last_launch = time.monotonic()
         def read():
@@ -434,7 +438,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         stop()
         select(name, scale)
         fixture = render_fixture(labels, directory, 560)
-        if name == 'explosions':
+        if name.endswith('explosions'):
             addresses = dict((k,int(v,16)) for v,k in re.findall(r'^al (\w+) \._(\w+)$',labels.read_text(),re.M))
             fixture += f'\nlocal mode_address={addresses["mode"]}\nlocal tank_address={addresses["tanks"]}\n'
             fixture += f'local stress_path="{directory}/tv-stress"\n'+Path(__file__).with_name('tv-blast-load.lua').read_text()
@@ -455,7 +459,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
             row['pcmSpeed'] = row['samples']/row['sampleRate']/row['wall']
             row['pass'] = (0.99<=row['gameSpeed']<=1.01 and 0.99<=row['pcmSpeed']<=1.01
                            and row['presented']==row['attempts'] and row['presented']==row['frames'])
-        if name == 'explosions':
+        if name.endswith('explosions'):
             assert int(private('cat','files/tv-stress')) >= 720, 'blast fixture never ran in battle'
         summaries[name] = rows
         layers = adb('shell','dumpsys','SurfaceFlinger','--list').decode().splitlines()
@@ -474,6 +478,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         (results/'clock.json').write_text(json.dumps({'battle':markers,'windows':summaries},indent=2))
     if prototype:
         stop()
+        private('rm','-f','files/tv-force-full')
         return
     # Separate launches keep the frozen visual fixtures out of the clock samples.
     display = 'shared_prefs/display.xml'
@@ -516,9 +521,9 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
                     (results/f'{case}-{name}-failure.png').write_bytes(adb('exec-out','screencap','-p'))
                     raise
                 if stages:
-                    wait(lambda: private('ls','files/tv-expanded.ppm',check=False).strip(),
-                         lambda data:data==b'files/tv-expanded.ppm','frozen raster stages')
-                    for stage in ('source','expanded'):
+                    wait(lambda: private('ls','files/tv-layer.ppm',check=False).strip(),
+                         lambda data:data==b'files/tv-layer.ppm','frozen raster stages')
+                    for stage in ('source','expanded','layer'):
                         data=private('cat',f'files/tv-{stage}.ppm')
                         header,dimensions,scale,pixels=data.split(b'\n',3)
                         sw,sh=map(int,dimensions.split())
@@ -580,7 +585,7 @@ def run(apk, labels, results, suite, previous=None, formal=False):
         slot = f'files/states/{prior}/nes/1.sta'
     # Leave existing player files intact. A completed run removes its own slot.
     test_files = ['files/'+name for name in ('nes.ini','tv-observer.lua','tv-observation',
-                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv','tv-profile.jsonl','tv-fixed','tv-low-buffer','tv-capture','tv-expanded.ppm','tv-source.ppm','tv-expanded.tmp')]
+                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv','tv-profile.jsonl','tv-fixed','tv-low-buffer','tv-capture','tv-expanded.ppm','tv-source.ppm','tv-expanded.tmp','tv-force-full','tv-layer.ppm','tv-layer.tmp')]
     test_files.extend((slot,slot+'.png',slot+'.lock'))
     if slot!=current_slot: test_files.extend((current_slot,current_slot+'.png',current_slot+'.lock'))
     for name in test_files:
@@ -628,7 +633,6 @@ def run(apk, labels, results, suite, previous=None, formal=False):
             # A presented SDL frame does not guarantee the next menu has opened.
             # Wait for its cyan cursor before sending another directional edge.
             check(lambda s:s['menu'],'system menu opened')
-            capture('system-menu')
             save_button=(.389,.164,.222,.061)
             load_button=(.389,.253,.222,.061)
             settings_button=(.262,.702,.221,.061)
@@ -654,6 +658,9 @@ def run(apk, labels, results, suite, previous=None, formal=False):
                     action()
                 raise RuntimeError('gamepad did not reach '+label)
             wait(lambda:focused(save_button),bool,'initial Save cursor')
+            capture('system-menu')
+            time.sleep(.2)
+            capture('system-menu-repeat')
             reach(settings_button,one.down,'Settings')
             reach(screen_card,lambda:one.tap(SOUTH),'Screen Settings card')
             one.tap(SOUTH)
@@ -673,6 +680,11 @@ def run(apk, labels, results, suite, previous=None, formal=False):
             wait(shooter_width,lambda w:abs(w-36)<=3,'default screen sample')
             for width in (41,31,64): select_width(width)
             capture('screen-settings')
+            time.sleep(.2)
+            capture('screen-settings-repeat')
+            if suite=='menu-samples':
+                select_width(36)
+                return
             select_width(36)
             one.tap(EAST)
             reach(staff_card,lambda:one.tap_hat(16,-1),'Staff Credits card')
@@ -848,7 +860,7 @@ def run(apk, labels, results, suite, previous=None, formal=False):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('apk','labels','results'): parser.add_argument(name,type=Path)
-    parser.add_argument('--suite',action='append',choices=('controls','timing','auto-frameskip','render','scenes','candidate-controls','prototype','held-out'))
+    parser.add_argument('--suite',action='append',choices=('controls','menu-samples','timing','auto-frameskip','render','scenes','candidate-controls','prototype','held-out'))
     parser.add_argument('--formal',action='store_true',help='measure the packaged candidate and capture its software reference')
     parser.add_argument('--record-candidate-failure',action='store_true',
                         help='record a failing optional candidate control run for the release selector')
@@ -859,6 +871,16 @@ if __name__=='__main__':
     for suite in args.suite or ('controls','timing','render','scenes','candidate-controls'):
         folder=args.results if suite=='controls' else args.results/suite
         try:
+            if suite=='menu-samples':
+                size=adb('shell','wm','size').decode()
+                prior_size=re.search(r'Override size: (\d+x\d+)',size)
+                try:
+                    adb('shell','wm','size','1280x720')
+                    for tag,package in [('previous',args.previous),('current',args.apk)]:
+                        if package: run(package,args.labels,folder/tag,suite)
+                finally:
+                    adb('shell','wm','size',prior_size[1] if prior_size else 'reset')
+                continue
             app = args.stable if suite=='controls' and args.stable else args.apk
             run(app,args.labels,folder,suite,args.previous if suite=='controls' else None,formal=args.formal)
         except Exception as error:

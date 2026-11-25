@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "emu.h"
+#include "menu-slot-emblem.h"
 #include "ui/mainmenu.h"
 #include "wallpaper-previews.h"
 #include "screen-preview.h"
@@ -92,11 +93,26 @@ void brackets(render_container &c, float x, float y, float w, float h)
         };
         stroke(4,0,18,9,blue); stroke(0,4,9,18,blue);
         stroke(5,5,9,9,blue);
-        stroke(5,0,16,3,cyan); stroke(4,2,3,5,cyan);
-        stroke(0,5,7,3,cyan); stroke(0,6,3,15,cyan);
-        stroke(1,19,6,3,cyan); stroke(5,11,3,10,cyan);
-        stroke(5,10,8,3,cyan); stroke(10,6,3,6,cyan);
-        stroke(10,5,11,3,cyan); stroke(18,1,3,6,cyan);
+        stroke(6,0,15,1,cyan);
+        stroke(5,1,17,2,cyan);
+        stroke(4,3,6,1,cyan);
+        stroke(17,3,5,2,cyan);
+        stroke(4,4,9,1,cyan);
+        stroke(0,5,8,1,cyan);
+        stroke(9,5,13,1,cyan);
+        stroke(0,6,22,1,cyan);
+        stroke(0,7,8,1,cyan);
+        stroke(9,7,12,1,cyan);
+        stroke(0,8,3,1,cyan);
+        stroke(4,8,3,1,cyan);
+        stroke(8,8,6,1,cyan);
+        stroke(0,9,13,2,cyan);
+        stroke(0,11,12,2,cyan);
+        stroke(0,13,8,4,cyan);
+        stroke(0,17,3,2,cyan);
+        stroke(4,17,4,2,cyan);
+        stroke(0,19,7,2,cyan);
+        stroke(1,21,6,1,cyan);
     }
 }
 
@@ -189,8 +205,17 @@ void footer(mame_ui_manager &ui,render_target &t,bool slots=false, bool settings
 class battle_slots
 {
 public:
-    explicit battle_slots(running_machine &machine) : m_machine(machine) {}
-    ~battle_slots() { clear(); }
+    explicit battle_slots(running_machine &machine) : m_machine(machine)
+    {
+        m_emblem_bitmap.allocate(130,24);
+        for (int y=0; y<24; ++y) for (int x=0; x<130; ++x) {
+            const auto index=std::strchr(slot_emblem::keys,slot_emblem::rows[y][x])-slot_emblem::keys;
+            m_emblem_bitmap.pix(y,x)=slot_emblem::colors[index];
+        }
+        m_emblem=m_machine.render().texture_alloc();
+        m_emblem->set_bitmap(m_emblem_bitmap,m_emblem_bitmap.cliprect(),TEXFORMAT_ARGB32);
+    }
+    ~battle_slots() { clear(); m_machine.render().texture_free(m_emblem); }
     void refresh()
     {
         clear();
@@ -259,13 +284,8 @@ public:
             else if (occupied(i))
                 label(ui,target,"Saved",x,.505f,.166f,.034f);
             else {
-                auto const rim=rgb_t(175,116,109), fill=rgb_t(94,32,38);
-                rounded(c,x+.032f,.512f,.101f,.019f,.003f,.004f,rim);
-                rounded(c,x+.032f,.527f,.055f,.019f,.003f,.004f,rim);
-                rounded(c,x+.034f,.514f,.097f,.015f,.002f,.003f,fill);
-                rounded(c,x+.034f,.528f,.051f,.015f,.002f,.003f,fill);
-                label(ui,target,"NAMCO MUSEUM",x+.032f,.508f,.101f,.021f);
-                label(ui,target,"ARCHIVES",x+.032f,.525f,.055f,.020f);
+                float const left=x+42.f/1280.f;
+                c.add_quad(left,369.f/720.f,left+130.f/1280.f,393.f/720.f,rgb_t::white(),m_emblem,blend);
             }
         }
     }
@@ -284,6 +304,8 @@ private:
     }
     running_machine &m_machine;
     std::array<card,4> m_cards;
+    bitmap_argb32 m_emblem_bitmap;
+    render_texture *m_emblem=nullptr;
 };
 
 namespace {

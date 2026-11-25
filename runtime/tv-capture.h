@@ -6,7 +6,7 @@ class tv_stage_capture
 {
     using raster = software_renderer<uint32_t,0,0,0,16,8,0>;
     std::string directory;
-    bool pattern = false, captured = false;
+    bool pattern = false, captured = false, presented = false;
     std::vector<uint32_t> calibration;
 
     bool write_ppm(const char *name, const void *pixels, int w, int h, int pitch, SDL_PixelFormat format)
@@ -66,6 +66,17 @@ public:
                 write_ppm("tv-source.ppm",rgb.data(),w,h,w*4,SDL_PIXELFORMAT_XRGB8888);
             }
             break;
+        }
+    }
+    void present_input(const void *pixels,int w,int h,int pitch,SDL_PixelFormat format) {
+        if (!presented && write_ppm("tv-layer.tmp",pixels,w,h,pitch,format))
+            presented=std::rename((directory+"tv-layer.tmp").c_str(),(directory+"tv-layer.ppm").c_str())==0;
+    }
+    void software_present_input(SDL_Renderer *renderer) {
+        if (presented || !renderer) return;
+        if (auto *surface=SDL_RenderReadPixels(renderer,nullptr)) {
+            present_input(surface->pixels,surface->w,surface->h,surface->pitch,surface->format);
+            SDL_DestroySurface(surface);
         }
     }
     void expanded(const void *pixels,int w,int h,int pitch,SDL_PixelFormat format)

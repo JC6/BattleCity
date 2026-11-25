@@ -46,6 +46,7 @@ class tv_surface_queue
 	std::shared_ptr<pool> current;
 	tv_gpu_raster gpu;
 	int width = 0, height = 0;
+	bool full_redraw = false;
 	static bool empty(ARect r) { return r.right<=r.left || r.bottom<=r.top; }
 	static ARect combined(ARect a, ARect b) {
 		if (empty(a)) return b;
@@ -73,6 +74,7 @@ public:
 		uint64_t submitted=0, completed=0, last_frame=0;
 		int64_t latency=0;
 		uint64_t frame_discontinuities=0, gpu_frames=0;
+		battlecity_tv::gpu_cost gpu_cost{};
 	};
 	~tv_surface_queue() { close(); }
 	void close() {
@@ -88,6 +90,8 @@ public:
 	bool configure(ANativeWindow *parent,int w,int h) {
 		if (current && w==width && h==height) return true;
 		close();
+        const char *directory=SDL_GetAndroidInternalStoragePath();
+        full_redraw=directory && ::access((std::string(directory)+"/tv-force-full").c_str(),F_OK)==0;
 		auto p=std::make_shared<pool>();
 		p->control=ASurfaceControl_createFromWindow(parent,"BattleCity NES");
 		if (!p->control) { SDL_Log("BattleCity: SurfaceControl parent unavailable"); return false; }
@@ -108,7 +112,7 @@ public:
             return true;
         };
         if (allocate()) {
-            if (!gpu.configure({p->slots[0].buffer,p->slots[1].buffer,p->slots[2].buffer},h))
+            if (!gpu.configure({p->slots[0].buffer,p->slots[1].buffer,p->slots[2].buffer},w,h))
                 SDL_Log("BattleCity: imported GPU targets unavailable (EGL %x, GL %x)",eglGetError(),glGetError());
             else SDL_Log("BattleCity: imported GLES game buffers %dx%d",w,h);
         } else {
@@ -149,7 +153,14 @@ public:
 		lock.unlock();
 		auto ready=battlecity_tv::now_ns();
 		ARect dirty=s.damage;
+        if (source && !empty(dirty)) {
+            // Linear sampling can address one neighbouring texel across the changed edge.
+            dirty={std::max(0,dirty.left-1),std::max(0,dirty.top-1),
+                   std::min(width,dirty.right+1),std::min(height,dirty.bottom+1)};
+        }
 		if (capture && !capture->done() && empty(dirty)) dirty={0,0,width,height};
+		if (full_redraw && !empty(dirty)) dirty={0,0,width,height};
+		battlecity_tv::gpu_cost cost;
 		bool accelerated=source && gpu.available();
 		int acquire=-1;
 		const bool repaint=!empty(dirty);
@@ -165,10 +176,12 @@ public:
                     lock.lock(); s.available=true; p.changed.notify_all(); return false;
                 }
                 ::close(s.fence); s.fence=-1;
-                ready=battlecity_tv::now_ns();
+                const auto released=battlecity_tv::now_ns();
+                cost.release_wait=released-ready;
+                ready=released;
             }
             if (accelerated) {
-                accelerated=gpu.draw(index,*source,width,height,acquire,capture);
+                accelerated=gpu.draw(index,*source,width,height,dirty,acquire,capture,frame ? &cost : nullptr);
                 if (!accelerated) { dirty={0,0,width,height}; restore_cpu_image(); }
             }
             if (!accelerated) {
@@ -178,7 +191,10 @@ public:
                     for (int y=dirty.top;y<dirty.bottom;++y)
                         std::memcpy(static_cast<uint32_t *>(pixels)+size_t(y)*s.stride+dirty.left,
                             rgba.data()+size_t(y)*width+dirty.left,(dirty.right-dirty.left)*sizeof(uint32_t));
-                    if (capture) capture->expanded(pixels,width,height,s.stride*4,SDL_PIXELFORMAT_RGBA32);
+                    if (capture && !capture->done()) {
+                        capture->expanded(pixels,width,height,s.stride*4,SDL_PIXELFORMAT_RGBA32);
+                        capture->present_input(pixels,width,height,s.stride*4,SDL_PIXELFORMAT_RGBA32);
+                    }
                     status=AHardwareBuffer_unlock(s.buffer,&acquire);
                 }
             } else locked=ready;
@@ -211,8 +227,8 @@ public:
 		lock.lock();
 		if (drain)
 			p.changed.wait_for(lock,std::chrono::milliseconds(500),[&] { return p.completed==ticket; });
-		t={ready-start,locked-ready,copied-locked,posted-copied,repaint ? (accelerated ? int64_t(width)*height : int64_t(dirty.right-dirty.left)*(dirty.bottom-dirty.top)) : 0,
-		   ticket,p.completed,p.last_frame,p.latency,p.frame_discontinuities,p.gpu_frames};
+		t={ready-start,locked-ready,copied-locked,posted-copied,repaint ? int64_t(dirty.right-dirty.left)*(dirty.bottom-dirty.top) : 0,
+		   ticket,p.completed,p.last_frame,p.latency,p.frame_discontinuities,p.gpu_frames,cost};
 		return true;
 	}
 };

@@ -103,6 +103,12 @@ def analyze(folder):
             for mode in ('baseline','candidate'):
                 info=calibration_edges(load(folder/f'{name}-{mode}-expanded.ppm.gz'),load(folder/f'{name}-{mode}.png'))
                 stages['system'][mode+'Registration']=info
+                layer=folder/f'{name}-{mode}-layer.ppm.gz'
+                if layer.is_file():
+                    expanded=load(folder/f'{name}-{mode}-expanded.ppm.gz')
+                    before=load(layer)
+                    stages['system'][mode+'BeforePresent']=compare([expanded,expanded,before])
+                    stages['system'][mode+'LayerRegistration']=calibration_edges(before,load(folder/f'{name}-{mode}.png'))
         assert stages['system']['aboveRepeatNoise']==visual['aboveRepeatNoise']
         first=next((k for k,v in stages.items() if v.get('geometryMismatch') or v['aboveRepeatNoise']),'identical')
         rows[name]={'battle':visual['battle'],'firstDifference':first,'stages':stages}

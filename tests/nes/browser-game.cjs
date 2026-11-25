@@ -186,6 +186,19 @@ async function stateFilesDigest(page, slotPath) {
     }, slotPath);
 }
 
+async function captureMenuSizes(page, name) {
+    if (!process.env.BATTLECITY_CAPTURE_DIR) return;
+    const original=page.viewportSize();
+    for (const [width,height] of [[1280,720],[1920,1080]]) {
+        await page.setViewportSize({width,height});
+        await renderFrames(page,5);
+        await capture(page,name+'-'+height);
+        await renderFrames(page,3);
+        await capture(page,name+'-'+height+'-repeat');
+    }
+    await page.setViewportSize(original);
+}
+
 async function capture(page, name) {
     const directory = process.env.BATTLECITY_CAPTURE_DIR;
     if (!directory && name !== 'stage-1') return;
@@ -411,8 +424,10 @@ async function verify(engine, suite) {
         const menuBounds=await page.locator('#display').boundingBox();
         assert.ok(Math.abs(menuBounds.width / menuBounds.height - 16 / 9) < .01);
         await capture(page, 'system-menu');
+        await captureMenuSizes(page,'system-menu');
         await menu(page, ['Home','ArrowDown','ArrowDown','Enter','Home','Enter','Home','ArrowRight','ArrowRight','Enter']);
         await capture(page, 'screen-settings');
+        await captureMenuSizes(page,'screen-settings');
         await checkScreenMode(page, '2');
         for(const mode of [0,1,2,3]) {
             await menu(page, ['Home', ...Array(mode).fill('ArrowRight'), 'Enter']);

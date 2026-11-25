@@ -26,6 +26,16 @@ inline int64_t thread_ns()
     return int64_t(value.tv_sec) * 1000000000 + value.tv_nsec;
 }
 
+struct gpu_cost {
+    int64_t upload=0, draw=0, sync=0, release_wait=0;
+    unsigned finishes=0;
+
+    void accumulate(const gpu_cost &other) {
+        upload+=other.upload; draw+=other.draw; sync+=other.sync;
+        release_wait+=other.release_wait; finishes+=other.finishes;
+    }
+};
+
 struct sample {
     int64_t wall, cpu;
     double emulated;
@@ -53,11 +63,12 @@ public:
                 int64_t began, int64_t before_present, bool presented, int vsync, int width, int height,
                 int64_t lock=0, int64_t copy=0, int64_t post=0, int64_t area=0, int64_t waiting=0,
                 uint64_t sent=0, uint64_t complete=0, uint64_t last_frame=0, int64_t latency=0,
-                bool drained=false, uint64_t id_errors=0, uint64_t gpu_frames=0)
+                bool drained=false, uint64_t id_errors=0, uint64_t gpu_frames=0, gpu_cost cost={})
     {
         const auto wall = now_ns();
         if (emulated < 10.0) return;
         ++attempts;
+        gpu.accumulate(cost);
         wait_ns+=waiting; lock_ns+=lock; copy_ns+=copy; post_ns+=post; copied_area+=area;
         submissions += presented;
         compact += native_size;
@@ -71,7 +82,8 @@ public:
                 std::fprintf(file, "{\"run\":%d,\"driver\":\"%s\",\"wall\":%.9f,\"emu\":%.9f,"
                     "\"frames\":%llu,\"attempts\":%u,\"presented\":%u,\"nativeSize\":%u,\"vsync\":%d,\"bufferWidth\":%d,\"bufferHeight\":%d,"
                     "\"samples\":%llu,\"sampleRate\":%u,\"drawMs\":%.3f,\"presentMs\":%.3f,"
-                    "\"coreSliceMs\":%.3f,\"threadCpuMs\":%.3f,\"lockMs\":%.3f,\"copyMs\":%.3f,\"postMs\":%.3f,\"writtenPixels\":%lld,\"waitMs\":%.3f,\"transactions\":%llu,\"completions\":%llu,\"pending\":%llu,\"lastCompletedFrame\":%llu,\"lastSubmittedFrame\":%llu,\"completionMs\":%.3f,\"frameIdErrors\":%llu,\"gpuFrames\":%llu}\n",
+                    "\"coreSliceMs\":%.3f,\"threadCpuMs\":%.3f,\"lockMs\":%.3f,\"copyMs\":%.3f,\"postMs\":%.3f,\"writtenPixels\":%lld,\"waitMs\":%.3f,\"transactions\":%llu,\"completions\":%llu,\"pending\":%llu,\"lastCompletedFrame\":%llu,\"lastSubmittedFrame\":%llu,\"completionMs\":%.3f,\"frameIdErrors\":%llu,\"gpuFrames\":%llu,"
+                    "\"uploadMs\":%.3f,\"drawCallMs\":%.3f,\"fenceMs\":%.3f,\"releaseWaitMs\":%.3f,\"finishFallbacks\":%u}\n",
                     windows, driver, (end.wall-start.wall)/1e9, end.emulated-start.emulated,
                     static_cast<unsigned long long>(end.frame-start.frame), attempts, submissions, compact, vsync, width, height,
                     static_cast<unsigned long long>(end.pcm-start.pcm), pcm_rate.load(std::memory_order_relaxed),
@@ -80,12 +92,14 @@ public:
                     static_cast<unsigned long long>(sent-start_sent),static_cast<unsigned long long>(complete-start_complete),
                     static_cast<unsigned long long>(sent-complete),static_cast<unsigned long long>(last_frame),
                     static_cast<unsigned long long>(frame),(latency-start_latency)/1e6,
-                    static_cast<unsigned long long>(id_errors-start_id_errors),static_cast<unsigned long long>(gpu_frames-start_gpu_frames));
+                    static_cast<unsigned long long>(id_errors-start_id_errors),static_cast<unsigned long long>(gpu_frames-start_gpu_frames),
+                    gpu.upload/1e6,gpu.draw/1e6,gpu.sync/1e6,gpu.release_wait/1e6,gpu.finishes);
                 std::fclose(file);
             }
         }
         start=end; start_gpu_frames=gpu_frames; start_id_errors=id_errors; start_sent=sent; start_complete=complete; start_latency=latency; wait_ns=0;
         attempts=submissions=compact=0;
+        gpu={};
         render_ns=present_ns=0;
         lock_ns=copy_ns=post_ns=copied_area=0;
         core_ns.store(0, std::memory_order_relaxed);
@@ -101,6 +115,7 @@ public:
 private:
     std::string path;
     sample start{};
+    gpu_cost gpu{};
     int windows=0;
     uint64_t start_sent=0, start_complete=0, start_id_errors=0, start_gpu_frames=0;
     int64_t start_latency=0, wait_ns=0;
