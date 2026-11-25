@@ -156,3 +156,13 @@ Crolister 的英文录像展示了普通编辑器的进入、退出、重新进�
 日语解说录像在 14:52 显示原作开发者留言，约 15:00 显示空编辑区，15:02 回到带 `©1980 1985 NAMCO LTD.` 的标题。该录像中的 26800 分已有逐格采样记录。开头标注的设备、标题署名和画面语言均列入本轮证据表。英文合集触发留言的按键和退出顺序仍待目标版本实录确认。[留言至退出](https://www.youtube.com/watch?v=aRGjPGSfBmk&t=892s)
 
 另对英文合集录像 5:19–11:19 的本作章节按 20 Hz 搜索重复画面。约 9:27.7 与 9:28.4 出现编辑地图和标题的切换，录像中看不到对应的肩键输入。同一画面可能因重新进入编辑器而再次出现。现有材料仍无法给两次连续回退各自定帧，也无法给无人操作的标题待机定时。交叉核对时还识别出一段带英文界面的 PlayStation 演示，11 秒处可见主机主页。[英文编辑器片段](https://www.youtube.com/watch?v=S26lUv598_o&t=565s) · [PlayStation 平台辨认](https://www.youtube.com/watch?v=cbDdyOHMneU&t=11s)
+
+### 195400 的大号字形与录像音轨
+
+英文合集的 1–35 关通关录像在第 36 关结束后显示 HISCORE 195400。原片 3345.40、3347.40、3349.40 秒三帧中，标题的 392 格和六个数字各自的 56 格均与卡带一致，包括大号 4。该录像同时出现键盘图标与 LT/LB 提示，可用于同合集的跨平台对照。英文 Switch 仍缺大号 2、3、4、7 的直接样本。[高分画面](https://www.youtube.com/watch?v=9d-Mw2oTvp0&t=3347s) · [逐格测量](../../tests/nes/switch_score_sample.py)
+
+同一段录像的终局音乐在约 3341.25 秒起音。用有声音符对齐，频谱相似度为 0.812，按峰值 1.2% 测得尾音 1.63 秒，复刻卡带为 1.58 秒。已确认来自英文 Switch 的双人第 18、42 关屏摄也有公开音轨，在可见 GAME OVER 附近与无损参考对齐的相似度分别约 0.59、0.58，低于五段单人样本沿用的 0.70 门槛。它们仍可验证结局画面的顺序。音源与录制链路对尾音的影响尚无法分开。[同合集终局](https://www.youtube.com/watch?v=9d-Mw2oTvp0&t=3341s) · [英文 Switch 双人终局](https://www.youtube.com/watch?v=MnymnZA9zTc&t=3075s) · [限定画面时间段的音轨测量](../../tests/nes/switch_terminal_sample.py)
+
+发行方列出了存档与回退功能。高播放量的日版 Namcot、街机版《VS. Battle City》和任天堂 Wii U Virtual Console 演示分别属于其他发行。英文合集的另两段录像出现 Steam 链接或 LT/LB 提示。此次公开检索仍缺少能同时看清英文 Switch 画面与操作、连续展示隐藏留言的进出、无人操作待机或连续两次回退的录像。[万代南梦宫产品页](https://www.bandainamcoent.com/games/namco-museum-archives-vol-2) · [日版 Switch](https://www.youtube.com/watch?v=lkMni8x1wKg&t=59s) · [街机发行辨认](https://www.youtube.com/watch?v=C4KWYT0N_ow&t=1008s)
+
+另复核一部 5,488 次播放的 Switch 合集演示。作者介绍日版实体卡。8:07 的标题同时显示 NAMCOT、©1985 BNEI 以及三个英文选项。片中从标题剪入第一关，随后剪到第二关的小号计分，再转入下一款游戏。标题能单独核对，剪辑间隔不能用于推算待机长度。[Switch 合集标题](https://www.youtube.com/watch?v=FQS7wANiHXg&t=487s) · [第二关计分](https://www.youtube.com/watch?v=FQS7wANiHXg&t=543s)

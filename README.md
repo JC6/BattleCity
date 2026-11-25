@@ -20,11 +20,17 @@ Web 和 Android TV 使用同一张卡带。Chromium 与 WebKit 的 18 个游戏�
 
 720p 和 1080p 的菜单对照沿用英文 Switch 截图，Web 与 Android TV 的 24/24 项区域通过重复截图误差检查。Chromium 和 WebKit 共 18 个窗口的游戏速度与系统 PCM 均在实时的 99%–101% 以内。
 
-电视默认使用 SDL 软件渲染。同一次 1080p x86 Android TV 模拟器验收中，窗口直绘在普通战斗、连续爆炸中分别达到实时的 56.40%、63.26%，系统 PCM 分别为 56.26%、63.05%。这两组窗口逐帧匹配到 1002/1017、1084/1141 个显示时间戳。五个固定画面的候选版交换前读回均为黑屏。默认软件版三个窗口为 56.42%–56.63%。候选版的双手柄检查未通过。实体 ARM64 电视的帧率和端到端延迟仍待实测。[本次验收](https://github.com/JC6/BattleCity/actions/runs/45649698219) · [离线截图与读回](build/battlecity/Switch-TV-Comparison.html) · [测量数据](build/battlecity/Switch-TV-Measurements.zip)
+Android TV 默认使用 SDL 软件渲染。在 1080p x86 电视模拟器上，候选版的普通战斗与连续爆炸分别达到实时的 66.04%、67.59%，系统 PCM 分别为 65.72%、67.45%。逐帧可匹配的显示回执分别为 1191/1191、1219/1219。同机 SDL 的三个窗口为 53.13%–53.68%。
+
+改用顶点缓冲后，候选版在五个固定场景中有 5/5 个交换前读回与 SDL 逐字节一致。双手柄回归在 SDL 版通过，候选版通过。实体 ARM64 电视的帧率、物理显示与音响延迟仍待测量。[验收运行](https://github.com/JC6/BattleCity/actions/runs/45715102305) · [离线报告](build/battlecity/Switch-TV-Comparison.html) · [测量数据](build/battlecity/Switch-TV-Measurements.zip)
+
+在同一 APK 内关闭窗口缓存，普通战斗、连续爆炸分别为 57.15% 和 57.74%。固定同一幅已采样画面继续逐帧提交时，四个窗口为 69.70%–70.31%。
+
+同一组 APK 在暂停前另行读回 GPU 输入。纯色、四色角标、校准图与移动帧的 RGB565 纹理、展开缓冲和实际窗口检查全部通过。[同包补测](https://github.com/JC6/BattleCity/actions/runs/45720657059)
 
 上一轮在 1080p Android TV 模拟器对同一候选 APK 做了两次独立冷启动。全分辨率窗口缓冲的游戏速度为实时的 59.76%–60.86%，系统 PCM 输出为 59.63%–60.82%，共 0/6 个窗口同时达到实时与逐帧提交门槛。系统放大的 256×240 小缓冲测得游戏速度 99.76%–99.96%。上一轮每次启动均对八个场景核对 NES 帧、2 KiB RAM、57,344 个原生像素中心、壁纸和全图重复截图误差。该轮 Android TV 默认使用 SDL 软件渲染，这条路径在同一模拟器上的游戏速度为实时的 44.29%–56.82%。旧版双人存档、缩略图与写保护已通过覆盖安装和恢复测试。[上轮验收与原始记录](https://github.com/JC6/BattleCity/actions/runs/45394628713)
 
-[Android TV 默认安装包](build/battlecity/BattleCity-TV.apk) · [Android TV 窗口直绘实验包（模拟器黑屏）](build/battlecity/BattleCity-TV-Candidate.apk) · [Web 成品](build/battlecity/BattleCity-Web.zip) · [SHA-256](build/battlecity/SHA256SUMS)
+[Android TV 默认安装包](build/battlecity/BattleCity-TV.apk) · [Android TV EGL 候选包](build/battlecity/BattleCity-TV-Candidate.apk) · [Web 成品](build/battlecity/BattleCity-Web.zip) · [SHA-256](build/battlecity/SHA256SUMS)
 
 此前已校准出生闪光、护盾与四向炮弹，修正了 Web 在低刷新率下变慢和连续回退后时间线出错的问题。可在离线报告中逐帧对照 Switch 录像、播放两份结束音乐，并查看每次实时时钟测量。[Web 成品](build/battlecity/BattleCity-Web.zip) · [Android TV ARM64 安装包](build/battlecity/BattleCity-TV.apk) · [离线对照报告](build/battlecity/Switch-Runtime-Comparison.html) · [SHA-256](build/battlecity/SHA256SUMS)
 

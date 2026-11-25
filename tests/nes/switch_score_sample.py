@@ -14,7 +14,7 @@ class ScoreCapture(NamedTuple):
     width: int
     height: int
     score: str
-    clip_start: int
+    clip_start: float
     samples: tuple
     header: tuple
     digits: tuple
@@ -34,6 +34,8 @@ CAPTURES={
         640,480,'196500',2262,(20.4,21.0,22.6),(40,104),(120,208),(10,8),'580:182:29:91'),
     'famicom-two':ScoreCapture('fa3a6858ddb2a4fd257814197893b0984f52625621f364d1fcd0445642f13dd1',
         960,720,'441900',4104,(23.5,24.0,26.2),(133.3,150),(232.2,311),(12.36,12.32),'728:276:122:136'),
+    'archives-195400':ScoreCapture('749232deccc27228a608ffedeff20677fe3dbf53f4397e0183d5577b4d109188',
+        1280,720,'195400',3298.3995660000357,(47,49,51),(80,141),(240,308),(20,720/56),'1150:280:68:130'),
     'archives-ps4':ScoreCapture('54601c89c63136f43f110a5c9993d53a3d70c1bd995b800aca2faf6a29ba558c',
         640,360,'430200',3710,(115,116.6,120),(110,70),(170,154),(7.5,6.45),'440:146:101:61'),
     'famicom-guide':ScoreCapture('d0920a0e8d9ff00af673a691415ddd8d56db634d3238d8f29837cee9bda29445',

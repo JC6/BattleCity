@@ -48,32 +48,39 @@ def swap_readbacks(root):
     return True
 
 
+def rgb565_matches(source, texture):
+    if source[:2]!=texture[:2]:return False
+    # Discard lower channel bits, then replicate the high bits to reconstruct RGB888.
+    for c,bits in enumerate((5,6,5)):
+        shift=8-bits
+        lut=bytes(((v>>shift)<<shift) | ((v>>shift)>>(bits-shift)) for v in range(256))
+        if source[2][c::3].translate(lut)!=texture[2][c::3]:return False
+    return True
+
+
 def pipeline_pass(folder):
-    from tv_stage_analysis import ppm
+    from tv_stage_analysis import load
+    if not (folder/'visual.json').is_file():return False
     visuals=json.loads((folder/'visual.json').read_text())
     scenes={'solid','corners','calibration','moving-633'}
     if set(visuals)!=scenes:return False
-    lut=[bytes(((x>>shift)*factor+(x>>shift)//divisor) for x in range(256))
-         for shift,factor,divisor in ((3,8,4),(2,4,16),(3,8,4))]
     for name,row in visuals.items():
         if any(row[k] for k in ('differentCenters','aboveRepeatNoise','differentWallpaperPixels')):return False
-        path=folder/(name+'-candidate-texture.ppm.gz')
-        if not path.is_file():return False
-        w,h,texture=ppm(gzip.decompress(path.read_bytes()))
-        sw,sh,source=ppm(gzip.decompress((folder/(name+'-candidate-source.ppm.gz')).read_bytes()))
-        if (w,h)!=(sw,sh) or any(texture[c::3]!=source[c::3].translate(lut[c]) for c in range(3)):return False
+        required=[folder/f'{name}-candidate-{stage}.ppm.gz' for stage in ('source','texture')]
+        if not all(p.is_file() for p in required):return False
+        source,texture=map(load,required)
+        if not rgb565_matches(source,texture):return False
         for stage in ('layer','swap'):
-            base=folder/f'{name}-baseline-{stage}.ppm.gz'
-            repeat=folder/f'{name}-repeat-{stage}.ppm.gz'
-            candidate=folder/f'{name}-candidate-{stage}.ppm.gz'
-            if not all(p.is_file() for p in (base,repeat,candidate)):return False
-            images=[ppm(gzip.decompress(p.read_bytes())) for p in (base,repeat,candidate)]
+            files=[folder/f'{name}-{mode}-{stage}.ppm.gz' for mode in ('baseline','repeat','candidate')]
+            if not all(p.is_file() for p in files):return False
+            images=list(map(load,files))
             if len({i[:2] for i in images})!=1:return False
             expected,control,actual=[i[2] for i in images]
             if expected!=actual and any(abs(e-a)>abs(e-r) for e,r,a in zip(expected,control,actual)):return False
         if name in ('solid','corners'):
+            w,h,rgb=texture
             indices=[3*((j*h//4)*w+i*w//4) for j in (1,3) for i in (1,3)]
-            palette=[texture[i:i+3].hex() for i in indices]
+            palette=[rgb[i:i+3].hex() for i in indices]
             if palette!=(['00ff00']*4 if name=='solid' else ['ffffff','ff0000','00ff00','0000ff']):return False
     return True
 
@@ -84,7 +91,8 @@ def preliminary(root,renderer):
     assert len({r['battle'] for k,r in heldout.items() if k!='calibration'})==len(heldout)-('calibration' in heldout)
     controls=json.loads((root/'candidate-controls/result.json').read_text())['result']
     assert controls in ('passed','failed')
-    return {**({'pipelinePassed':pipeline_pass(root/'pipeline')} if (root/'pipeline').is_dir() else {}),
+    sampling=renderer=='egl-tv' and 'prepared-battle' in json.loads((root/'prototype/clock.json').read_text())['windows']
+    return {**({'pipelinePassed':pipeline_pass(root/'pipeline')} if sampling or (root/'pipeline').is_dir() else {}),
             **({'windowReadbackPassed':swap_readbacks(root)} if renderer=='egl-tv' else {}),
             'prototypePassed':probe_pass(root,renderer),
             'heldOutPassed':all(r['nativePixels']==256*224 and r.get('calibration',{'valid':True})['valid'] and not any(r[k] for k in

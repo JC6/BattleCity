@@ -140,10 +140,14 @@ async function windowUploads(page) {
             for (const key of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D,key,gl.CLAMP_TO_EDGE);
             return t;
         }
-        const dest=texture(), full=texture(), retained=texture();
-        gl.bindFramebuffer(gl.FRAMEBUFFER,gl.createFramebuffer());
-        gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,dest,0);
-        if (gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE) throw Error('Invalid window target');
+        function framebuffer() {
+            const dest=texture(), fbo=gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,dest,0);
+            if (gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE) throw Error('Invalid window target');
+            return fbo;
+        }
+        const cached=framebuffer(), swap=framebuffer(), full=texture(), retained=texture();
         gl.viewport(0,0,w,h);
         gl.uniform2f(gl.getUniformLocation(program,'viewport'),w,h);
         function draw(t) {
@@ -167,7 +171,28 @@ async function windowUploads(page) {
             }
             gl.bindTexture(gl.TEXTURE_2D,full);
             gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+            gl.bindFramebuffer(gl.FRAMEBUFFER,swap);
             const reference=draw(full), actual=draw(retained);
+            if (rect) {
+                const [x,y,width,height]=rect;
+                const left=Math.max(x-1,0), right=Math.min(x+width+1,w);
+                const top=Math.max(y-1,0), bottom=Math.min(y+height+1,h);
+                gl.bindFramebuffer(gl.FRAMEBUFFER,cached);
+                gl.enable(gl.SCISSOR_TEST);
+                gl.scissor(left,h-bottom,right-left,bottom-top);
+                gl.bindTexture(gl.TEXTURE_2D,retained);
+                gl.drawArrays(gl.TRIANGLES,0,6);
+                gl.disable(gl.SCISSOR_TEST);
+            }
+            gl.bindFramebuffer(gl.FRAMEBUFFER,swap);
+            gl.clearColor(.8,.2,.7,1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.bindFramebuffer(gl.READ_FRAMEBUFFER,cached);
+            gl.blitFramebuffer(0,0,w,h,0,0,w,h,gl.COLOR_BUFFER_BIT,gl.NEAREST);
+            gl.bindFramebuffer(gl.FRAMEBUFFER,swap);
+            const copied=new Uint8Array(w*h*4);
+            gl.readPixels(0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,copied);
+            if (!copied.every((v,i)=>v===reference[i])) throw Error('Cached window differs at step '+step);
             if (!actual.every((v,i)=>v===reference[i])) throw Error('Dirty window upload differs at step '+step);
             for (let y=0;y<h;y++) for (let x=0;x<w;x++) for(let c=0;c<4;c++) {
                 if (Math.abs(actual[((h-1-y)*w+x)*4+c]-pixels[(y*w+x)*4+c])>1)
@@ -178,7 +203,7 @@ async function windowUploads(page) {
         return steps.length;
     },loadShaders('tv-egl-window.h'));
     assert.equal(count,7);
-    console.log(count,'EGL window draws match full uploads and source orientation, including two unchanged frames');
+    console.log(count,'cached window blits and direct draws match full uploads and source orientation, including two unchanged frames');
 }
 async function main() {
     const browser=await chromium.launch({args:['--enable-unsafe-swiftshader']});

@@ -1,9 +1,10 @@
 import gzip
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from tv_stage_analysis import calibration_edges
-from tv_release_gate import COMPOSITOR_HOLDOUTS, swap_readbacks
+from tv_release_gate import COMPOSITOR_HOLDOUTS, pipeline_pass, rgb565_matches, swap_readbacks
 from tv_presentation import reconcile
 
 PACKAGE='net.test.battlecity'
@@ -47,6 +48,31 @@ class PresentationTest(unittest.TestCase):
         self.assertEqual(self.check(count=0),(0,'unverified'))
 
 class SwapReadbackTest(unittest.TestCase):
+    def test_native_precision_and_corner_orientation(self):
+        self.assertTrue(rgb565_matches((1,1,bytes([204,127,53])),(1,1,bytes([206,125,49]))))
+        self.assertFalse(rgb565_matches((1,1,bytes([204,127,53])),(1,1,bytes([206,126,49]))))
+        with TemporaryDirectory() as tmp:
+            folder=Path(tmp)
+            self.assertFalse(pipeline_pass(folder))
+            scenes=('solid','corners','calibration','moving-633')
+            green=bytes.fromhex('00ff00')
+            corners=bytes.fromhex('ffffff ff0000 00ff00 0000ff')
+            def write(name,data):
+                (folder/(name+'.ppm.gz')).write_bytes(gzip.compress(b'P6\n2 2\n255\n'+data))
+            (folder/'visual.json').write_text(json.dumps({n:dict(differentCenters=0,aboveRepeatNoise=0,
+                differentWallpaperPixels=0) for n in scenes}))
+            for scene in scenes:
+                data=corners if scene=='corners' else green*4
+                for channel in ('source','texture'):
+                    write(scene+'-candidate-'+channel,data)
+                for channel in ('layer','swap'):
+                    for mode in ('baseline','repeat','candidate'):
+                        write(scene+'-'+mode+'-'+channel,data)
+            self.assertTrue(pipeline_pass(folder))
+            write('corners-candidate-texture',corners[6:]+corners[:6])
+            write('corners-candidate-source',corners[6:]+corners[:6])
+            self.assertFalse(pipeline_pass(folder))
+
     def test_black_window_cannot_register_calibration_lines(self):
         w,h=64,180
         black=(w,h,bytes(w*h*3))
