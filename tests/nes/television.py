@@ -12,6 +12,7 @@ import subprocess
 import time
 import wave
 from zipfile import ZipFile
+from tv_presentation import reconcile
 
 PACKAGE = 'org.jiangc.bc.runtime'
 ADB = os.environ.get('ADB', 'adb')
@@ -402,7 +403,8 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
     if formal:
         modes = {'candidate':None}
     if prototype:
-        modes = dict.fromkeys(('full-battle','battle','full-explosions','explosions'))
+        modes = {'software-battle':'none','child-battle':'compositor-tv','battle':None,
+                 'software-explosions':'none','child-explosions':'compositor-tv','explosions':None}
     def select(mode, scale):
         if mode.startswith('full-'):
             write_private('tv-force-full','1')
@@ -415,7 +417,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         write_private('nes.ini', ini + (f'scalemode {scale}\n' if scale else ''))
     def stop():
         adb('shell','am','force-stop',PACKAGE)
-        private('rm','-f','files/tv-fixed','files/tv-profile.jsonl','files/tv-capture','files/tv-expanded.ppm','files/tv-source.ppm','files/tv-expanded.tmp','files/tv-layer.ppm','files/tv-layer.tmp')
+        private('rm','-f','files/tv-fixed','files/tv-profile.jsonl','files/tv-capture','files/tv-expanded.ppm','files/tv-source.ppm','files/tv-expanded.tmp','files/tv-layer.ppm','files/tv-layer.tmp','files/tv-swap.tmp','files/tv-swap.ppm','files/tv-frame-map.csv','files/tv-present.csv')
     def marker():
         last_launch = time.monotonic()
         def read():
@@ -450,6 +452,14 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
             fixture += f'local stress_path="{directory}/tv-stress"\n'+Path(__file__).with_name('tv-blast-load.lua').read_text()
         write_private('tv-observer.lua',fixture)
         write_private('tv-profile.jsonl','')
+        trace_key='battlecity_display'
+        trace_path='/data/misc/perfetto-traces/battlecity-display.pftrace'
+        trace_enabled=name in ('battle','explosions','candidate')
+        if trace_enabled:
+            adb('shell','perfetto','--attach='+trace_key,'--stop',check=False)
+            adb('shell','rm','-f',trace_path)
+            config=b'buffers { size_kb: 16384 } data_sources { config { name: "android.surfaceflinger.frame" } } duration_ms: 240000'
+            adb('shell','-T','perfetto','--txt','-c','-','--detach='+trace_key,'-o',trace_path,data=config,check=False)
         start_fixture()
         markers[name] = marker()
         print('Measuring full frames:', name, markers[name], flush=True)
@@ -465,6 +475,19 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
             row['pcmSpeed'] = row['samples']/row['sampleRate']/row['wall']
             row['pass'] = (0.99<=row['gameSpeed']<=1.01 and 0.99<=row['pcmSpeed']<=1.01
                            and row['presented']==row['attempts'] and row['presented']==row['frames'])
+        if trace_enabled:
+            time.sleep(.5)
+            adb('shell','perfetto','--attach='+trace_key,'--stop',check=False)
+            trace=adb('exec-out','cat',trace_path,check=False)
+            mapping=private('cat','files/tv-frame-map.csv',check=False)
+            shown=private('cat','files/tv-present.csv',check=False)
+            if not mapping[:1].isdigit():mapping=b''
+            if not shown[:1].isdigit():shown=b''
+            if not trace.startswith(b'\x0a'):trace=b''
+            (results/(name+'-display.pftrace.gz')).write_bytes(gzip.compress(trace,mtime=0))
+            (results/(name+'-frame-map.csv')).write_bytes(mapping)
+            (results/(name+'-present.csv')).write_bytes(shown)
+            reconcile(rows,mapping,shown,trace,PACKAGE)
         if name.endswith('explosions'):
             assert int(private('cat','files/tv-stress')) >= 720, 'blast fixture never ran in battle'
         summaries[name] = rows
@@ -509,6 +532,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
             outputs = [('baseline','none'),('repeat','none'),('candidate',None)]
             if not (held_out or formal):
                 outputs.append(('low-buffer','surface-tv'))
+            if held_out and case=='calibration':outputs.append(('child','compositor-tv'))
             for name,scale in outputs:
                 stop()
                 set_display((f'<map><int name="mode" value="{aspect}"/><int name="picture" value="{picture}"/>'
@@ -529,7 +553,16 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
                 if stages:
                     wait(lambda: private('ls','files/tv-layer.ppm',check=False).strip(),
                          lambda data:data==b'files/tv-layer.ppm','frozen raster stages')
-                    for stage in ('source','expanded','layer'):
+                    channels=['source','expanded','layer']
+                    if name!='child':
+                        def swap_ready():
+                            return private('ls','files/tv-swap.ppm',check=False).strip()==b'files/tv-swap.ppm'
+                        if any(swap_ready() or time.sleep(.2) for _ in range(15)):
+                            channels.append('swap')
+                    if case=='calibration':
+                        (results/f'{case}-{name}-layers.txt.gz').write_bytes(gzip.compress(adb('shell','dumpsys','SurfaceFlinger'),mtime=0))
+                        (results/f'{case}-{name}-layers.pb.gz').write_bytes(gzip.compress(adb('exec-out','dumpsys','SurfaceFlinger','--proto',check=False),mtime=0))
+                    for stage in channels:
                         data=private('cat',f'files/tv-{stage}.ppm')
                         header,dimensions,scale,pixels=data.split(b'\n',3)
                         sw,sh=map(int,dimensions.split())

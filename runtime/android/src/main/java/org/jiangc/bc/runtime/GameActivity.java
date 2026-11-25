@@ -181,7 +181,7 @@ public final class GameActivity extends SDLActivity {
         }
         File defaults = new File(root, "runtime-defaults");
         File config = new File(defaults, "mame.ini");
-        String renderer = BuildConfig.TV_SURFACE ? "compositor-tv" : "none";
+        String renderer = BuildConfig.TV_SURFACE ? "egl-tv" : "none";
         try {
             Files.createDirectories(defaults.toPath());
             Files.write(config.toPath(), ("scalemode " + renderer + "\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));

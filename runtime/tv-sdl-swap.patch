@@ -1,0 +1,17 @@
+--- a/src/video/SDL_video.c
++++ b/src/video/SDL_video.c
+@@ -514,6 +514,14 @@
+             return false;
+         }
+ 
++#ifdef SDL_PLATFORM_ANDROID
++        typedef void (SDLCALL *Capture)(void *, SDL_Renderer *);
++        SDL_PropertiesID props = SDL_GetWindowProperties(window);
++        Capture capture = (Capture)SDL_GetPointerProperty(props, "BattleCity.capture.callback", NULL);
++        if (capture) {
++            capture(SDL_GetPointerProperty(props, "BattleCity.capture.context", NULL), data->renderer);
++        }
++#endif
+         SDL_RenderPresent(data->renderer);
+     }
+     return true;

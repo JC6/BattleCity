@@ -1,0 +1,75 @@
+--- a/src/osd/modules/render/drawsdl3soft.cpp
++++ b/src/osd/modules/render/drawsdl3soft.cpp
+@@ -233,7 +233,7 @@
+ 	if (m_meter.active) m_profile_screen = window().machine().root_device().subdevice<screen_device>("screen");
+ #endif
+ #ifdef __ANDROID__
+-	if ((m_scale_mode.is_scale == 5 || m_scale_mode.is_scale == 6) && m_native_window.attach(sdl_window,m_scale_mode.is_scale == 6)) {
++	if ((m_scale_mode.is_scale >= 5 && m_scale_mode.is_scale <= 7) && m_native_window.attach(sdl_window,m_scale_mode.is_scale == 6,m_scale_mode.is_scale == 7)) {
+ 		m_dirty_output = true;
+ 		return 0;
+ 	}
+@@ -353,21 +353,30 @@
+ 	if (m_dirty_output) {
+ 		tv_native_window::timing phases{};
+ 		bool const composition = m_scale_mode.is_scale == 6;
++        bool const direct = m_scale_mode.is_scale == 7;
+ 		const auto frame = m_profile_screen ? m_profile_screen->frame_number() : 0;
+ 		const bool drain = composition && m_meter.needs_boundary(window().machine().time().as_double());
+-		bool const ok = m_native_window.attach(m_output_window,composition) &&
++		bool const ok = m_native_window.attach(m_output_window,composition,direct) &&
+ 			m_native_window.draw(*window().m_primlist, wdim.width(), wdim.height(), picture,
+ 				window().machine().ui().is_menu_active(), has_flags(FI_CHANGED), started ? &phases : nullptr,frame,drain,capture ? &m_stage_capture : nullptr);
+ 		clear_flags(FI_CHANGED);
+ 		if (started) {
+ 			m_meter.finish(window().machine().time().as_double(), m_profile_screen->frame_number(),
+-				composition ? "android-surface-control" : "android-native-window", phases.fast, started, started+phases.draw, ok, -2, wdim.width(), wdim.height(),
++				direct ? "android-egl-window" : composition ? "android-surface-control" : "android-native-window", phases.fast, started, started+phases.draw, ok, -2, wdim.width(), wdim.height(),
+ 				phases.lock, phases.copy, phases.post, phases.area,phases.transaction.wait,
+ 				phases.transaction.submitted,phases.transaction.completed,phases.transaction.last_frame,phases.transaction.latency,drain,phases.transaction.frame_discontinuities,phases.transaction.gpu_frames,phases.transaction.gpu_cost);
+ 		}
+ 		// SurfaceView resize and resume can temporarily return a buffer of the old size.
+ 		// Keep this CPU producer and invalidate its cache until the new surface is ready.
+-		if (!ok) notify_changed();
++		if (!ok) {
++            if (direct) {
++                SDL_Log("BattleCity EGL window lost; recovering software presentation (EGL %x)",eglGetError());
++                m_native_window.close();
++                m_dirty_output=false;
++                if (!open_software_renderer()) return 1;
++            }
++            notify_changed();
++        }
+ 		return ok ? 0 : 1;
+ 	}
+ 	if (m_surface_output) {
+@@ -558,10 +567,20 @@
+ 		r.h=blitheight;
+ 		[[maybe_unused]] const bool drawn = surface || SDL_RenderTexture(m_sdl_renderer, m_texture_id, nullptr, &r);
+ #ifdef __ANDROID__
+-		if (capture && drawn && !surface) m_stage_capture.software_present_input(m_sdl_renderer);
++		if (capture && drawn && !surface) {
++            m_stage_capture.software_present_input(m_sdl_renderer);
++            auto props=SDL_GetWindowProperties(m_output_window);
++            SDL_SetPointerProperty(props,"BattleCity.capture.context",&m_stage_capture);
++            SDL_SetPointerProperty(props,"BattleCity.capture.callback",reinterpret_cast<void *>(&tv_stage_capture::before_software_swap));
++        }
+ 		const auto before_present = started ? battlecity_tv::now_ns() : 0;
+ 		if (tracing) { ATrace_endSection(); ATrace_beginSection("BattleCity.present"); }
+ 		const bool presented = surface ? SDL_UpdateWindowSurface(m_output_window) : SDL_RenderPresent(m_sdl_renderer);
++        if (capture && !surface) {
++            auto props=SDL_GetWindowProperties(m_output_window);
++            SDL_ClearProperty(props,"BattleCity.capture.callback");
++            SDL_ClearProperty(props,"BattleCity.capture.context");
++        }
+ 		if (tracing) ATrace_endSection();
+ 		if (started) {
+ 			m_meter.finish(window().machine().time().as_double(), m_profile_screen ? m_profile_screen->frame_number() : 0,
+@@ -859,6 +878,7 @@
+ sdl_scale_mode const video_sdl3soft::s_scale_modes[] = {
+ 		{ "none",    0, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                    nullptr },
+ #ifdef __ANDROID__
++		{ "egl-tv", 7, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0, nullptr },
+ 		{ "compositor-tv", 6, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0, nullptr },
+ 		{ "dirty-tv", 5, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0, nullptr },
+ 		{ "surface-tv", 4, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                  nullptr },

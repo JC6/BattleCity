@@ -280,7 +280,16 @@ jobs:
           unzip -p "$RUNNER_TEMP/sdl.zip" SDL3-3.4.12.aar > "$RUNNER_TEMP/sdl.aar"
           unzip -q "$RUNNER_TEMP/sdl.aar" 'prefab/modules/SDL3-shared/*' 'prefab/modules/SDL3-Headers/*' -d "$RUNNER_TEMP/aar"
           cp -R "$RUNNER_TEMP/aar/prefab/modules/SDL3-Headers/include" "$SDL_INSTALL_ROOT/"
-          cp "$RUNNER_TEMP/aar/prefab/modules/SDL3-shared/libs/android.$BATTLECITY_ANDROID_ABI/libSDL3.so" "$SDL_INSTALL_ROOT/lib/"
+          curl -fLSs --retry 3 https://codeload.github.com/libsdl-org/SDL/tar.gz/refs/tags/release-3.4.12 -o "$RUNNER_TEMP/sdl-source.tgz"
+          echo "b68381f06a7580e63400b3b6eb547ec57d8c3ebde70f9f40e0aba530ba05da27  $RUNNER_TEMP/sdl-source.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/sdl-source.tgz" -C "$RUNNER_TEMP"
+          sdl_source="$RUNNER_TEMP/SDL-release-3.4.12"
+          git -C "$sdl_source" apply --no-index "$GITHUB_WORKSPACE/runtime/tv-sdl-swap.patch"
+          cmake -G Ninja -S "$sdl_source" -B "$RUNNER_TEMP/sdl-build" -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI="$BATTLECITY_ANDROID_ABI" -DANDROID_PLATFORM=android-34 -DSDL_ANDROID_JAR=OFF -DSDL_TEST_LIBRARY=OFF
+          cmake --build "$RUNNER_TEMP/sdl-build" --target SDL3-shared
+          cp "$RUNNER_TEMP/sdl-build/libSDL3.so" "$SDL_INSTALL_ROOT/lib/"
           cat > "$SDL_INSTALL_ROOT/lib/pkgconfig/sdl3.pc" <<PC
           Name: sdl3
           Description: SDL3 Android
@@ -376,7 +385,7 @@ jobs:
             previous=(--previous previous-tv/upgrade.apk)
           fi
           bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result --stable deliverable/tv-emulator.apk "${previous[@]}" --record-candidate-failure --suite controls --suite prototype --suite candidate-controls --suite held-out --suite timing --suite menu-samples
-          passed=$(PYTHONPATH=tests/nes python3 -c "from tv_release_gate import preliminary;from pathlib import Path;print(int(all(preliminary(Path('build/tv-result'),'compositor-tv').values())))")
+          passed=$(PYTHONPATH=tests/nes python3 -c "from tv_release_gate import preliminary;from pathlib import Path;print(int(all(preliminary(Path('build/tv-result'),'egl-tv').values())))")
           echo "BATTLECITY_PROBE_PASSED=$passed" >> "$GITHUB_ENV"
       - name: Two independent cold boots after passing the renderer prototype
         if: success() && matrix.abi == 'x86' && inputs.cartridge == 'game' && env.BATTLECITY_PROBE_PASSED == '1'
@@ -389,12 +398,12 @@ jobs:
       - name: Select the measured TV renderer
         if: success() && matrix.abi == 'x86' && inputs.cartridge == 'game'
         run: |
-          python3 tests/nes/tv_release_gate.py --renderer compositor-tv build/tv-result
+          python3 tests/nes/tv_release_gate.py --renderer egl-tv build/tv-result
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json
           from pathlib import Path
           gate = json.loads(Path('build/tv-result/release-gate.json').read_text())
-          selected = '-candidate' if gate['default'] == 'compositor-tv' else ''
+          selected = '-candidate' if gate['default'] == 'egl-tv' else ''
           print(f"Android TV default renderer `{gate['default']}`. Install `tv{selected}.apk` on ARM64 or `tv-emulator{selected}.apk` on x86.")
           PY
       - name: Report the failed build or device check

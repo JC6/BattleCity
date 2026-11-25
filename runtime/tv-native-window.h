@@ -9,13 +9,16 @@
 #include <vector>
 #include "tv-capture.h"
 #include "tv-surface-queue.h"
+#include "tv-egl-window.h"
 
 class tv_native_window
 {
 	using raster = software_renderer<uint16_t, 3,2,3, 11,5,0>;
 	ANativeWindow *window = nullptr;
 	tv_surface_queue queue;
-	bool layered = false;
+	bool layered = false, direct = false;
+    tv_egl_window egl;
+    EGLSurface shared_surface=EGL_NO_SURFACE;
     bool watching = false;
     std::atomic<bool> exposed{false};
     static bool SDLCALL on_window_event(void *context,SDL_Event *event) {
@@ -117,22 +120,26 @@ public:
 	~tv_native_window() { if (watching) SDL_RemoveEventWatch(on_window_event,this); close(); }
 	void close()
 	{
+		egl.close();
 		queue.close();
 		if (window) ANativeWindow_release(window);
 		window = nullptr;
 		fresh = true; compact = false;
 	}
-	bool attach(SDL_Window *sdl, bool use_layer = false)
+	bool attach(SDL_Window *sdl, bool use_layer = false, bool use_egl = false)
 	{
 		auto *next = static_cast<ANativeWindow *>(SDL_GetPointerProperty(SDL_GetWindowProperties(sdl),
 					SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER,nullptr));
-		if (next && next == window && layered == use_layer) return true;
+		const auto props=SDL_GetWindowProperties(sdl);
+        const auto shared=static_cast<EGLSurface>(SDL_GetPointerProperty(props,SDL_PROP_WINDOW_ANDROID_SURFACE_POINTER,nullptr));
+        if (next && next==window && layered==use_layer && direct==use_egl && (!use_egl || shared==shared_surface)) return true;
 		close();
 		if (!next) return false;
 		ANativeWindow_acquire(next);
 		window = next;
-		layered = use_layer;
-		if (layered) {
+		layered = use_layer; direct = use_egl; shared_surface=shared;
+        if (direct && !egl.open(window,shared_surface)) { egl.close(); close(); return false; }
+		if (layered || direct) {
             if (!watching) watching=SDL_AddEventWatch(on_window_event,this);
             width=height=0; return true;
         }
@@ -153,10 +160,13 @@ public:
 		if (w <= 0 || h <= 0 || !window) return false;
 		if (exposed.exchange(false,std::memory_order_relaxed)) {
             if (layered) queue.close();
+            if (direct) egl.close();
             reset=true;
         }
 		if (w != width || h != height || reset) {
-			if (layered) {
+			if (direct) {
+                if (!egl.open(window,shared_surface)) return false;
+            } else if (layered) {
 				if (!queue.configure(window,w,h)) return false;
 			} else if (ANativeWindow_setBuffersGeometry(window,w,h,format) < 0) return false;
 			width = w; height = h;
@@ -170,6 +180,36 @@ public:
 		tv_stage_capture::replacement saved;
 		if (capture) capture->source(list,saved);
 		const auto *game = (picture || menu) ? nullptr : screen_quad(list);
+        if (direct) {
+            auto &input=game ? source : image;
+            const int iw=game ? game->texture.width : w, ih=game ? game->texture.height : h;
+            input.resize(size_t(iw)*ih);
+            if (game) {
+                auto p=*game;
+                p.bounds={0,0,float(iw),float(ih)};
+                raster::draw_game_quad(p,input.data(),iw,ih,iw,0);
+            } else {
+                raster::draw_primitives<true>(list,input.data(),w,h,w,picture);
+            }
+            saved.restore();
+            list.release_lock();
+            if (capture && !capture->done()) {
+                std::vector<uint16_t> expanded(size_t(w)*h);
+                map_axis(xs,w,iw); map_axis(ys,h,ih);
+                for (int y=0;y<h;++y) for (int x=0;x<w;++x)
+                    expanded[size_t(y)*w+x]=input[size_t(ys[y])*iw+xs[x]];
+                capture->expanded(expanded.data(),w,h,w*2,SDL_PIXELFORMAT_RGB565);
+            }
+            int64_t before_swap=0;
+            const bool ok=egl.draw(input,iw,ih,w,h,meter ? frame : 0,capture,before_swap);
+            if (meter) {
+                meter->draw=before_swap ? before_swap-begin : now()-begin;
+                meter->post=before_swap ? now()-before_swap : 0;
+                meter->area=int64_t(w)*h;
+                meter->fast=bool(game);
+            }
+            return ok;
+        }
 		ARect dirty{0,0,w,h};
 		const bool gpu_game = game && layered && queue.gpu_available();
 		if (game) dirty = draw_changes(*game,!gpu_game);

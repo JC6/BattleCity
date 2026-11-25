@@ -6,7 +6,7 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 const {createRequire} = require('node:module');
 const {chromium}=createRequire(path.resolve(__dirname,'../../web/package.json'))('@playwright/test');
-const header=fs.readFileSync(path.resolve(__dirname,'../../runtime/tv-gpu-raster.h'),'utf8');
+const header=fs.readFileSync(path.resolve(__dirname,'../../runtime/tv-raster-shader.h'),'utf8');
 const shaders=[...header.matchAll(/const char \*(?:vertex|fragment)=R"\(([\s\S]*?)\)";/g)].map(match=>match[1]);
 assert.equal(shaders.length,2);
 function ppm(file) {

@@ -6,7 +6,7 @@ class tv_stage_capture
 {
     using raster = software_renderer<uint32_t,0,0,0,16,8,0>;
     std::string directory;
-    bool pattern = false, captured = false, presented = false;
+    bool pattern = false, captured = false, presented = false, swapped = false;
     std::vector<uint32_t> calibration;
 
     bool write_ppm(const char *name, const void *pixels, int w, int h, int pitch, SDL_PixelFormat format)
@@ -33,7 +33,7 @@ public:
     bool done() const { return captured; }
     bool needs_present() const { return !presented; }
     bool armed() const {
-        return !directory.empty() && (!captured || !presented || pattern) && ::access((directory+"tv-fixed").c_str(),F_OK)==0;
+        return !directory.empty() && (!captured || !presented || !swapped || pattern) && ::access((directory+"tv-fixed").c_str(),F_OK)==0;
     }
     // The primitive list can be shared. Restore the texture before releasing the list lock.
     struct replacement {
@@ -72,6 +72,19 @@ public:
     void present_input(const void *pixels,int w,int h,int pitch,SDL_PixelFormat format) {
         if (!presented && write_ppm("tv-layer.tmp",pixels,w,h,pitch,format))
             presented=std::rename((directory+"tv-layer.tmp").c_str(),(directory+"tv-layer.ppm").c_str())==0;
+    }
+    bool needs_swap() const { return !swapped; }
+    void swap_input(const void *pixels,int w,int h,int pitch,SDL_PixelFormat format) {
+        if (!swapped && write_ppm("tv-swap.tmp",pixels,w,h,pitch,format))
+            swapped=std::rename((directory+"tv-swap.tmp").c_str(),(directory+"tv-swap.ppm").c_str())==0;
+    }
+    static void SDLCALL before_software_swap(void *userdata, SDL_Renderer *renderer) {
+        auto &capture=*static_cast<tv_stage_capture *>(userdata);
+        if (!capture.needs_swap()) return;
+        if (auto *surface=SDL_RenderReadPixels(renderer,nullptr)) {
+            capture.swap_input(surface->pixels,surface->w,surface->h,surface->pitch,surface->format);
+            SDL_DestroySurface(surface);
+        }
     }
     void software_present_input(SDL_Renderer *renderer) {
         if (presented || !renderer) return;

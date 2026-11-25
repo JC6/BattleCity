@@ -6,7 +6,7 @@ from pathlib import Path
 CASES = {'standard','large','pixel','stretch','antialias','scanlines','firing','blast'}
 
 
-DRIVERS = {'surface-tv':'window-surface','dirty-tv':'android-native-window','compositor-tv':'android-surface-control'}
+DRIVERS = {'egl-tv':'android-egl-window','surface-tv':'window-surface','dirty-tv':'android-native-window','compositor-tv':'android-surface-control'}
 HOLDOUTS = {'moving-626', 'moving-633'}
 COMPOSITOR_HOLDOUTS = HOLDOUTS | {'moving-648', 'blast-700', 'calibration'}
 
@@ -14,11 +14,14 @@ COMPOSITOR_HOLDOUTS = HOLDOUTS | {'moving-648', 'blast-700', 'calibration'}
 def probe_pass(root, renderer='dirty-tv'):
     windows = json.loads((root/'prototype/clock.json').read_text())['windows']
     required={'battle','explosions'}
-    assert set(windows) in (required, required | {'full-battle','full-explosions'})
+    assert required.issubset(windows)
     return all(len(windows[name])==1 and qualifying(windows[name][0],DRIVERS[renderer]) for name in required)
 
 
 def qualifying(row, driver="android-native-window"):
+    if driver==DRIVERS['egl-tv'] and (row.get('verifiedPresentations')!=row['frames'] or
+            row.get('displayEvidence') not in ('EGL_DISPLAY_PRESENT_TIME_ANDROID','SurfaceFlinger PRESENT_FENCE')):
+        return False
     if driver == DRIVERS['compositor-tv']:
         if (row['driver'] != driver or row.get('transactions') != row['frames'] or
                 row.get('completions') != row['frames'] or row.get('pending') != 0 or row.get('frameIdErrors') != 0 or
@@ -33,7 +36,7 @@ def qualifying(row, driver="android-native-window"):
 
 def preliminary(root,renderer):
     heldout=json.loads((root/'held-out/visual.json').read_text())
-    assert set(heldout)==(COMPOSITOR_HOLDOUTS if renderer=='compositor-tv' else HOLDOUTS)
+    assert set(heldout)==(COMPOSITOR_HOLDOUTS if renderer in ('compositor-tv','egl-tv') else HOLDOUTS)
     assert len({r['battle'] for k,r in heldout.items() if k!='calibration'})==len(heldout)-('calibration' in heldout)
     controls=json.loads((root/'candidate-controls/result.json').read_text())['result']
     assert controls in ('passed','failed')
@@ -52,8 +55,8 @@ def decision(root, require_prototype=False, renderer=None):
     diagnostics = {}
     if renderer!='surface-tv':
         diagnostics=preliminary(root,renderer)
-        if not diagnostics['prototypePassed'] or (renderer=='compositor-tv' and not all(diagnostics.values())):
-            return {'default':'none',**({'candidate':renderer} if renderer=='compositor-tv' else {}),**diagnostics,'boots':[],'tested':identity}
+        if not diagnostics['prototypePassed'] or (renderer in ('compositor-tv','egl-tv') and not all(diagnostics.values())):
+            return {'default':'none',**({'candidate':renderer} if renderer in ('compositor-tv','egl-tv') else {}),**diagnostics,'boots':[],'tested':identity}
     for boot in (root, root/'second'):
         assert (boot/'tested-sha256.txt').read_text() == identity, 'APK or cartridge changed between boots'
         windows = json.loads((boot/'render/clock.json').read_text())['windows']['candidate']
@@ -66,7 +69,7 @@ def decision(root, require_prototype=False, renderer=None):
                   any(r[k] for k in ('differentCenters','differentWallpaperPixels','aboveRepeatNoise'))]
         records.append({'clockPassed':timing,'differentScenes':failed})
     passed = all(diagnostics.values()) and json.loads((root/'candidate-controls/result.json').read_text())['result']=='passed' and all(r['clockPassed'] and not r['differentScenes'] for r in records)
-    return {'default':renderer if passed else 'none',**({'candidate':renderer} if renderer=='compositor-tv' else {}),**diagnostics,'boots':records,'tested':identity}
+    return {'default':renderer if passed else 'none',**({'candidate':renderer} if renderer in ('compositor-tv','egl-tv') else {}),**diagnostics,'boots':records,'tested':identity}
 
 
 if __name__=='__main__':

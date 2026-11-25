@@ -48,7 +48,7 @@ python3 "$tree/scripts/build/file2str.py" "$repo/runtime/menu-regular.bdc" "$tre
         direct-rewind web-clock nes-palette slot-preview picture menu-viewport
         tv-startup tv-gamepads rewind-boundary
     )
-    if [[ $platform == android ]]; then patches+=(tv-render tv-surface tv-native tv-compositor tv-stages); fi
+    if [[ $platform == android ]]; then patches+=(tv-render tv-surface tv-native tv-compositor tv-stages tv-egl); fi
     for i in "${!patches[@]}"; do patches[i]="$repo/runtime/${patches[i]}.patch"; done
     mapfile -t files < <(sed -n 's|^--- a/||p' "${patches[@]}" | sort -u)
     stage=$(mktemp -d)
@@ -77,6 +77,7 @@ if [[ "$platform" == android ]]; then
         x86) target=android-x86; triple=i686-linux-android; flags+=(NOASM=1) ;;
         *) echo "Unsupported Android ABI: $abi" >&2; exit 2 ;;
     esac
+    cp "$repo/runtime/tv-egl-window.h" "$repo/runtime/tv-raster-shader.h" "$tree/src/emu/"
     cp "$repo/runtime/tv-gpu-raster.h" "$tree/src/emu/tv-gpu-raster.h"
     cp "$repo/runtime/tv-capture.h" "$tree/src/emu/tv-capture.h"
     cp "$repo/runtime/tv-surface-queue.h" "$tree/src/emu/tv-surface-queue.h"
