@@ -1,0 +1,40 @@
+name: Verify English Switch two-player endings
+on:
+  push:
+    branches: [validation/switch-reference-pair-20261125]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 45553568432
+          github-token: ${{ github.token }}
+          name: game-tv-emulator
+          path: deliverable
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 45553568432
+          github-token: ${{ github.token }}
+          name: cartridge
+          path: cartridge
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Replay the two filmed endings on the packaged television build
+        run: |
+          mkdir -p result
+          sha256sum deliverable/tv-emulator.apk cartridge/game.nes > result/tested.sha256
+          bash tests/nes/television-avd.sh deliverable/tv-emulator.apk cartridge/game.lbl result --suite coop-endings
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tv-coop-endings
+          path: result/

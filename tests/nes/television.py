@@ -279,10 +279,10 @@ def ending_trace(route):
     raise RuntimeError(f'TV ending {route} stalled at {last_size} WAV bytes')
 
 
-def record_endings(labels, directory, results, write_private):
+def record_endings(labels, directory, results, write_private, routes=('neutral','record','skip-over','coop-stage42','coop-stage18')):
     script = Path(__file__).with_name('ending.lua').read_text()
     write_private('ending.lbl', labels.read_text())
-    for route in ('neutral', 'record', 'skip-over'):
+    for route in routes:
         adb('shell','am','force-stop',PACKAGE)
         private('rm','-f','files/ending.csv','files/ending.wav')
         values = {'BATTLECITY_LABELS':directory+'/ending.lbl','BATTLECITY_SCENARIO':'base',
@@ -295,6 +295,12 @@ def record_endings(labels, directory, results, write_private):
         adb('shell','am','start','-W','-a','android.intent.action.MAIN',
             '-c','android.intent.category.LEANBACK_LAUNCHER','-n',PACKAGE+'/.GameActivity')
         trace = ending_trace(route)
+        if route=='coop-stage42':
+            assert b',two-player-title,15000/68100/45800' in trace
+            assert [int(line.split(b',')[3]) for line in trace.splitlines() if b',mode,' in line]==[1,4,7,0]
+        if route=='coop-stage18':
+            assert b',two-player-title,40400/68100/68100' in trace
+            assert [int(line.split(b',')[3]) for line in trace.splitlines() if b',mode,' in line]==[1,4,7,8,0]
         out = results/('tv-'+route)
         out.mkdir(exist_ok=True)
         (out/'events.csv').write_bytes(trace)
@@ -604,6 +610,9 @@ def run(apk, labels, results, suite, previous=None, formal=False):
         assert image.startswith(b'\x89PNG') and len(image)>1000
         (results/(name+'.png')).write_bytes(image)
     try:
+        if suite=='coop-endings':
+            record_endings(labels,directory,results,write_private,('coop-stage42','coop-stage18'))
+            return
         if suite in ('render','scenes','prototype','held-out'):
             record_render(results,labels,directory,write_private,scenes_only=suite in ('scenes','held-out'),
                           prototype=suite=='prototype',held_out=suite=='held-out',formal=formal)
@@ -860,7 +869,7 @@ def run(apk, labels, results, suite, previous=None, formal=False):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('apk','labels','results'): parser.add_argument(name,type=Path)
-    parser.add_argument('--suite',action='append',choices=('controls','menu-samples','timing','auto-frameskip','render','scenes','candidate-controls','prototype','held-out'))
+    parser.add_argument('--suite',action='append',choices=('controls','menu-samples','coop-endings','timing','auto-frameskip','render','scenes','candidate-controls','prototype','held-out'))
     parser.add_argument('--formal',action='store_true',help='measure the packaged candidate and capture its software reference')
     parser.add_argument('--record-candidate-failure',action='store_true',
                         help='record a failing optional candidate control run for the release selector')

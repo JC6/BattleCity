@@ -11,7 +11,10 @@ const labels = fs.readFileSync(labelsPath, 'utf8');
 (async () => {
     const browser = await chromium.launch();
     try {
-        for (const route of ['neutral', 'record', 'skip-over']) {
+        const routes=['neutral','record','skip-over','coop-stage42','coop-stage18'];
+        const selected=process.argv[5];
+        if (selected) assert.ok(routes.includes(selected),'Unknown ending');
+        for (const route of selected?[selected]:routes) {
             const page = await browser.newPage({viewport:{width:640,height:480}});
             await page.goto(url);
             await page.evaluate(({lua, labels, route}) => {
@@ -50,6 +53,14 @@ const labels = fs.readFileSync(labelsPath, 'utf8');
             });
             assert.equal(capture.result, 'BATTLECITY_ENDING_OK');
             assert.ok(capture.trace.includes(',cue-24,') && capture.trace.includes(',title,'));
+            if (route==='coop-stage42') {
+                assert.ok(capture.trace.includes(',two-player-title,15000/68100/45800'));
+                assert.deepEqual(capture.trace.split('\n').filter(line=>line.includes(',mode,')).map(line=>Number(line.split(',')[3])),[1,4,7,0]);
+            }
+            if (route==='coop-stage18') {
+                assert.ok(capture.trace.includes(',two-player-title,40400/68100/68100'));
+                assert.deepEqual(capture.trace.split('\n').filter(line=>line.includes(',mode,')).map(line=>Number(line.split(',')[3])),[1,4,7,8,0]);
+            }
             const out = path.join(directory, 'web-'+route);
             fs.mkdirSync(out, {recursive:true});
             fs.writeFileSync(path.join(out, 'events.csv'),capture.trace);

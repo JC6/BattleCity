@@ -20,9 +20,14 @@ class ScoreCapture(NamedTuple):
     digits: tuple
     pitch: tuple
     crop: str
+    photographed: bool = False
 
 
 CAPTURES={
+    'english-switch-crolister':ScoreCapture('20bc479997d6270b908e425de7b1538542229bab70757c00619f0cc411378da2',
+        1280,720,'185900',2574,(43.35,44.3,46.2),(243.47,133.1),(356.52,291.6),(14.13,12.2),'798:262:248:125'),
+    'english-switch-abuelos':ScoreCapture('af33db31fb538e663887929e9685d7d8f2b1a440b9a1b585d86d817a0df50fbe',
+        1280,720,'68100',1280,(24,26,28),(0,0),(16,13),(1,1),'665:225:320:140',True),
     'commentary':ScoreCapture('0ffff2e4e93139287afc0193ed7adb1bc14e013f88a814feb662463e168f0238',
         1920,1080,'26800',796,(4.4,6.2,8.4),(509.7,191.9),(767,377.7),(16.08,14.29),'932:310:496:180'),
     'famicom-one':ScoreCapture('03bfb68ba6472d2b1c6f8eb6de4cb2af9a1c0f7cf468b43d6dbb1ef7268c49b0',
@@ -36,18 +41,28 @@ CAPTURES={
 }
 
 
-def observed_cells(gray, width, left, top, pitch, columns):
+def observed_cells(gray, width, left, top, pitch, columns, photographed=False):
     sx,sy=pitch
     means=[]
     for y in range(7):
         for x in range(columns):
             px,py=left+sx*x,top+sy*y
-            values=[gray[v*width+u] for v in range(round(py+.07*sy),round(py+.91*sy))
-                    for u in range(round(px+.06*sx),round(px+.93*sx))]
+            if photographed:
+                # The TV was filmed obliquely. The known H/I/E stroke edges give the
+                # horizontal pitch at both sides and its change down the glass.
+                u,v=px,py
+                px=324.1+u*(11.82-.0057*u)+v*(-.13+.0101*u)
+                py=153.0-(px-336)*.0055+v*9.85
+                area=(round(px+2),round(py+2),round(px+9),round(py+8))
+            else:
+                area=(round(px+.06*sx),round(py+.07*sy),round(px+.93*sx),round(py+.91*sy))
+            values=[gray[row*width+col] for row in range(area[1],area[3]) for col in range(area[0],area[2])]
             means.append(sum(values)/len(values))
     if max(means)<20:
         raise ValueError('blank or uncalibrated score frame')
-    return bytes(m>max(means)*.28 for m in means)
+    # Filming a TV raises black levels. Calibrate contrast inside the same glyph.
+    threshold=(max(means)+min(means))/2 if photographed else max(means)*.28
+    return bytes(m>threshold for m in means)
 
 
 def verify(video,rom,labels,out,recording):
@@ -68,7 +83,7 @@ def verify(video,rom,labels,out,recording):
             left,top=source.digits
             fields.extend((d,i+1,left+source.pitch[0]*8*i,top,8,400+4*int(d),40,0) for i,d in enumerate(source.score))
             for name,pos,left,top,columns,start,stride,dy in fields:
-                mask=observed_cells(gray,source.width,left,top,source.pitch,columns)
+                mask=observed_cells(gray,source.width,left,top,source.pitch,columns,source.photographed)
                 expected=compiled_cells(*tables,start,stride,0,dy,columns)
                 errors=sum(a!=b for a,b in zip(mask,expected))
                 digest=hashlib.sha256(mask).hexdigest()
