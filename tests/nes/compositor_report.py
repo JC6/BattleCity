@@ -71,8 +71,7 @@ def build(root, run, dest, trials, previous=None):
                 n,row.get('gpuFrames','—'),row['attempts'],row['presented'],row.get('completions','—'),row.get('pending','—'),
                 ' / '.join(f"{row.get(k,0)/n:.2f}" for k in ('waitMs','lockMs','copyMs','postMs'))])
     sections+=[table(('运行','场景','游戏','系统 PCM','NES 帧','GPU 帧','尝试','提交','完成','积压','等待 / 锁定 / 绘制或复制 / 提交 ms/帧'),values),
-        '<p>两次额外冷启动和八场景逐帧检查'+('已执行。' if gate['boots'] else '按预设条件跳过，前置检查未全部通过。')+'</p>',
-        '<h2>冻结帧的分阶段采样</h2><p>每个场景同时记录 NES 光栅、交给显示系统前的 RGB 图和整张系统截图。重复拍摄软件基线建立噪声范围。校准图包含八种颜色和单像素线。</p>']
+        '<p>两次额外冷启动和八场景逐帧检查'+('已执行。' if gate['boots'] else '按预设条件跳过，前置检查未全部通过。')+'</p>']
     if (tv/'menu-samples/1080/current').is_dir():
         stable=[json.loads(line) for line in (tv/'timing/clock.jsonl').read_text().splitlines()]
         assert [r['run'] for r in stable]==[1,2,3]
@@ -100,6 +99,23 @@ def build(root, run, dest, trials, previous=None):
                     row.get('individuallyObserved','—'),row.get('verifiedPresentations','—'),row.get('displayEvidence','未采集'),
                     f"{row['swapMsPerFrame']:.2f}" if row.get('mappedFrames') else '—'])
         sections.append(table(('场景','实际驱动','NES 帧','成功提交','已记录提交 ID','有效 EGL 时间戳','可逐帧关联','完整窗口确认','呈现凭据','交换耗时 ms/帧'),measurements_rows))
+        for folder in trials:
+            prior=folder/'tv-device-results'
+            clock=prior/'prototype/clock.json'
+            if not clock.exists() or not (prior/'held-out/calibration-baseline-swap.ppm.gz').is_file():continue
+            first=read(folder/'stages.json') if (folder/'stages.json').is_file() else analyze(prior/'held-out')
+            initial=first['calibration']['stages']['system']
+            initial_clock=read(clock)['windows']
+            sections.append(f"<p>运行 {folder.name} 的校准图在展开后至 SDL 窗口交换前有 {initial['baselineExpandedToSwap']['differentPixels']:,} 个像素变化，首轮 EGL 有 {initial['candidateExpandedToSwap']['differentPixels']:,} 个。首轮 EGL 的普通战斗和连续爆炸每次交换分别耗时 {initial_clock['battle'][0]['swapMsPerFrame']:.2f} 和 {initial_clock['explosions'][0]['swapMsPerFrame']:.2f} 毫秒。复测保留展开后的纹理，按变化区域上传，再绘制整个窗口。FIFO 对照使用同一 APK、同一起始存档，仅改变请求的交换间隔。</p>")
+            if not read(prior/'release-gate.json')['candidateControlsPassed'] and (prior/'candidate-controls/failure.png').is_file():
+                sections.append('<p>首轮候选版双手柄脚本在进程重启时停止。当时的设备截图为 Google TV 的影音购买提示，游戏处于后台。复测启动代码只在该系统对话框覆盖仍在运行的游戏时恢复游戏焦点。</p>')
+        device_info=[]
+        for variant in ('battle','explosions','fifo-battle','fifo-explosions'):
+            file=tv/'prototype'/(variant+'-window.txt')
+            if file.is_file():device_info.append([variant,file.read_text(errors='replace').strip()])
+        backend=tv/'held-out/calibration-baseline-renderer.txt'
+        if backend.is_file():device_info.append(['SDL 窗口纹理',backend.read_text(errors='replace').strip()])
+        if device_info:sections.append(table(('场景或采样点','驱动在设备上返回的配置'),device_info))
     if 'full-battle' in samples:
         timing=[]
         for scene in ('battle','explosions'):
@@ -118,16 +134,23 @@ def build(root, run, dest, trials, previous=None):
             sections.append(table(('场景','检查 ms/帧','创建栅栏 ms/帧','提交 GPU 指令 ms/帧','导出与释放栅栏 ms/帧'),[
                 [mode,*[f"{records[0][key]/records[0]['frames']:.3f}" for key in fields]]
                 for mode,records in samples.items()]))
+    sections.append('<h2>冻结帧的分阶段采样</h2><p>每个场景同时记录 NES 光栅、交给显示系统前的 RGB 图和整张系统截图。重复拍摄软件基线建立噪声范围。校准图包含八种颜色和单像素线。</p>')
     visuals=read(tv/'held-out/visual.json')
     sections.append(table(('场景','首个超出噪声的阶段',' / '.join(next(iter(stages.values()))['stages'])+' 超噪像素','系统色边 / 非色边误差','像素中心 / 壁纸误差'),
         [[name,item['firstDifference'],' / '.join(str(v.get('aboveRepeatNoise','缺少回读' if 'missing' in v else '尺寸不同')) for v in item['stages'].values()),
           ' / '.join(str(item['stages']['system'][k]) for k in ('atBoundary','awayFromBoundary')),
           f"{visuals[name]['differentCenters']} / {visuals[name]['differentWallpaperPixels']}"] for name,item in stages.items()]))
+    black=[name for name,item in stages.items() if item['stages'].get('swap',{}).get('candidateAllBlack')]
+    if black:
+        sections.append(f'<p>候选版有 {len(black)}/{len(stages)} 个场景的交换前读回全黑。原始游戏光栅与展开图另列在上表。全黑缓冲无法用校准线推算采样偏移和边缘混合比例。</p>')
     registration=stages['calibration']['stages']['system']
     edge_rows=[]
     for mode,title in [('baseline','软件基线'),('candidate','候选')]:
         sample=registration[mode+'Registration']
         for direction,label in [('left','左邻'),('right','右邻'),('above','上邻'),('below','下邻')]:
+            if direction not in sample['edgeLeakage']:
+                edge_rows.append([title,label,'无法配准','—','—'])
+                continue
             edge=sample['edgeLeakage'][direction]
             edge_rows.append([title,label,edge['edges'],f"{edge['mean']:.3%}",f"{edge['p95']:.3%}"])
     sections.append('<p>将缓冲与系统截图配准后，在黑白校准线两侧测量相邻像素对输出颜色的贡献。数值按黑白边缘的亮度差归一化。</p>')
@@ -140,8 +163,8 @@ def build(root, run, dest, trials, previous=None):
             item=registration[mode+'BeforePresent']
             direct=registration[mode+'LayerRegistration']
             layers.append([label,' × '.join(map(str,item['dimensions'][-1])),
-                           item.get('differentPixels','尺寸不同'),str(direct['offset']),
-                           *[f"{direct['edgeLeakage'][d]['mean']:.3%}" for d in ('left','right','above','below')]])
+                           item.get('differentPixels','尺寸不同'),str(direct['offset']) if direct['offset'] is not None else '无法配准',
+                           *[f"{direct['edgeLeakage'][d]['mean']:.3%}" if d in direct['edgeLeakage'] else '—' for d in ('left','right','above','below')]])
         sections.append('<p>校准帧还记录 SDL_RenderPresent 调用之前的软件绘制结果，以及候选路径提交给 Android 的硬件缓冲区。下表分别将两者配准到各自的系统截图。</p>')
         sections.append(table(('采样位置','缓冲尺寸','与展开缓冲差异像素','系统配准偏移','左邻','右邻','上邻','下邻'),layers))
     if renderer=='egl-tv':
@@ -150,7 +173,7 @@ def build(root, run, dest, trials, previous=None):
             result=registration.get(mode+'SwapRegistration')
             if result:
                 evidence.append([title,registration[mode+'ExpandedToSwap'].get('differentPixels','尺寸不同'),
-                    str(result['offset']),*[f"{result['edgeLeakage'][d]['mean']:.3%}" for d in ('left','right','above','below')]])
+                    str(result['offset']) if result['offset'] is not None else '无法配准',*[f"{result['edgeLeakage'][d]['mean']:.3%}" if d in result['edgeLeakage'] else '—' for d in ('left','right','above','below')]])
             else:evidence.append([title,'缺少交换前回读',*['—']*5])
         sections.append('<p>SDL 在实际窗口纹理绘制后、交换前回读。候选版在 EGL 窗口交换前回读。后四列测量从该回读到系统截图之间的边缘变化。各路径的原始 SurfaceFlinger 图层记录随测量包提供。</p>')
         sections.append(table(('采样位置','展开到交换前差异像素','截图配准偏移','左邻','右邻','上邻','下邻'),evidence))
@@ -161,10 +184,14 @@ def build(root, run, dest, trials, previous=None):
         layer_rows=[]
         for mode,records in geometry.items():
             for item in records:
-                layer_rows.append([mode,item['name'],str(item['activeBuffer']),str(item['hwcSource'] or item['sourceBounds']),
-                    str(item['hwcDestination'] or item['screenBounds']),str(item['effectiveTransform']),str(item['scalingMode'])])
+                output=item.get('output') or {}
+                buffer=item['activeBuffer']
+                layer_rows.append([mode,item['name'],f"{buffer[0]} × {buffer[1]} / {buffer[3]}",
+                    str(output.get('sourceCrop') or item['hwcSource'] or item['sourceBounds']),
+                    str(output.get('displayFrame') or item['hwcDestination'] or item['screenBounds']),
+                    str(output.get('bufferTransform','未记录')),output.get('composition') or '未记录',item['dataspace']])
         if layer_rows:
-            sections.append(table(('校准路径','Android 图层','宽、高、步距和格式','源矩形','显示矩形','有效变换系数','缩放模式'),layer_rows))
+            sections.append(table(('校准路径','Android 图层','缓冲尺寸 / 格式','源矩形','显示矩形','缓冲变换','合成方式','颜色空间'),layer_rows))
         else:
             sections.append('<p>图层二进制记录未提供可解码的活动缓冲区几何。保留系统文本输出供核查。</p>')
     sections.append(picture(tv/'held-out/moving-633-baseline.png','软件基线，第 633 帧')+picture(tv/'held-out/moving-633-candidate.png','候选输出，同一帧'))
@@ -214,7 +241,7 @@ def build(root, run, dest, trials, previous=None):
         if not browser.is_dir(): browser=run/f'reference-review/web-{route}'
         device=tv/f'timing/tv-{route}'
         if not device.is_dir(): device=supplemental/f'coop-endings/tv-{route}'
-        if (run/'reference-review/coop-stage42.csv').is_file():
+        if renderer=='egl-tv' or (run/'reference-review/coop-stage42.csv').is_file():
             assert (browser/'events.csv').is_file() and (device/'events.csv').is_file(),route
         if browser.is_dir() and device.is_dir():
             events=[[(r['frame'],r['event'],r['value']) for r in rows(folder/'events.csv')] for folder in (browser,device)]
@@ -249,7 +276,7 @@ def build(root, run, dest, trials, previous=None):
     if (run/'reference-review/coop-stage42.csv').exists():
         pair=rows(run/'reference-review/coop-stage42.csv')[0]
         sections.append(f'<p>英文 Switch 的双人第 42 关从最后两个总数出现到 GAME OVER 为 {float(pair["switch_total_to_over_s"]):.3f} 秒，本次 Web 卡带读屏实测 {float(pair["replica_total_to_over_s"]):.3f} 秒。第 18 关两名玩家分别获得 40400 和 68100 分，游戏显示 HISCORE 68100 后回到双人标题。同一屏摄中，大号 6 的 56 格笔画在三个时刻全部匹配。</p>')
-    outstanding=('无输入的待机过程、连续回退的逐次跨度以及大号 HISCORE 数字 2、3、4、7' if
+    outstanding=('隐藏留言的入口操作与返回顺序、无输入的待机过程、连续回退的逐次跨度以及大号 HISCORE 数字 2、3、4、7' if
         (run/'reference-review/coop-stage42.csv').exists() else '双人完整结局、确定无输入的待机过程、连续回退的逐次跨度以及大号 HISCORE 数字 2、3、4、6、7')
     sections+=[f'<p>音色和音源释放时序维持现有实现。{outstanding}，仍缺英文 Switch 直接证据。</p>',
         '<p>日版 Switch 录像中，第 35 关的单人结算接入下一关，后来在地图编辑器入口显示了原作隐藏留言。该录像采用日版合集界面。<a href="https://www.youtube.com/watch?v=90hI6s_3iZ4&t=7166s">日版关末</a> · <a href="https://www.youtube.com/watch?v=90hI6s_3iZ4&t=7375s">日版隐藏留言</a></p>',
@@ -271,7 +298,7 @@ def build(root, run, dest, trials, previous=None):
                 z.write(f,'research/'+f.name)
         for n in ('compositor_report.py','tv_stage_analysis.py','tv_layer_geometry.py','tv_presentation.py','test_tv_presentation.py','tv_release_gate.py','native_window_report.py','tv_gpu_shader.cjs','tv_tail_codec.py','switch_menu_regions.py','switch_score_sample.py','switch_lettering.py','switch_coop_terminal.py','ending.lua','browser-ending.cjs','browser-game.cjs','television.py','tv-scenes.lua','tv-blast-load.lua','terminal_av_sync.py','ending_audio.py','ending_calibration.py','terminal_tally.py','switch_cues.py','compare_switch_audio.py'):
             z.write(Path(__file__).with_name(n),'methods/'+n)
-        for name in ('tv-gpu-raster.h','tv-raster-shader.h','tv-egl-window.h','tv-sdl-swap.patch','tv-egl.patch'):
+        for name in ('tv-gpu-raster.h','tv-raster-shader.h','tv-native-window.h','tv-capture.h','tv-egl-window.h','tv-sdl-swap.patch','tv-egl.patch'):
             z.write(Path(__file__).resolve().parents[2]/'runtime'/name,'methods/'+name)
 
 

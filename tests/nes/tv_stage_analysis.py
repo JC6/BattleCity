@@ -71,11 +71,15 @@ def calibration_edges(expanded, system):
             adjacent=[pixel(src,w,x+dx,y+dy) for dx,dy in ((-1,0),(1,0),(0,-1),(0,1))]
             changed=[i for i,n in enumerate(adjacent) if max(abs(a-b) for a,b in zip(point,n))>180]
             if len(changed)==1:edges.append((x,y,point[0],changed[0],adjacent[changed[0]][0]))
-    assert len(edges)>200
+    if len(edges)<=200:
+        return {'offset':None,'edgeLeakage':{},'status':'insufficient calibration edges'}
     def error(dx,dy):
         return sum(abs(pixel(screen,sw,x+dx,y+dy)[0]-v) for x,y,v,_,_ in edges)
-    _,dx,dy=min((error(x,y),x,y) for x in range((sw-w)//2-1,(sw-w)//2+3)
-                      for y in range((sh-h)//2-1,(sh-h)//2+3))
+    matches=sorted((error(x,y),x,y) for x in range((sw-w)//2-1,(sw-w)//2+3)
+                   for y in range((sh-h)//2-1,(sh-h)//2+3))
+    if matches[0][0]==matches[1][0]:
+        return {'offset':None,'edgeLeakage':{},'status':'ambiguous alignment'}
+    _,dx,dy=matches[0]
     values=[[] for _ in range(4)]
     for x,y,expected,d,neighbor in edges:
         observed=pixel(screen,sw,x+dx,y+dy)[0]
@@ -104,6 +108,8 @@ def analyze(folder):
                 continue
             imgs=[load(path) for path in files]
             stages[stage]=compare(imgs)
+            if stage=='swap':
+                stages[stage]['candidateAllBlack']=not any(imgs[-1][2])
             if name=='calibration' and stage=='source':
                 w,h,rgb=imgs[0]
                 bars=[rgb[(h//4*w+(2*n+1)*w//16)*3:][:3].hex() for n in range(8)]

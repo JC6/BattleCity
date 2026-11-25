@@ -2,6 +2,7 @@ import gzip
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from tv_stage_analysis import calibration_edges
 from tv_release_gate import COMPOSITOR_HOLDOUTS, swap_readbacks
 from tv_presentation import reconcile
 
@@ -46,6 +47,13 @@ class PresentationTest(unittest.TestCase):
         self.assertEqual(self.check(count=0),(0,'unverified'))
 
 class SwapReadbackTest(unittest.TestCase):
+    def test_black_window_cannot_register_calibration_lines(self):
+        w,h=64,180
+        black=(w,h,bytes(w*h*3))
+        result=calibration_edges(black,black)
+        self.assertIsNone(result['offset'])
+        self.assertEqual(result['edgeLeakage'],{})
+
     def test_repeated_baseline_bounds_each_channel(self):
         with TemporaryDirectory() as tmp:
             root=Path(tmp)

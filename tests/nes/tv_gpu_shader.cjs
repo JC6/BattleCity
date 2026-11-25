@@ -6,9 +6,13 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 const {createRequire} = require('node:module');
 const {chromium}=createRequire(path.resolve(__dirname,'../../web/package.json'))('@playwright/test');
-const header=fs.readFileSync(path.resolve(__dirname,'../../runtime/tv-raster-shader.h'),'utf8');
-const shaders=[...header.matchAll(/const char \*(?:vertex|fragment)=R"\(([\s\S]*?)\)";/g)].map(match=>match[1]);
-assert.equal(shaders.length,2);
+function loadShaders(file) {
+    const header=fs.readFileSync(path.resolve(__dirname,'../../runtime',file),'utf8');
+    const sources=[...header.matchAll(/const char \*(?:vertex|fragment)=R"\(([\s\S]*?)\)";/g)].map(match=>match[1]);
+    assert.equal(sources.length,2,file);
+    return sources;
+}
+const shaders=loadShaders('tv-raster-shader.h');
 function ppm(file) {
     const raw=zlib.gunzipSync(fs.readFileSync(file)), prefix=/^P6\n(\d+) (\d+)\n255\n/.exec(raw.toString('ascii',0,40));
     assert.ok(prefix);
@@ -107,11 +111,76 @@ async function retainedTargets(page) {
     assert.ok(result.idles>=4);
     console.log(result.checks,'retained presentations match full renders, including',result.idles,'unchanged buffers');
 }
+// Exercise the actual window shaders with independently uploaded full and dirty textures.
+// readPixels starts at the bottom, while the MAME buffer starts at the top.
+async function windowUploads(page) {
+    const count=await page.evaluate(sources=>{
+        const gl=document.createElement('canvas').getContext('webgl2');
+        const program=gl.createProgram();
+        for (const [i,source] of sources.entries()) {
+            const shader=gl.createShader(i===0?gl.VERTEX_SHADER:gl.FRAGMENT_SHADER);
+            gl.shaderSource(shader,source);gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader,gl.COMPILE_STATUS)) throw Error(gl.getShaderInfoLog(shader));
+            gl.attachShader(program,shader);
+        }
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program,gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(program));
+        gl.useProgram(program);gl.disable(gl.DITHER);
+        const w=19,h=13,pixels=new Uint8Array(w*h*4);
+        function texture() {
+            const t=gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D,t);
+            gl.texStorage2D(gl.TEXTURE_2D,1,gl.RGBA8,w,h);
+            for (const key of [gl.TEXTURE_MAG_FILTER,gl.TEXTURE_MIN_FILTER]) gl.texParameteri(gl.TEXTURE_2D,key,gl.LINEAR);
+            for (const key of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D,key,gl.CLAMP_TO_EDGE);
+            return t;
+        }
+        const dest=texture(), full=texture(), retained=texture();
+        gl.bindFramebuffer(gl.FRAMEBUFFER,gl.createFramebuffer());
+        gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,dest,0);
+        if (gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE) throw Error('Invalid window target');
+        gl.viewport(0,0,w,h);
+        gl.uniform2f(gl.getUniformLocation(program,'viewport'),w,h);
+        function draw(t) {
+            gl.bindTexture(gl.TEXTURE_2D,t);
+            gl.drawArrays(gl.TRIANGLES,0,6);
+            const out=new Uint8Array(w*h*4);
+            gl.readPixels(0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,out);
+            return out;
+        }
+        const steps=[[0,0,w,h],[7,3,3,5],[0,0,1,1],null,[18,12,1,1],[0,5,19,1],null];
+        for (const [step,rect] of steps.entries()) {
+            if (rect) {
+                const [x,y,width,height]=rect;
+                for (let j=y;j<y+height;j++) for (let i=x;i<x+width;i++) {
+                    pixels.set([(i+7*step)*13%256,(j+11*step)*17%256,(i+2*j+step)*19%256,255],4*(j*w+i));
+                }
+                gl.bindTexture(gl.TEXTURE_2D,retained);
+                gl.pixelStorei(gl.UNPACK_ROW_LENGTH,w);
+                gl.texSubImage2D(gl.TEXTURE_2D,0,x,y,width,height,gl.RGBA,gl.UNSIGNED_BYTE,pixels,4*(y*w+x));
+                gl.pixelStorei(gl.UNPACK_ROW_LENGTH,0);
+            }
+            gl.bindTexture(gl.TEXTURE_2D,full);
+            gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+            const reference=draw(full), actual=draw(retained);
+            if (!actual.every((v,i)=>v===reference[i])) throw Error('Dirty window upload differs at step '+step);
+            for (let y=0;y<h;y++) for (let x=0;x<w;x++) for(let c=0;c<4;c++) {
+                if (Math.abs(actual[((h-1-y)*w+x)*4+c]-pixels[(y*w+x)*4+c])>1)
+                    throw Error('Window texel registration differs at '+[step,x,y,c]);
+            }
+        }
+        if (gl.getError()!==gl.NO_ERROR) throw Error('Window draw failed');
+        return steps.length;
+    },loadShaders('tv-egl-window.h'));
+    assert.equal(count,7);
+    console.log(count,'EGL window draws match full uploads and source orientation, including two unchanged frames');
+}
 async function main() {
     const browser=await chromium.launch({args:['--enable-unsafe-swiftshader']});
     try {
         const page=await browser.newPage(),dir=process.argv[2];
         await retainedTargets(page);
+        await windowUploads(page);
         const inputs=fs.readdirSync(dir).filter(name=>name.endsWith('-baseline-source.ppm.gz'));
         for (const frame of [626,633,648]) assert.ok(inputs.includes(`moving-${frame}-baseline-source.ppm.gz`));
         for (const input of inputs) {
