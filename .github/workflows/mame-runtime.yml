@@ -138,6 +138,97 @@ jobs:
           name: campaign-loop
           path: loop.csv
 
+  package-web:
+    needs: cartridge
+    runs-on: ubuntu-24.04
+    env:
+      CARTRIDGE: ${{ inputs.cartridge }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: cartridge
+          path: build/shared
+      - name: Build Web
+        run: |
+          exec > >(tee "$RUNNER_TEMP/battlecity-build.log") 2>&1
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install 6.0.2
+          "$RUNNER_TEMP/emsdk/emsdk" activate 6.0.2
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          bash tools/build-mame-runtime.sh web "build/shared/$CARTRIDGE.nes"
+      - name: Verify the packaged cartridge
+        run: |
+          mkdir -p deliverable
+          cp build/mame-runtime/web/battlecity-web.zip deliverable/BattleCity-Web.zip
+          python3 tests/nes/package.py deliverable/BattleCity-Web.zip "build/shared/$CARTRIDGE.nes"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.cartridge }}-web
+          path: deliverable/
+          if-no-files-found: error
+
+  web-tests:
+    needs: package-web
+    runs-on: ubuntu-24.04
+    env:
+      CARTRIDGE: ${{ inputs.cartridge }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: cartridge
+          path: build/shared
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.cartridge }}-web
+          path: deliverable
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Exercise the packaged site
+        run: |
+          exec > >(tee "$RUNNER_TEMP/battlecity-test.log") 2>&1
+          npm ci --prefix web
+          (cd web && npx playwright install --with-deps chromium webkit)
+          python3 -m zipfile -e deliverable/BattleCity-Web.zip "$RUNNER_TEMP/web-site"
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory "$RUNNER_TEMP/web-site" &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          curl --retry 8 --retry-connrefused -fsS http://127.0.0.1:8765/ -o /dev/null
+          if [[ "$CARTRIDGE" == probe ]]; then
+            node tests/nes/browser.cjs http://127.0.0.1:8765/
+            node tests/nes/browser-replay.cjs http://127.0.0.1:8765/
+          else
+            set -o pipefail
+            clock_status=0
+            mkdir -p build/web-observations
+            for engine in chromium webkit; do
+              for hz in native 60 120; do
+                node tests/nes/browser-clock.cjs http://127.0.0.1:8765/ "$engine" "$hz" | tee "build/web-observations/$engine-$hz.jsonl" || clock_status=1
+              done
+            done
+            node tests/nes/browser-ending.cjs http://127.0.0.1:8765/ build/shared/game.lbl build/web-observations
+            BATTLECITY_CAPTURE_DIR="$PWD/build/web-observations/screens" node tests/nes/browser-game.cjs http://127.0.0.1:8765/ build/shared/game.lbl
+            exit "$clock_status"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always() && inputs.cartridge == 'game'
+        with:
+          name: web-clock-and-endings
+          path: build/web-observations/
+
+  web-upgrade:
+    needs: package-web
+    if: inputs.cartridge == 'game' && inputs.previous_tv_run != ''
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/web-upgrade.yml
+    with:
+      current: ${{ github.run_id }}
+      previous: ${{ inputs.previous_tv_run }}
+
   package:
     permissions:
       contents: read
@@ -148,7 +239,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: web, platform: web }
           - { target: tv, platform: android, abi: arm64-v8a }
           - { target: tv-emulator, platform: android, abi: x86 }
     env:
@@ -162,15 +252,6 @@ jobs:
         with:
           name: cartridge
           path: build/shared
-      - name: Build Web
-        if: matrix.platform == 'web'
-        run: |
-          exec > >(tee "$RUNNER_TEMP/battlecity-build.log") 2>&1
-          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
-          "$RUNNER_TEMP/emsdk/emsdk" install 6.0.2
-          "$RUNNER_TEMP/emsdk/emsdk" activate 6.0.2
-          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
-          bash tools/build-mame-runtime.sh web "build/shared/$CARTRIDGE.nes"
       - uses: actions/setup-java@v4
         if: matrix.platform == 'android'
         with:
@@ -224,77 +305,21 @@ jobs:
       - name: Verify the packaged cartridge ${{ needs.cartridge.outputs.sha256 }}
         run: |
           mkdir -p deliverable
-          if [[ "$PACKAGE_PLATFORM" == web ]]; then
-            cp build/mame-runtime/web/battlecity-web.zip deliverable/BattleCity-Web.zip
-            python3 tests/nes/package.py deliverable/BattleCity-Web.zip "build/shared/$CARTRIDGE.nes"
-          else
-            apk="deliverable/$PACKAGE_TARGET.apk"
-            outputs=runtime/android/build
-            if [[ "$BATTLECITY_ANDROID_ABI" == x86 ]]; then outputs="$outputs/x86"; fi
-            cp "$outputs/outputs/apk/debug/BattleCityRuntime-debug.apk" "$apk"
-            candidate="deliverable/$PACKAGE_TARGET-candidate.apk"
-            cp "$outputs/outputs/apk/candidate/BattleCityRuntime-candidate.apk" "$candidate"
-            "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify "$candidate"
-            python3 tests/nes/package.py "$candidate" "build/shared/$CARTRIDGE.nes" --abi "$BATTLECITY_ANDROID_ABI"
-            "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$apk"
-            python3 tests/nes/package.py "$apk" "build/shared/$CARTRIDGE.nes" --abi "$BATTLECITY_ANDROID_ABI"
-          fi
+          apk="deliverable/$PACKAGE_TARGET.apk"
+          outputs=runtime/android/build
+          if [[ "$BATTLECITY_ANDROID_ABI" == x86 ]]; then outputs="$outputs/x86"; fi
+          cp "$outputs/outputs/apk/debug/BattleCityRuntime-debug.apk" "$apk"
+          candidate="deliverable/$PACKAGE_TARGET-candidate.apk"
+          cp "$outputs/outputs/apk/candidate/BattleCityRuntime-candidate.apk" "$candidate"
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify "$candidate"
+          python3 tests/nes/package.py "$candidate" "build/shared/$CARTRIDGE.nes" --abi "$BATTLECITY_ANDROID_ABI"
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$apk"
+          python3 tests/nes/package.py "$apk" "build/shared/$CARTRIDGE.nes" --abi "$BATTLECITY_ANDROID_ABI"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.cartridge }}-${{ matrix.target }}
           path: deliverable/
           if-no-files-found: error
-
-      - uses: actions/setup-node@v6
-        if: matrix.platform == 'web'
-        with:
-          node-version: '24'
-      - uses: actions/download-artifact@v4
-        if: matrix.platform == 'web' && inputs.cartridge == 'game' && inputs.previous_tv_run != ''
-        with:
-          run-id: ${{ inputs.previous_tv_run }}
-          github-token: ${{ github.token }}
-          name: game-web
-          path: previous-web
-      - name: Exercise the packaged site
-        if: matrix.platform == 'web'
-        run: |
-          exec > >(tee "$RUNNER_TEMP/battlecity-test.log") 2>&1
-          npm ci --prefix web
-          (cd web && npx playwright install --with-deps chromium webkit)
-          python3 -m zipfile -e deliverable/BattleCity-Web.zip "$RUNNER_TEMP/web-site"
-          python3 -m http.server 8765 --bind 127.0.0.1 --directory "$RUNNER_TEMP/web-site" &
-          server_pid=$!
-          trap 'kill "$server_pid"' EXIT
-          curl --retry 8 --retry-connrefused -fsS http://127.0.0.1:8765/ -o /dev/null
-          if [[ "$CARTRIDGE" == probe ]]; then
-            node tests/nes/browser.cjs http://127.0.0.1:8765/
-            node tests/nes/browser-replay.cjs http://127.0.0.1:8765/
-          else
-            set -o pipefail
-            clock_status=0
-            mkdir -p build/web-observations
-            for engine in chromium webkit; do
-              for hz in native 60 120; do
-                node tests/nes/browser-clock.cjs http://127.0.0.1:8765/ "$engine" "$hz" | tee "build/web-observations/$engine-$hz.jsonl" || clock_status=1
-              done
-            done
-            node tests/nes/browser-ending.cjs http://127.0.0.1:8765/ build/shared/game.lbl build/web-observations
-            BATTLECITY_CAPTURE_DIR="$PWD/build/web-observations/screens" node tests/nes/browser-game.cjs http://127.0.0.1:8765/ build/shared/game.lbl
-            if [[ -f previous-web/BattleCity-Web.zip ]]; then
-              python3 -m zipfile -e previous-web/BattleCity-Web.zip "$RUNNER_TEMP/web-site/previous"
-              for engine in chromium webkit; do
-                BATTLECITY_UPGRADE_URL=http://127.0.0.1:8765/ node tests/nes/browser-game.cjs \
-                  http://127.0.0.1:8765/previous/ build/shared/game.lbl "$engine" controls | tee "build/web-observations/upgrade-$engine.log"
-              done
-            fi
-            exit "$clock_status"
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always() && matrix.platform == 'web' && inputs.cartridge == 'game'
-        with:
-          name: web-clock-and-endings
-          path: build/web-observations/
 
       - name: Enable emulator acceleration
         if: matrix.abi == 'x86' && inputs.cartridge == 'game'
@@ -351,7 +376,7 @@ jobs:
             previous=(--previous previous-tv/upgrade.apk)
           fi
           bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result --stable deliverable/tv-emulator.apk "${previous[@]}" --record-candidate-failure --suite controls --suite prototype --suite candidate-controls --suite held-out --suite timing
-          passed=$(PYTHONPATH=tests/nes python3 -c "from tv_release_gate import probe_pass;from pathlib import Path;print(int(probe_pass(Path('build/tv-result'))))")
+          passed=$(PYTHONPATH=tests/nes python3 -c "from tv_release_gate import preliminary;from pathlib import Path;print(int(all(preliminary(Path('build/tv-result'),'compositor-tv').values())))")
           echo "BATTLECITY_PROBE_PASSED=$passed" >> "$GITHUB_ENV"
       - name: Two independent cold boots after passing the renderer prototype
         if: success() && matrix.abi == 'x86' && inputs.cartridge == 'game' && env.BATTLECITY_PROBE_PASSED == '1'
@@ -364,12 +389,12 @@ jobs:
       - name: Select the measured TV renderer
         if: success() && matrix.abi == 'x86' && inputs.cartridge == 'game'
         run: |
-          python3 tests/nes/tv_release_gate.py --require-prototype build/tv-result
+          python3 tests/nes/tv_release_gate.py --renderer compositor-tv build/tv-result
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json
           from pathlib import Path
           gate = json.loads(Path('build/tv-result/release-gate.json').read_text())
-          selected = '-candidate' if gate['default'] == 'dirty-tv' else ''
+          selected = '-candidate' if gate['default'] == 'compositor-tv' else ''
           print(f"Android TV default renderer `{gate['default']}`. Install `tv{selected}.apk` on ARM64 or `tv-emulator{selected}.apk` on x86.")
           PY
       - name: Report the failed build or device check

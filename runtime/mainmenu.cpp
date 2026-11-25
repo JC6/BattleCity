@@ -81,10 +81,19 @@ void box(render_container &c, float x, float y, float w, float h, rgb_t color)
 
 void brackets(render_container &c, float x, float y, float w, float h)
 {
+    // Each corner has a stepped outer stroke and a parallel inner highlight.
     for (int right=0; right<2; ++right) for (int bottom=0; bottom<2; ++bottom) {
-        float a=right ? x+w+.004f : x-.004f, b=bottom ? y+h+.008f : y-.008f;
-        box(c,right ? a-.013f : a,b,.013f,.005f,cyan);
-        box(c,a,bottom ? b-.018f : b,.003f,.021f,cyan);
+        float const sx=right ? -1.f : 1.f, sy=bottom ? -1.f : 1.f;
+        float const ox=right ? x+w+.014f : x-.014f, oy=bottom ? y+h+.020f : y-.020f;
+        auto stroke=[&](int u,int v,int width,int height,rgb_t color) {
+            float const x1=ox+sx*u/1280.f, x2=x1+sx*width/1280.f;
+            float const y1=oy+sy*v/720.f, y2=y1+sy*height/720.f;
+            box(c,std::min(x1,x2),std::min(y1,y2),std::abs(x2-x1),std::abs(y2-y1),color);
+        };
+        stroke(1,0,17,6,blue); stroke(0,2,6,17,blue);
+        stroke(6,6,9,4,blue); stroke(6,6,4,9,blue);
+        stroke(3,2,14,2,cyan); stroke(2,3,2,14,cyan);
+        stroke(7,7,7,2,cyan); stroke(7,7,2,7,cyan);
     }
 }
 
@@ -131,7 +140,10 @@ void header(mame_ui_manager &ui, render_target &t, std::string_view title,float 
     box(c,0,0,1,1,rgb_t(212,0,0,0));
     rounded(c,.074f,y,.852f,bottom-y,.030f,.050f,navy);
     rounded(c,.079f,y+.007f,.842f,bottom-y-.014f,.026f,.044f,rgb_t(243,0,0,0));
-    chamfer(c,.210f,y+.006f,.580f,.073f,.042f,navy);
+    for (int band=0;band<20;++band) {
+        float const inset=.041f*band/20;
+        box(c,.210f+inset,y+.006f+band*.073f/20,.580f-2*inset,.073f/20,navy);
+    }
     label(ui,t,title,.20f,y+.014f,.60f,.051f);
 }
 
@@ -229,21 +241,28 @@ public:
             float x=.125f+.195f*i;
             auto const &card=m_cards[i];
             panel(c,x,.366f,.166f,.285f,int(i)==selected);
-            box(c,x,.366f,.124f,.041f,blue);
+            for (int band=0;band<14;++band) {
+                float const tapered=.014f*band/14;
+                box(c,x+.003f,.366f+band*.041f/14,.113f+tapered,.041f/14,blue);
+            }
             label(ui,target,occupied(i) ? card.date : "------------",x+.003f,.367f,.098f,.028f);
             label(ui,target,std::to_string(i+1),x+.096f,.367f,.034f,.032f);
             auto lock_color=card.locked ? cyan : rgb_t(53,57,65);
-            panel(c,x+.148f,.372f,.009f,.017f);
+            rounded(c,x+.148f,.372f,.009f,.017f,.0045f,.008f,lock_color);
+            rounded(c,x+.150f,.375f,.005f,.013f,.0025f,.004f,rgb_t::black());
             box(c,x+.146f,.382f,.013f,.011f,lock_color);
             if (card.texture)
                 c.add_quad(x+.007f,.405f,x+.159f,.642f,rgb_t::white(),card.texture,blend);
             else if (occupied(i))
                 label(ui,target,"Saved",x,.505f,.166f,.034f);
             else {
-                box(c,x+.032f,.512f,.102f,.016f,rgb_t(154,56,59));
-                box(c,x+.032f,.528f,.054f,.013f,rgb_t(154,56,59));
-                label(ui,target,"NAMCO MUSEUM",x+.032f,.507f,.102f,.021f);
-                label(ui,target,"ARCHIVES",x+.032f,.525f,.054f,.018f);
+                auto const rim=rgb_t(175,116,109), fill=rgb_t(94,32,38);
+                rounded(c,x+.032f,.512f,.101f,.019f,.003f,.004f,rim);
+                rounded(c,x+.032f,.527f,.055f,.019f,.003f,.004f,rim);
+                rounded(c,x+.034f,.514f,.097f,.015f,.002f,.003f,fill);
+                rounded(c,x+.034f,.528f,.051f,.015f,.002f,.003f,fill);
+                label(ui,target,"NAMCO MUSEUM",x+.032f,.508f,.101f,.021f);
+                label(ui,target,"ARCHIVES",x+.032f,.525f,.055f,.020f);
             }
         }
     }
@@ -499,7 +518,8 @@ private:
     {
         header(ui(),target(),wallpaper ? "Wallpaper Settings" : "Screen Settings");
         int current=preference(wallpaper,-1);
-        panel(container(),.383f,.184f,.234f,.240f);
+        rounded(container(),.383f,.184f,.234f,.240f,.012f,.025f,rgb_t(61,63,76));
+        rounded(container(),.392f,.190f,.216f,.228f,.008f,.019f,rgb_t::black());
         preview(current,.389f,.191f,.222f,.226f);
         for (int i=0;i<4;++i) {
             float x=.170f+.173f*i;
@@ -517,9 +537,20 @@ private:
                 float y=.195f+.060f*i;
                 std::string name=i ? "Scan Lines" : "Anti-Aliasing";
                 rounded(container(),.626f,y-.006f,.026f,.044f,.013f,.022f,navy);
-                label(ui(),target(),i ? "SL" : "SF",.626f,y,.026f,.027f,
-                      picture & (1<<i) ? cyan : rgb_t(174,62,69));
-                label(ui(),target(),name,.649f,y,.147f,.032f);
+                auto &c=container();
+                label(ui(),target(),"S",.626f,y-.003f,.012f,.032f,rgb_t(170,50,56));
+                box(c,.638f,y+.001f,.003f,.027f,rgb_t(164,128,28));
+                for (int band=0;band<6;++band)
+                    box(c,.641f,y+.001f+band*.002f,.009f*(6-band)/6,.002f,rgb_t(164,128,28));
+                for (auto [dx,dy]:{std::pair{0.f,-.010f},{-.008f,0.f},{.008f,0.f},{0.f,.010f}}) {
+                    bool active=dx==0 && dy==(i ? .010f : -.010f);
+                    rounded(c,.658f+dx,y+.009f+dy,.009f,.015f,.0045f,.0075f,rgb_t::white());
+                    if (!active && !(picture & (1<<i)))
+                        rounded(c,.660f+dx,y+.012f+dy,.005f,.009f,.0025f,.0045f,rgb_t::black());
+                }
+                ui().draw_text_full(target(),name,.678f,y,.14f,text_layout::text_justify::LEFT,
+                    text_layout::word_wrapping::TRUNCATE,mame_ui_manager::NORMAL,rgb_t::white(),
+                    rgb_t::transparent(),nullptr,nullptr,.032f);
                 if (selected_index()==i+4) brackets(container(),.625f,y,.169f,.041f);
             }
         }

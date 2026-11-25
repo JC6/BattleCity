@@ -1,0 +1,53 @@
+--- a/src/osd/modules/render/drawsdl3soft.cpp
++++ b/src/osd/modules/render/drawsdl3soft.cpp
+@@ -231,7 +231,7 @@
+ 	if (m_meter.active) m_profile_screen = window().machine().root_device().subdevice<screen_device>("screen");
+ #endif
+ #ifdef __ANDROID__
+-	if (m_scale_mode.is_scale == 5 && m_native_window.attach(sdl_window)) {
++	if ((m_scale_mode.is_scale == 5 || m_scale_mode.is_scale == 6) && m_native_window.attach(sdl_window,m_scale_mode.is_scale == 6)) {
+ 		m_dirty_output = true;
+ 		return 0;
+ 	}
+@@ -349,14 +349,18 @@
+ 	const bool tracing = m_meter.instrumented && ATrace_isEnabled();
+ 	if (m_dirty_output) {
+ 		tv_native_window::timing phases{};
+-		bool const ok = m_native_window.attach(m_output_window) &&
++		bool const composition = m_scale_mode.is_scale == 6;
++		const auto frame = m_profile_screen ? m_profile_screen->frame_number() : 0;
++		const bool drain = composition && m_meter.needs_boundary(window().machine().time().as_double());
++		bool const ok = m_native_window.attach(m_output_window,composition) &&
+ 			m_native_window.draw(*window().m_primlist, wdim.width(), wdim.height(), picture,
+-				window().machine().ui().is_menu_active(), has_flags(FI_CHANGED), started ? &phases : nullptr);
++				window().machine().ui().is_menu_active(), has_flags(FI_CHANGED), started ? &phases : nullptr,frame,drain);
+ 		clear_flags(FI_CHANGED);
+ 		if (started) {
+ 			m_meter.finish(window().machine().time().as_double(), m_profile_screen->frame_number(),
+-				"android-native-window", phases.fast, started, started+phases.draw, ok, -2, wdim.width(), wdim.height(),
+-				phases.lock, phases.copy, phases.post, phases.area);
++				composition ? "android-surface-control" : "android-native-window", phases.fast, started, started+phases.draw, ok, -2, wdim.width(), wdim.height(),
++				phases.lock, phases.copy, phases.post, phases.area,phases.transaction.wait,
++				phases.transaction.submitted,phases.transaction.completed,phases.transaction.last_frame,phases.transaction.latency,drain);
+ 		}
+ 		// SurfaceView resize and resume can temporarily return a buffer of the old size.
+ 		// Keep this CPU producer and invalidate its cache until the new surface is ready.
+@@ -843,6 +847,7 @@
+ sdl_scale_mode const video_sdl3soft::s_scale_modes[] = {
+ 		{ "none",    0, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                    nullptr },
+ #ifdef __ANDROID__
++		{ "compositor-tv", 6, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0, nullptr },
+ 		{ "dirty-tv", 5, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0, nullptr },
+ 		{ "surface-tv", 4, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                  nullptr },
+ 		{ "gpu-full", 3, 0, 1, 1, DRAW2_SCALEMODE_NEAREST, 0,                    nullptr },
+--- a/scripts/toolchain.lua
++++ b/scripts/toolchain.lua
+@@ -70,7 +70,7 @@
+ 
+ 	location (_buildDir .. "projects/" .. _subDir .. "/".. _ACTION)
+ 
+-	local androidApiLevel = 24
++	local androidApiLevel = 34
+ 	if _OPTIONS["with-android"] then
+ 		androidApiLevel = _OPTIONS["with-android"]
+ 	end

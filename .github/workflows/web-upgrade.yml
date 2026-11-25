@@ -1,6 +1,14 @@
 name: Verify a packaged Web save upgrade
 
 on:
+  workflow_call:
+    inputs:
+      current:
+        type: string
+        required: true
+      previous:
+        type: string
+        required: true
   push:
     branches: ['validation/web-upgrade-*']
 
@@ -16,11 +24,18 @@ jobs:
       previous: ${{ steps.ids.outputs.previous }}
     steps:
       - id: ids
+        env:
+          CURRENT: ${{ inputs.current }}
+          PREVIOUS: ${{ inputs.previous }}
         shell: bash
         run: |
-          [[ "$GITHUB_REF_NAME" =~ ^validation/web-upgrade-([0-9]+)-([0-9]+)$ ]]
-          echo "current=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-          echo "previous=${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+          if [[ -z "$CURRENT" ]]; then
+            [[ "$GITHUB_REF_NAME" =~ ^validation/web-upgrade-([0-9]+)-([0-9]+)$ ]]
+            CURRENT=${BASH_REMATCH[1]} PREVIOUS=${BASH_REMATCH[2]}
+          fi
+          [[ "$CURRENT" =~ ^[0-9]+$ && "$PREVIOUS" =~ ^[0-9]+$ ]]
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "previous=$PREVIOUS" >> "$GITHUB_OUTPUT"
 
   upgrade:
     needs: sources

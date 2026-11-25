@@ -376,7 +376,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         write_private('nes.ini', ini + (f'scalemode {scale}\n' if scale else ''))
     def stop():
         adb('shell','am','force-stop',PACKAGE)
-        private('rm','-f','files/tv-fixed','files/tv-profile.jsonl')
+        private('rm','-f','files/tv-fixed','files/tv-profile.jsonl','files/tv-capture','files/tv-expanded.ppm','files/tv-source.ppm','files/tv-expanded.tmp')
     def marker():
         last_launch = time.monotonic()
         def read():
@@ -459,7 +459,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
     if scenes_only:
         cases = [('firing',0,0,0),('blast',0,0,0)]
     if held_out:
-        cases = [('moving-626',0,0,0),('moving-633',0,0,0)]
+        cases = [('moving-626',0,0,0),('moving-633',0,0,0),('moving-648',0,0,0),('blast-695',0,0,0),('calibration',0,0,0)]
     visual = {}
     small_visual = {}
     try:
@@ -470,8 +470,11 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
                 set_display((f'<map><int name="mode" value="{aspect}"/><int name="picture" value="{picture}"/>'
                              f'<int name="wallpaper" value="{wallpaper}"/></map>').encode())
                 select(name, scale)
-                tick = {'firing':621,'blast':696,'moving-626':626,'moving-633':633}.get(case,705)
-                write_private('tv-observer.lua',render_fixture(labels,directory,tick,True,("motion" if held_out else case) if scenes_only else None))
+                tick = {'firing':621,'blast':696,'moving-626':626,'moving-633':633,'moving-648':648,'blast-695':695,'calibration':626}.get(case,705)
+                write_private('tv-observer.lua',render_fixture(labels,directory,tick,True,("blast" if case=="blast-695" else "motion" if held_out else case) if scenes_only else None))
+                stages = held_out and (name in ('baseline','candidate','repeat') or case=='calibration')
+                if stages:
+                    write_private('tv-capture','P' if case=='calibration' else 'G')
                 start_fixture()
                 try:
                     fingerprint = marker()
@@ -479,6 +482,15 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
                     (results/f'{case}-{name}-foreground.txt').write_bytes(adb('shell','dumpsys','window','displays'))
                     (results/f'{case}-{name}-failure.png').write_bytes(adb('exec-out','screencap','-p'))
                     raise
+                if stages:
+                    wait(lambda: private('ls','files/tv-expanded.ppm',check=False).strip(),
+                         lambda data:data==b'files/tv-expanded.ppm','frozen raster stages')
+                    for stage in ('source','expanded'):
+                        data=private('cat',f'files/tv-{stage}.ppm')
+                        header,dimensions,scale,pixels=data.split(b'\n',3)
+                        sw,sh=map(int,dimensions.split())
+                        assert header==b'P6' and scale==b'255' and len(pixels)==3*sw*sh
+                        (results/f'{case}-{name}-{stage}.ppm.gz').write_bytes(gzip.compress(data,mtime=0))
                 time.sleep(.4)
                 png = adb('exec-out','screencap','-p')
                 assert png.startswith(b'\x89PNG')
@@ -529,7 +541,7 @@ def run(apk, labels, results, suite, previous=None):
         slot = f'files/states/{prior}/nes/1.sta'
     # Leave existing player files intact. A completed run removes its own slot.
     test_files = ['files/'+name for name in ('nes.ini','tv-observer.lua','tv-observation',
-                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv','tv-profile.jsonl','tv-fixed','tv-low-buffer')]
+                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv','tv-profile.jsonl','tv-fixed','tv-low-buffer','tv-capture','tv-expanded.ppm','tv-source.ppm','tv-expanded.tmp')]
     test_files.extend((slot,slot+'.png',slot+'.lock'))
     if slot!=current_slot: test_files.extend((current_slot,current_slot+'.png',current_slot+'.lock'))
     for name in test_files:

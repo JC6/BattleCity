@@ -25,7 +25,7 @@ jobs:
       actions: read
     uses: ./.github/workflows/mame-runtime.yml
     with:
-      previous_tv_run: ${{ inputs.previous_tv_run || (startsWith(github.ref, 'refs/heads/validation/switch-parity-native-window-20261124') && '45394628713') || '' }}
+      previous_tv_run: ${{ inputs.previous_tv_run || (startsWith(github.ref, 'refs/heads/validation/switch-parity-compositor-') && '45426153747') || (startsWith(github.ref, 'refs/heads/validation/switch-parity-native-window-20261124') && '45394628713') || '' }}
 
   build:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'

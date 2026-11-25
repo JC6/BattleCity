@@ -1,0 +1,59 @@
+--- a/src/osd/modules/render/drawsdl3soft.cpp
++++ b/src/osd/modules/render/drawsdl3soft.cpp
+@@ -109,6 +109,7 @@
+ 	bool m_native_frame = false;
+ 	bool m_dirty_output = false;
+ 	tv_native_window m_native_window;
++	tv_stage_capture m_stage_capture;
+ 	SDL_Window *m_output_window = nullptr;
+ 	bool m_surface_output = false;
+ 	int m_actual_vsync = -2;
+@@ -228,6 +229,7 @@
+ 	if (m_scale_mode.is_scale == 2 || m_scale_mode.is_scale == 3) driver = nullptr;
+ 	m_output_window = sdl_window;
+ 	m_meter.open(SDL_GetAndroidInternalStoragePath());
++	m_stage_capture.open(SDL_GetAndroidInternalStoragePath());
+ 	if (m_meter.active) m_profile_screen = window().machine().root_device().subdevice<screen_device>("screen");
+ #endif
+ #ifdef __ANDROID__
+@@ -346,6 +348,7 @@
+ 	SDL_Surface *surface = nullptr;
+ #ifdef __ANDROID__
+ 	const auto started = m_meter.active ? battlecity_tv::now_ns() : 0;
++	const bool capture = m_stage_capture.armed();
+ 	const bool tracing = m_meter.instrumented && ATrace_isEnabled();
+ 	if (m_dirty_output) {
+ 		tv_native_window::timing phases{};
+@@ -354,7 +357,7 @@
+ 		const bool drain = composition && m_meter.needs_boundary(window().machine().time().as_double());
+ 		bool const ok = m_native_window.attach(m_output_window,composition) &&
+ 			m_native_window.draw(*window().m_primlist, wdim.width(), wdim.height(), picture,
+-				window().machine().ui().is_menu_active(), has_flags(FI_CHANGED), started ? &phases : nullptr,frame,drain);
++				window().machine().ui().is_menu_active(), has_flags(FI_CHANGED), started ? &phases : nullptr,frame,drain,capture ? &m_stage_capture : nullptr);
+ 		clear_flags(FI_CHANGED);
+ 		if (started) {
+ 			m_meter.finish(window().machine().time().as_double(), m_profile_screen->frame_number(),
+@@ -491,7 +494,11 @@
+ 		prim.bounds.y1 = floor(fh * prim.bounds.y1 + 0.5f);
+ 	}
+ 
+-	// render to it
++#ifdef __ANDROID__
++    tv_stage_capture::replacement saved_texture;
++    if (capture) m_stage_capture.source(*window().m_primlist,saved_texture);
++#endif
++    // render to it
+ 	if (!m_scale_mode.is_yuv)
+ 	{
+ 		switch (rmask)
+@@ -533,6 +540,10 @@
+ 		m_scale_mode.yuv_blit(m_yuv_bitmap.get(), surfptr, pitch, m_yuv_lookup.get(), mamewidth, mameheight);
+ 	}
+ 
++#ifdef __ANDROID__
++    saved_texture.restore();
++    if (capture) m_stage_capture.expanded(surfptr,mamewidth,mameheight,pitch,format);
++#endif
+ 	window().m_primlist->release_lock();
+ 
+ 	// unlock and flip

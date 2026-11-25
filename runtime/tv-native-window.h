@@ -7,11 +7,15 @@
 #include <cmath>
 #include <cstring>
 #include <vector>
+#include "tv-surface-queue.h"
+#include "tv-capture.h"
 
 class tv_native_window
 {
 	using raster = software_renderer<uint16_t, 3,2,3, 11,5,0>;
 	ANativeWindow *window = nullptr;
+	tv_surface_queue queue;
+	bool layered = false;
 	int width = 0, height = 0, source_w = 0, source_h = 0;
 	bool compact = false, fresh = true;
 	std::vector<uint16_t> image, source, previous;
@@ -86,24 +90,39 @@ class tv_native_window
 		return dirty;
 	}
 
+	void expand_rgba(ARect dirty) {
+		for (int y = dirty.top; y < dirty.bottom; ++y) {
+			const auto *row = image.data()+size_t(y)*width;
+			auto *dest = rgba.data()+size_t(y)*width;
+			for (int x = dirty.left; x < dirty.right; ++x) {
+				const unsigned c = row[x], r = c>>11, g = (c>>5)&63, b = c&31;
+				// SDL's software RGB565-to-888 conversion replicates the high bits.
+				dest[x] = 0xff000000U | ((b*8+b/4)<<16) | ((g*4+g/16)<<8) | (r*8+r/4);
+			}
+		}
+	}
+
 public:
-	struct timing { int64_t draw = 0, lock = 0, copy = 0, post = 0, area = 0; bool fast = false; };
+	struct timing { tv_surface_queue::timing transaction{}; int64_t draw = 0, lock = 0, copy = 0, post = 0, area = 0; bool fast = false; };
 	~tv_native_window() { close(); }
 	void close()
 	{
+		queue.close();
 		if (window) ANativeWindow_release(window);
 		window = nullptr;
 		fresh = true; compact = false;
 	}
-	bool attach(SDL_Window *sdl)
+	bool attach(SDL_Window *sdl, bool use_layer = false)
 	{
 		auto *next = static_cast<ANativeWindow *>(SDL_GetPointerProperty(SDL_GetWindowProperties(sdl),
 					SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER,nullptr));
-		if (next && next == window) return true;
+		if (next && next == window && layered == use_layer) return true;
 		close();
 		if (!next) return false;
 		ANativeWindow_acquire(next);
 		window = next;
+		layered = use_layer;
+		if (layered) { width=height=0; return true; }
 		for (int choice : { AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM, AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM,
 				AHARDWAREBUFFER_FORMAT_R5G6B5_UNORM }) {
 			if (ANativeWindow_setBuffersGeometry(window,0,0,choice) == 0) {
@@ -116,11 +135,13 @@ public:
 		return false;
 	}
 
-	bool draw(render_primitive_list &list, int w, int h, uint8_t picture, bool menu, bool reset, timing *meter)
+	bool draw(render_primitive_list &list, int w, int h, uint8_t picture, bool menu, bool reset, timing *meter, uint64_t frame=0, bool drain=false, tv_stage_capture *capture=nullptr)
 	{
 		if (w <= 0 || h <= 0 || !window) return false;
 		if (w != width || h != height || reset) {
-			if (ANativeWindow_setBuffersGeometry(window,w,h,format) < 0) return false;
+			if (layered) {
+				if (!queue.configure(window,w,h)) return false;
+			} else if (ANativeWindow_setBuffersGeometry(window,w,h,format) < 0) return false;
 			width = w; height = h;
 			image.resize(size_t(w)*h);
 			rgba.resize(size_t(w)*h);
@@ -129,6 +150,8 @@ public:
 		const auto now = [meter]() -> int64_t { return meter ? battlecity_tv::now_ns() : 0; };
 		const auto begin = now();
 		list.acquire_lock();
+		tv_stage_capture::replacement saved;
+		if (capture) capture->source(list,saved);
 		const auto *game = (picture || menu) ? nullptr : screen_quad(list);
 		ARect dirty{0,0,w,h};
 		if (game) dirty = draw_changes(*game);
@@ -136,8 +159,19 @@ public:
 			compact = false;
 			raster::draw_primitives<true>(list,image.data(),w,h,w,picture);
 		}
+		saved.restore();
 		list.release_lock();
 		if (fresh) dirty = {0,0,w,h};
+		if (layered) {
+			expand_rgba(dirty);
+			if (capture) capture->expanded(rgba.data(),w,h,w*4,SDL_PIXELFORMAT_RGBA32);
+			const auto drawn = now();
+			tv_surface_queue::timing txn{};
+			const bool ok = queue.present(rgba,dirty,frame,drain,txn);
+			if (meter) *meter = {txn,drawn-begin,txn.lock,txn.copy,txn.post,txn.pixels,compact};
+			fresh = !ok;
+			return ok;
+		}
 		const auto drawn = now();
 		ANativeWindow_Buffer buffer{};
 		if (ANativeWindow_lock(window,&buffer,nullptr) < 0) { fresh = true; return false; }
@@ -148,15 +182,7 @@ public:
 		if (valid) {
 			if (buffer.format != last_buffer_format) dirty = {0,0,w,h};
 			last_buffer_format = buffer.format;
-			if (!rgb565) for (int y = dirty.top; y < dirty.bottom; ++y) {
-				const auto *row = image.data()+size_t(y)*w;
-				auto *dest = rgba.data()+size_t(y)*w;
-				for (int x = dirty.left; x < dirty.right; ++x) {
-					const unsigned c = row[x], r = c>>11, g = (c>>5)&63, b = c&31;
-					// SDL's software RGB565-to-888 conversion replicates the high bits.
-					dest[x] = 0xff000000U | ((b*8+b/4)<<16) | ((g*4+g/16)<<8) | (r*8+r/4);
-				}
-			}
+			if (!rgb565) expand_rgba(dirty);
 			const size_t bytes = rgb565 ? sizeof(uint16_t) : sizeof(uint32_t);
 			const auto *src = rgb565 ? reinterpret_cast<const uint8_t *>(image.data()) :
 				reinterpret_cast<const uint8_t *>(rgba.data());
@@ -167,7 +193,7 @@ public:
 		}
 		const auto copied = now();
 		const bool posted = ANativeWindow_unlockAndPost(window) == 0;
-		if (meter) *meter = {drawn-begin,locked-drawn,copied-locked,now()-copied,
+		if (meter) *meter = {{},drawn-begin,locked-drawn,copied-locked,now()-copied,
 			valid ? int64_t(w)*h : 0,compact};
 		fresh = !(posted && valid);
 		return !fresh;

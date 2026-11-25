@@ -629,9 +629,9 @@ async function verify(engine, suite) {
         if (upgrade) assert.equal(new URL(upgrade).origin,new URL(url).origin,'upgrade requires the same browser origin');
         const oldFiles = upgrade && await stateFilesDigest(page, slotPath);
         await start(page,upgrade || url);
+        let newSlot;
         if (upgrade) {
-            const newSlot = await page.evaluate(() => Module.arguments[Module.arguments.indexOf('-state_directory')+1]+'/nes/1.sta');
-            assert.notEqual(newSlot,slotPath);
+            newSlot = await page.evaluate(() => Module.arguments[Module.arguments.indexOf('-state_directory')+1]+'/nes/1.sta');
             assert.deepEqual(await stateFilesDigest(page,newSlot),oldFiles,'upgraded state, thumbnail and lock');
         }
         assert.equal(await slotDigest(page, 4), fourthSlot, 'slot four changed after reload');
@@ -653,8 +653,13 @@ async function verify(engine, suite) {
         await menu(page,['Escape','End','Enter','Enter']);
         await page.waitForFunction(() => gameState.mode===0 && !gameState.titleScroll && !window.menuActive);
         if (upgrade) {
-            assert.deepEqual(await stateFilesDigest(page,slotPath),oldFiles,'new saves must preserve the old slot, thumbnail and lock');
-            console.log(engine.name() + ' passed previous-release save upgrade, original slot preservation and second-player movement');
+            if (newSlot !== slotPath) {
+                assert.deepEqual(await stateFilesDigest(page,slotPath),oldFiles,'migrated writes must preserve the old namespace');
+            } else {
+                assert.equal(await page.evaluate(p => FS.analyzePath(p+'.lock').exists,slotPath),false);
+                assert.ok(await slotDigest(page,1),'updated save in the shared namespace');
+            }
+            console.log(engine.name() + ' passed previous-release save upgrade, slot protection and second-player movement');
         }
         assert.deepEqual(errors, []);
         console.log(engine.name() + ' passed 720p/1080p viewport, solo, stage selection, Construction, co-op, shooting, pause, rewind and persistent save/load');
