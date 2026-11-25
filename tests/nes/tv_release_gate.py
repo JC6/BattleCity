@@ -8,7 +8,7 @@ CASES = {'standard','large','pixel','stretch','antialias','scanlines','firing','
 
 DRIVERS = {'surface-tv':'window-surface','dirty-tv':'android-native-window','compositor-tv':'android-surface-control'}
 HOLDOUTS = {'moving-626', 'moving-633'}
-COMPOSITOR_HOLDOUTS = HOLDOUTS | {'moving-648', 'blast-695', 'calibration'}
+COMPOSITOR_HOLDOUTS = HOLDOUTS | {'moving-648', 'blast-700', 'calibration'}
 
 
 def probe_pass(root, renderer='dirty-tv'):
@@ -20,7 +20,8 @@ def probe_pass(root, renderer='dirty-tv'):
 def qualifying(row, driver="android-native-window"):
     if driver == DRIVERS['compositor-tv']:
         if (row['driver'] != driver or row.get('transactions') != row['frames'] or
-                row.get('completions') != row['frames'] or row.get('pending') != 0 or
+                row.get('completions') != row['frames'] or row.get('pending') != 0 or row.get('frameIdErrors') != 0 or
+                row.get('gpuFrames') != row['frames'] or
                 row.get('lastCompletedFrame', 0) <= 0 or row['lastCompletedFrame'] != row.get('lastSubmittedFrame')):
             return False
     return (row['driver']==driver and row['wall']>=30 and row['sampleRate']>0 and
@@ -36,7 +37,7 @@ def preliminary(root,renderer):
     controls=json.loads((root/'candidate-controls/result.json').read_text())['result']
     assert controls in ('passed','failed')
     return {'prototypePassed':probe_pass(root,renderer),
-            'heldOutPassed':all(r['nativePixels']==256*224 and not any(r[k] for k in
+            'heldOutPassed':all(r['nativePixels']==256*224 and r.get('calibration',{'valid':True})['valid'] and not any(r[k] for k in
                  ('differentCenters','differentWallpaperPixels','aboveRepeatNoise')) for r in heldout.values()),
             'candidateControlsPassed':controls=='passed'}
 
@@ -50,8 +51,8 @@ def decision(root, require_prototype=False, renderer=None):
     diagnostics = {}
     if renderer!='surface-tv':
         diagnostics=preliminary(root,renderer)
-        if not all(diagnostics.values()):
-            return {'default':'none','candidate':renderer,**diagnostics,'boots':[],'tested':identity}
+        if not diagnostics['prototypePassed'] or (renderer=='compositor-tv' and not all(diagnostics.values())):
+            return {'default':'none',**({'candidate':renderer} if renderer=='compositor-tv' else {}),**diagnostics,'boots':[],'tested':identity}
     for boot in (root, root/'second'):
         assert (boot/'tested-sha256.txt').read_text() == identity, 'APK or cartridge changed between boots'
         windows = json.loads((boot/'render/clock.json').read_text())['windows']['candidate']
@@ -63,8 +64,8 @@ def decision(root, require_prototype=False, renderer=None):
         failed = [name for name,r in screens.items() if r['nativePixels']!=256*224 or
                   any(r[k] for k in ('differentCenters','differentWallpaperPixels','aboveRepeatNoise'))]
         records.append({'clockPassed':timing,'differentScenes':failed})
-    passed = json.loads((root/'candidate-controls/result.json').read_text())['result']=='passed' and all(r['clockPassed'] and not r['differentScenes'] for r in records)
-    return {'default':renderer if passed else 'none','candidate':renderer,**diagnostics,'boots':records,'tested':identity}
+    passed = all(diagnostics.values()) and json.loads((root/'candidate-controls/result.json').read_text())['result']=='passed' and all(r['clockPassed'] and not r['differentScenes'] for r in records)
+    return {'default':renderer if passed else 'none',**({'candidate':renderer} if renderer=='compositor-tv' else {}),**diagnostics,'boots':records,'tested':identity}
 
 
 if __name__=='__main__':

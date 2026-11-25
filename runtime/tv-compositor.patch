@@ -28,7 +28,7 @@
 -				phases.lock, phases.copy, phases.post, phases.area);
 +				composition ? "android-surface-control" : "android-native-window", phases.fast, started, started+phases.draw, ok, -2, wdim.width(), wdim.height(),
 +				phases.lock, phases.copy, phases.post, phases.area,phases.transaction.wait,
-+				phases.transaction.submitted,phases.transaction.completed,phases.transaction.last_frame,phases.transaction.latency,drain);
++				phases.transaction.submitted,phases.transaction.completed,phases.transaction.last_frame,phases.transaction.latency,drain,phases.transaction.frame_discontinuities,phases.transaction.gpu_frames);
  		}
  		// SurfaceView resize and resume can temporarily return a buffer of the old size.
  		// Keep this CPU producer and invalidate its cache until the new surface is ready.

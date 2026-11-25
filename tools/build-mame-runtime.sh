@@ -76,6 +76,7 @@ if [[ "$platform" == android ]]; then
         x86) target=android-x86; triple=i686-linux-android; flags+=(NOASM=1) ;;
         *) echo "Unsupported Android ABI: $abi" >&2; exit 2 ;;
     esac
+    cp "$repo/runtime/tv-gpu-raster.h" "$tree/src/emu/tv-gpu-raster.h"
     cp "$repo/runtime/tv-capture.h" "$tree/src/emu/tv-capture.h"
     cp "$repo/runtime/tv-surface-queue.h" "$tree/src/emu/tv-surface-queue.h"
     cp "$repo/runtime/tv-native-window.h" "$tree/src/emu/tv-native-window.h"

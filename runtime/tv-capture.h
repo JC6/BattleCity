@@ -30,6 +30,7 @@ public:
             directory=std::string(dir)+"/";
         }
     }
+    bool done() const { return captured; }
     bool armed() const {
         return !directory.empty() && (!captured || pattern) && ::access((directory+"tv-fixed").c_str(),F_OK)==0;
     }

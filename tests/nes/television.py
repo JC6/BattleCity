@@ -326,6 +326,15 @@ def render_fixture(labels, directory, tick, freeze=False, scene=None):
         addresses = {key:int(value,16) for value,key in re.findall(r'^al (\w+) \._(\w+)$',labels.read_text(),re.M)}
         definitions = ','.join(f'{key}={addresses[key]}' for key in names)
         scenario = f'\nlocal scene="{scene}"\nlocal addr={{{definitions}}}\n' + Path(__file__).with_name('tv-scenes.lua').read_text()
+    scene_check = f"""
+    local ok,reason=pcall(verify_scene)
+    if not ok then
+        local output=assert(io.open("{directory}/tv-fixed","w"))
+        output:write("ERROR "..tostring(reason))
+        output:close()
+        emu.pause()
+        return
+    end""" if scene else ''
     return controls + scenario + f"""
 local ram = manager.machine.devices[":maincpu"].spaces.program
 local frames = 0
@@ -333,7 +342,7 @@ visual_fixture = emu.add_machine_frame_notifier(function()
     frames = frames + 1
     {'update_scene(frames)' if scene else ''}
     if frames ~= {tick} then return end
-    {'verify_scene()' if scene else ''}
+    {scene_check}
     local hash = 0
     for address=0,2047 do hash = (hash * 33 + ram:read_u8(address)) & 0xffffffff end
     local handle = assert(io.open("{directory}/tv-fixed", "w"))
@@ -360,12 +369,32 @@ def compare_raster(base, other, w, h, width, height):
             'maxChannelError':largest,'identical':changed==0}
 
 
-def record_render(results, labels, directory, write_private, scenes_only=False, prototype=False, held_out=False):
+def calibration_grid(rgb, screen_width, xs, ys):
+    def sample(x, y):
+        offset=3*(ys[y]*screen_width+xs[x])
+        return rgb[offset:offset+3]
+    expected=('000000','ffffff','ff0000','00ff00','0000ff','cc7f35','456789','808080')
+    bars=[sample(16+i*32,40) for i in range(8)]
+    colour_error=max(abs(x-y) for a,b in zip(bars,expected) for x,y in zip(a,bytes.fromhex(b)))
+    # A white column every 17 source pixels gives 30 transitions across 256 pixels.
+    transitions=[]
+    for y in (145,160,175):
+        white=[min(sample(x,y))>220 for x in range(256)]
+        transitions.append(sum(a!=b for a,b in zip(white,white[1:])))
+    horizontal=sum(min(sample(7,y))>220 for y in range(140,218))
+    return {'bars':[b.hex() for b in bars],'largestColorError':colour_error,
+            'verticalTransitions':transitions,'whiteRowsIn78':horizontal,
+            'valid':colour_error<=8 and 30 in transitions and 5<=horizontal<=7}
+
+
+def record_render(results, labels, directory, write_private, scenes_only=False, prototype=False, held_out=False, formal=False):
     ini = (f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\n'
            'autoframeskip 0\nframeskip 0\npause_brightness 1.0\n')
     # A missing override exercises the installed candidate's packaged default.
     modes = {'baseline':'none', 'gpu-full':'gpu-full', 'native':'native-tv',
              'candidate':None, 'low-buffer':'surface-tv'}
+    if formal:
+        modes = {'candidate':None}
     if prototype:
         modes = {'battle':None, 'explosions':None}
     def select(mode, scale):
@@ -382,6 +411,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         def read():
             nonlocal last_launch
             stamp = private('cat','files/tv-fixed',check=False).decode().strip()
+            if stamp.startswith('ERROR '): raise RuntimeError(stamp)
             if re.fullmatch(r'\d+,1,[a-f0-9]{8}',stamp):
                 return stamp
             # The API 34 launcher can asynchronously open its first-run store
@@ -459,19 +489,22 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
     if scenes_only:
         cases = [('firing',0,0,0),('blast',0,0,0)]
     if held_out:
-        cases = [('moving-626',0,0,0),('moving-633',0,0,0),('moving-648',0,0,0),('blast-695',0,0,0),('calibration',0,0,0)]
+        cases = [('moving-626',0,0,0),('moving-633',0,0,0),('moving-648',0,0,0),('calibration',0,0,0),('blast-700',0,0,0)]
     visual = {}
     small_visual = {}
     try:
         for case,aspect,picture,wallpaper in cases:
             pair = {}
-            for name,scale in [('baseline','none'),('repeat','none'),('candidate',None),('low-buffer','surface-tv')]:
+            outputs = [('baseline','none'),('repeat','none'),('candidate',None)]
+            if not (held_out or formal):
+                outputs.append(('low-buffer','surface-tv'))
+            for name,scale in outputs:
                 stop()
                 set_display((f'<map><int name="mode" value="{aspect}"/><int name="picture" value="{picture}"/>'
                              f'<int name="wallpaper" value="{wallpaper}"/></map>').encode())
                 select(name, scale)
-                tick = {'firing':621,'blast':696,'moving-626':626,'moving-633':633,'moving-648':648,'blast-695':695,'calibration':626}.get(case,705)
-                write_private('tv-observer.lua',render_fixture(labels,directory,tick,True,("blast" if case=="blast-695" else "motion" if held_out else case) if scenes_only else None))
+                tick = {'firing':621,'blast':696,'moving-626':626,'moving-633':633,'moving-648':648,'blast-700':700,'calibration':626}.get(case,705)
+                write_private('tv-observer.lua',render_fixture(labels,directory,tick,True,("blast" if case=="blast-700" else "motion" if held_out else case) if scenes_only else None))
                 stages = held_out and (name in ('baseline','candidate','repeat') or case=='calibration')
                 if stages:
                     write_private('tv-capture','P' if case=='calibration' else 'G')
@@ -509,12 +542,18 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
             pixels = [3*(y*w+x) for y in ys for x in xs]
             noise = compare_raster(base,repeat,w,h,width,height)
             for mode,output in [('candidate',visual),('low-buffer',small_visual)]:
+                if mode not in pair: continue
                 other = pair[mode][3]
                 mismatches = sum(base[i:i+3]!=other[i:i+3] for i in pixels)
                 excess = sum(any(abs(a-c)>abs(a-b) for a,b,c in zip(base[i:i+3],repeat[i:i+3],other[i:i+3]))
                              for i in range(0,len(base),3) if base[i:i+3]!=other[i:i+3])
                 output[case] = {'battle':stamp,'size':[w,h],'nativePixels':len(pixels),'differentCenters':mismatches,
                                 'aboveRepeatNoise':excess,'repeat':noise,**compare_raster(base,other,w,h,width,height)}
+                if case=='calibration':
+                    reference=calibration_grid(base,w,xs,ys)
+                    assert reference['valid'],reference
+                    output[case]['referenceCalibration']=reference
+                    output[case]['calibration']=calibration_grid(other,w,xs,ys)
                 dest = 'visual.json' if mode=='candidate' else 'low-buffer.json'
                 (results/dest).write_text(json.dumps(output,indent=2))
     finally:
@@ -523,7 +562,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         else: private('rm','-f',display)
 
 
-def run(apk, labels, results, suite, previous=None):
+def run(apk, labels, results, suite, previous=None, formal=False):
     results.mkdir(parents=True,exist_ok=True)
     adb('install','-r',str(previous or apk))
     directory = private('pwd').decode().strip()+'/files'
@@ -562,7 +601,7 @@ def run(apk, labels, results, suite, previous=None):
     try:
         if suite in ('render','scenes','prototype','held-out'):
             record_render(results,labels,directory,write_private,scenes_only=suite in ('scenes','held-out'),
-                          prototype=suite=='prototype',held_out=suite=='held-out')
+                          prototype=suite=='prototype',held_out=suite=='held-out',formal=formal)
             return
         write_private('tv-observer.lua',observer(labels,directory))
         ini=f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\nwavwrite {directory}/tv-audio.wav\n'
@@ -588,6 +627,8 @@ def run(apk, labels, results, suite, previous=None):
             open_system_menu(one)
             # A presented SDL frame does not guarantee the next menu has opened.
             # Wait for its cyan cursor before sending another directional edge.
+            check(lambda s:s['menu'],'system menu opened')
+            capture('system-menu')
             save_button=(.389,.164,.222,.061)
             load_button=(.389,.253,.222,.061)
             settings_button=(.262,.702,.221,.061)
@@ -808,6 +849,7 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('apk','labels','results'): parser.add_argument(name,type=Path)
     parser.add_argument('--suite',action='append',choices=('controls','timing','auto-frameskip','render','scenes','candidate-controls','prototype','held-out'))
+    parser.add_argument('--formal',action='store_true',help='measure the packaged candidate and capture its software reference')
     parser.add_argument('--record-candidate-failure',action='store_true',
                         help='record a failing optional candidate control run for the release selector')
     parser.add_argument('--previous',type=Path)
@@ -818,7 +860,7 @@ if __name__=='__main__':
         folder=args.results if suite=='controls' else args.results/suite
         try:
             app = args.stable if suite=='controls' and args.stable else args.apk
-            run(app,args.labels,folder,suite,args.previous if suite=='controls' else None)
+            run(app,args.labels,folder,suite,args.previous if suite=='controls' else None,formal=args.formal)
         except Exception as error:
             if args.record_candidate_failure and suite=='candidate-controls':
                 folder.mkdir(parents=True,exist_ok=True)

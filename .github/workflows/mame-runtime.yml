@@ -382,10 +382,10 @@ jobs:
         if: success() && matrix.abi == 'x86' && inputs.cartridge == 'game' && env.BATTLECITY_PROBE_PASSED == '1'
         timeout-minutes: 90
         run: |
-          bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result --suite render --suite scenes
+          bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result --formal --suite render --suite scenes
           mkdir -p build/tv-result/second
           sha256sum deliverable/tv-emulator{,-candidate}.apk build/shared/game.nes > build/tv-result/second/tested-sha256.txt
-          bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result/second --suite render --suite scenes
+          bash tests/nes/television-avd.sh deliverable/tv-emulator-candidate.apk build/shared/game.lbl build/tv-result/second --formal --suite render --suite scenes
       - name: Select the measured TV renderer
         if: success() && matrix.abi == 'x86' && inputs.cartridge == 'game'
         run: |

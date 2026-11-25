@@ -53,7 +53,7 @@ public:
                 int64_t began, int64_t before_present, bool presented, int vsync, int width, int height,
                 int64_t lock=0, int64_t copy=0, int64_t post=0, int64_t area=0, int64_t waiting=0,
                 uint64_t sent=0, uint64_t complete=0, uint64_t last_frame=0, int64_t latency=0,
-                bool drained=false)
+                bool drained=false, uint64_t id_errors=0, uint64_t gpu_frames=0)
     {
         const auto wall = now_ns();
         if (emulated < 10.0) return;
@@ -71,7 +71,7 @@ public:
                 std::fprintf(file, "{\"run\":%d,\"driver\":\"%s\",\"wall\":%.9f,\"emu\":%.9f,"
                     "\"frames\":%llu,\"attempts\":%u,\"presented\":%u,\"nativeSize\":%u,\"vsync\":%d,\"bufferWidth\":%d,\"bufferHeight\":%d,"
                     "\"samples\":%llu,\"sampleRate\":%u,\"drawMs\":%.3f,\"presentMs\":%.3f,"
-                    "\"coreSliceMs\":%.3f,\"threadCpuMs\":%.3f,\"lockMs\":%.3f,\"copyMs\":%.3f,\"postMs\":%.3f,\"writtenPixels\":%lld,\"waitMs\":%.3f,\"transactions\":%llu,\"completions\":%llu,\"pending\":%llu,\"lastCompletedFrame\":%llu,\"lastSubmittedFrame\":%llu,\"completionMs\":%.3f}\n",
+                    "\"coreSliceMs\":%.3f,\"threadCpuMs\":%.3f,\"lockMs\":%.3f,\"copyMs\":%.3f,\"postMs\":%.3f,\"writtenPixels\":%lld,\"waitMs\":%.3f,\"transactions\":%llu,\"completions\":%llu,\"pending\":%llu,\"lastCompletedFrame\":%llu,\"lastSubmittedFrame\":%llu,\"completionMs\":%.3f,\"frameIdErrors\":%llu,\"gpuFrames\":%llu}\n",
                     windows, driver, (end.wall-start.wall)/1e9, end.emulated-start.emulated,
                     static_cast<unsigned long long>(end.frame-start.frame), attempts, submissions, compact, vsync, width, height,
                     static_cast<unsigned long long>(end.pcm-start.pcm), pcm_rate.load(std::memory_order_relaxed),
@@ -79,11 +79,12 @@ public:
                     (end.cpu-start.cpu)/1e6, lock_ns/1e6, copy_ns/1e6, post_ns/1e6, static_cast<long long>(copied_area),wait_ns/1e6,
                     static_cast<unsigned long long>(sent-start_sent),static_cast<unsigned long long>(complete-start_complete),
                     static_cast<unsigned long long>(sent-complete),static_cast<unsigned long long>(last_frame),
-                    static_cast<unsigned long long>(frame),(latency-start_latency)/1e6);
+                    static_cast<unsigned long long>(frame),(latency-start_latency)/1e6,
+                    static_cast<unsigned long long>(id_errors-start_id_errors),static_cast<unsigned long long>(gpu_frames-start_gpu_frames));
                 std::fclose(file);
             }
         }
-        start=end; start_sent=sent; start_complete=complete; start_latency=latency; wait_ns=0;
+        start=end; start_gpu_frames=gpu_frames; start_id_errors=id_errors; start_sent=sent; start_complete=complete; start_latency=latency; wait_ns=0;
         attempts=submissions=compact=0;
         render_ns=present_ns=0;
         lock_ns=copy_ns=post_ns=copied_area=0;
@@ -101,7 +102,7 @@ private:
     std::string path;
     sample start{};
     int windows=0;
-    uint64_t start_sent=0, start_complete=0;
+    uint64_t start_sent=0, start_complete=0, start_id_errors=0, start_gpu_frames=0;
     int64_t start_latency=0, wait_ns=0;
     unsigned attempts=0, submissions=0, compact=0;
     int64_t render_ns=0, present_ns=0;

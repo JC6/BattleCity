@@ -7,8 +7,8 @@
 #include <cmath>
 #include <cstring>
 #include <vector>
-#include "tv-surface-queue.h"
 #include "tv-capture.h"
+#include "tv-surface-queue.h"
 
 class tv_native_window
 {
@@ -51,7 +51,7 @@ class tv_native_window
 		return screen;
 	}
 
-	ARect draw_changes(const render_primitive &game)
+	ARect draw_changes(const render_primitive &game, bool expand)
 	{
 		const int w = game.texture.width, h = game.texture.height;
 		if (!compact || source_w != w || source_h != h) {
@@ -78,10 +78,12 @@ class tv_native_window
 			const int top = std::lower_bound(ys.begin(),ys.end(),y)-ys.begin();
 			const int bottom = std::upper_bound(ys.begin()+top,ys.end(),y)-ys.begin();
 			if (right <= left || bottom <= top) continue;
-			auto *expanded = image.data()+top*width+left;
-			for (int x = left; x < right; ++x) expanded[x-left] = row[xs[x]];
-			for (int dy = top+1; dy < bottom; ++dy)
-				std::memcpy(image.data()+dy*width+left,expanded,(right-left)*sizeof(*expanded));
+			if (expand) {
+				auto *expanded = image.data()+top*width+left;
+				for (int x = left; x < right; ++x) expanded[x-left] = row[xs[x]];
+				for (int dy = top+1; dy < bottom; ++dy)
+					std::memcpy(image.data()+dy*width+left,expanded,(right-left)*sizeof(*expanded));
+			}
 			dirty.left = std::min(dirty.left,left); dirty.right = std::max(dirty.right,right);
 			dirty.top = std::min(dirty.top,top); dirty.bottom = std::max(dirty.bottom,bottom);
 		}
@@ -154,7 +156,8 @@ public:
 		if (capture) capture->source(list,saved);
 		const auto *game = (picture || menu) ? nullptr : screen_quad(list);
 		ARect dirty{0,0,w,h};
-		if (game) dirty = draw_changes(*game);
+		const bool gpu_game = game && layered && queue.gpu_available();
+		if (game) dirty = draw_changes(*game,!gpu_game);
 		else {
 			compact = false;
 			raster::draw_primitives<true>(list,image.data(),w,h,w,picture);
@@ -163,11 +166,17 @@ public:
 		list.release_lock();
 		if (fresh) dirty = {0,0,w,h};
 		if (layered) {
-			expand_rgba(dirty);
-			if (capture) capture->expanded(rgba.data(),w,h,w*4,SDL_PIXELFORMAT_RGBA32);
+			if (!gpu_game) expand_rgba(dirty);
 			const auto drawn = now();
 			tv_surface_queue::timing txn{};
-			const bool ok = queue.present(rgba,dirty,frame,drain,txn);
+			const auto restore_cpu_image = [&] {
+				for (int y=0; y<h; ++y) {
+					auto *row = previous.data()+size_t(ys[y])*source_w;
+					for (int x=0; x<w; ++x) image[size_t(y)*w+x]=row[xs[x]];
+				}
+				expand_rgba({0,0,w,h});
+			};
+			const bool ok = queue.present(rgba,compact ? &previous : nullptr,dirty,frame,drain,txn,capture,restore_cpu_image);
 			if (meter) *meter = {txn,drawn-begin,txn.lock,txn.copy,txn.post,txn.pixels,compact};
 			fresh = !ok;
 			return ok;

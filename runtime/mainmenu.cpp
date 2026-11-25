@@ -84,16 +84,19 @@ void brackets(render_container &c, float x, float y, float w, float h)
     // Each corner has a stepped outer stroke and a parallel inner highlight.
     for (int right=0; right<2; ++right) for (int bottom=0; bottom<2; ++bottom) {
         float const sx=right ? -1.f : 1.f, sy=bottom ? -1.f : 1.f;
-        float const ox=right ? x+w+.014f : x-.014f, oy=bottom ? y+h+.020f : y-.020f;
+        float const ox=right ? x+w+.010f : x-.010f, oy=bottom ? y+h+.018f : y-.018f;
         auto stroke=[&](int u,int v,int width,int height,rgb_t color) {
             float const x1=ox+sx*u/1280.f, x2=x1+sx*width/1280.f;
             float const y1=oy+sy*v/720.f, y2=y1+sy*height/720.f;
             box(c,std::min(x1,x2),std::min(y1,y2),std::abs(x2-x1),std::abs(y2-y1),color);
         };
-        stroke(1,0,17,6,blue); stroke(0,2,6,17,blue);
-        stroke(6,6,9,4,blue); stroke(6,6,4,9,blue);
-        stroke(3,2,14,2,cyan); stroke(2,3,2,14,cyan);
-        stroke(7,7,7,2,cyan); stroke(7,7,2,7,cyan);
+        stroke(4,0,18,9,blue); stroke(0,4,9,18,blue);
+        stroke(5,5,9,9,blue);
+        stroke(5,0,16,3,cyan); stroke(4,2,3,5,cyan);
+        stroke(0,5,7,3,cyan); stroke(0,6,3,15,cyan);
+        stroke(1,19,6,3,cyan); stroke(5,11,3,10,cyan);
+        stroke(5,10,8,3,cyan); stroke(10,6,3,6,cyan);
+        stroke(10,5,11,3,cyan); stroke(18,1,3,6,cyan);
     }
 }
 
@@ -534,14 +537,15 @@ private:
         if (!wallpaper) {
             int picture=battlecity_picture(-1);
             for (int i=0;i<2;++i) {
-                float y=.195f+.060f*i;
+                float y=.201f+.058f*i;
                 std::string name=i ? "Scan Lines" : "Anti-Aliasing";
-                rounded(container(),.626f,y-.006f,.026f,.044f,.013f,.022f,navy);
+                rounded(container(),.627f,y-.010f,.027f,.048f,.0135f,.024f,navy);
                 auto &c=container();
-                label(ui(),target(),"S",.626f,y-.003f,.012f,.032f,rgb_t(170,50,56));
-                box(c,.638f,y+.001f,.003f,.027f,rgb_t(164,128,28));
+                label(ui(),target(),"S",.628f,y-.003f,.014f,.034f,rgb_t(170,50,56));
+                box(c,.640f,y+.001f,.002f,.027f,rgb_t(164,128,28));
+                rounded(c,.638f,y+.024f,.006f,.005f,.003f,.0025f,rgb_t(164,128,28));
                 for (int band=0;band<6;++band)
-                    box(c,.641f,y+.001f+band*.002f,.009f*(6-band)/6,.002f,rgb_t(164,128,28));
+                    box(c,.642f,y+.001f+band*.002f,.008f*(6-band)/6,.002f,rgb_t(164,128,28));
                 for (auto [dx,dy]:{std::pair{0.f,-.010f},{-.008f,0.f},{.008f,0.f},{0.f,.010f}}) {
                     bool active=dx==0 && dy==(i ? .010f : -.010f);
                     rounded(c,.658f+dx,y+.009f+dy,.009f,.015f,.0045f,.0075f,rgb_t::white());
