@@ -1,34 +1,32 @@
-// Indexed artwork on the 1280 by 720 menu grid.
+// Empty save-slot emblem, on the 1280 x 720 menu grid.
 #pragma once
 namespace slot_emblem {
-constexpr char keys[] = " .:0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij";
-constexpr uint32_t colors[] = {
-    0x00000000, 0xff250c0b, 0xff2e090b, 0xff300e0f, 0xffaaaca5, 0xff77706d, 0xff6e6e67, 0xff6b6d6d, 0xff736c6e, 0xffb6aca6, 0xffb9afab, 0xff968683, 0xffa3968e, 0xff757072, 0xff918680, 0xff160305, 0xff290b0b, 0xffa49d98, 0xffad9f9a, 0xff4a3a37, 0xff54443f, 0xff5b504c, 0xff71615e, 0xffb3a49c, 0xffb7aaa2, 0xffbe9d9c, 0xffd39e9d, 0xff712529, 0xff500608, 0xff5f070c, 0xffad5a5c, 0xffba787c, 0xff641a20, 0xffb68988, 0xffd3898d, 0xff8b5959, 0xffa2565a, 0xff730409, 0xff711017, 0xff906667, 0xff947374, 0xff7c4746, 0xff8a4648, 0xff603639, 0xff714544, 0xff571015, 0xff552321, 0xff79262a, 0xff7e262b
-};
+constexpr char keys[] = " .:rx+oO#";
+constexpr uint32_t colors[] = {0x00000000, 0xff2b0b09, 0xff61080e, 0xff702528, 0xff875152, 0xff886c6b, 0xffb78988, 0xffbaa6a3, 0xffcf9797};
 constexpr char rows[][131] = {
-    " CI3443554354333A445554455555J4455553344445555453344545544555544352444A542J54444543455445555445255554444444455554A44554242245I    ",
-    "DWRiiOOOijiOijiijjOOOOjjOZOijjOOOiZiiiOOTTOOjjOOOOiiOijjiijjjjOOOOjjiOOOOOZZiiZZOOOijjOOOOOOiiOOZZZZZOOOOOiijjOZiiOOOijjiiOOjRW:  ",
-    "hagQTOOTQQgTZQPQQZOOQQQQTZOTQQPTiZQQQTZOOOOOTQQTOOOOZQQQQQQQQQTOOTQQQOTTQQZZQQQQOOTPTiOTTTTTQTZiOOOOOTgQZTQQQQZOQTZOZPQQZiOTPgah  ",
-    "TWZYeN6BZYTVVTYYgSMMRQYYcNMbZQeML1dQcMMMMMNNjQaMNMMMMbjYYYYYYYcNMbZQfNLFjZMMZYYZMMjTbMNMNNNVTiMMNNNNNNjjNUZYQZMMTjK6VTQjELNcYYXT  ",
-    "TWZYeN67RYTNNTYYcNbMVOYYcNMMdQWNLLjZMNWeffffZdNMfeeeUNRQYYYYYYcNMMjQaNLKjZMMZYYZMMjiNMfTTefTQjMMfeeeefTdNUZYQZMMTcK7NdQd6KNcYYXT  ",
-    "TXZYeNFFNfhMNhYY8KhWNWQQfNE1SgbM97cTKFZQYYYYQdMbYYYQaMRPYYZZZYWN97agMME7iTKFZQZZE6fO7KWWWWcfgOKKWfddXcQjMUZZQjMMZdL9MUgSL9NfQYWT  ",
-    "TXZYeN8IMMWUNhYjK8hfMMZQfNABNdMbA7dTKKZZZZYYQdMbYYYYaMXPYYZZZYWN29VcMb87iTKFZQZZ96fg29UUUMNNcTKLMUMVNXQdMUZZQjMMZd68bMcU8ANfQYWT  ",
-    "TXZYeMUgcN11UhPS6LMMLLdPfNaW6ENcbMcT11TPPPPPPd6BPQgQ37RQYYYYZQcNWW1EMebMcTFETPPT9LdPQQPPPg96dhKFgPPPgPPdK8gPPTKLTcMbfNE1WaNfQQWT  ",
-    "TXZYeMUgPa11MhONEIeeJ6VgfNbhL7MhbMcgF6SWXXXXTcLFXXXR97WQZZZZZQWNae77UhUNiTKLRXdRLLiTXXWWWWF6fTLLWWXXXXZi6LRXXS61TcMbhM71eaNWjZWT  ",
-    "TXZYOSSTYZaVSZdVRQYYTSVjcVRQSVRQXVdQdSVSVVVVjQXVSSUUVSZYYYYYYYdVdTSVXPSSjQdSUSSUSWQjSSSSSUSaTZSSUSUSUSjQWSUSUSSdQjSaPXUagdVdddah  ",
-    "TXZYgTTQYYPggQggQQYYQQTQPgZQPPQQQgQQPPggggggQQPQPgggPPYYYYYYYYQgTgghTQgQTTghhhhThhZZTThhhhhgZZhhhhhhhhZZghhhhhTgZZTTTZhhTTTTTda:  ",
-    "TXZYYYTiiijjOOOOijOOOOOiOOOOOOOiOOOciiOOOOOOiiOOiiOOjjiiOOOiiTZZYYYYZZQjaabaaaaaaaabbbaabbaabbaabbaabbbbbbbbaabbaabbbbbbaabbbW0   ",
-    "TXZYZRVNNVVNNNVVVVVNNNNVVVNVVNNVNNVVVVVVNVNNNVVVVVVVVVNVVNNNVSjYYZYYYZjShP.000..::DDDD::::::..DD..DDDD..DD..DD::::DD::DDDDDDDC    ",
-    "TXZYfN66UeTWK6feeeebL6aeeeUbhb11efbeTTeaahB7UeaWheeeH8UeeeJK11VgYZYYZQaf                                                          ",
-    "TXZYaN19eeahIEhhUMfh82haUffb:W71geMUegSMa:B7U0WcPSMM9FehUaG811NfYYZZQda:                                                          ",
-    "TXZQ57NegVNWPSijNUfPSPeM11MbQdbaTdMMdTMMWPWNXPWdgX2286chbbbM17NeYZZYTSG                                                           ",
-    "TXZQ27NfgdWfPSiZWefXSPeN11MbQjWfTdMMdTMMSTPcgTSdgdJIB6NafWeeE7NeYZZYXd                                                            ",
-    "TXYYaNMegWaegSOTdPeUMfhSMWWbPX7KTcMMcgE67BiQhSNfgULKKKWWMMdP96NeYZQjbP                                                            ",
-    "TXYYWMNfhVNagSffNdPfMMdhfhbSPX7FTdbeTTHJ67SiSNNfgcIHG8bheeOWL7UhYZQReC                                                            ",
-    "gaZYTSNMMNNMUNMMNMUUMNNUUVNMUMNNUMMUUUUUNNNMNNMMUUUUUNNMUUUNNMdQZQcaC                                                             ",
-    ":WRZgTfcWcffWcWcccccffccddfcccffccfcddddffccffccccccdccdddccfeTZZjSg                                                              ",
-    " 0dSRRRRXRRXXRRXRRRRXXRRRRXXRRRXRRRRXXXXRXRRRRRRRRRRRXXRRXRRRRRRSXhC                                                              ",
-    "  :PPPPPPPPPPPPPQPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPC                                                               ",
+    "  r++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++x.   ",
+    ".x+rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrx+.  ",
+    ".+r::rr::::rr:::::rr:::::rrr:::rrr::::rrrrrr::::rrrrr::::::::::rrr:::rrr::rr::::rr:::rrrrrrr::rrrrrrrr::rr::::rr::rrr:::rrrr::xr  ",
+    ".x::roOor::o#r:::+ooo:::r##or:roOOx:xooo####x:xoo###oor:::::::r##or:r#OOx:o#r:::o#x:+#######r:o#######xr#or::roOrroO#r:roO#+::xr  ",
+    ".x::roOOo::o#r::r#oo#r::r##Ox:x#OOx:o#+rrrrr:r#oxrrr+oo:::::::r###x:x#OOx:oor:::o#xr##xrrrrr:rooxrrrrr:r##r::roorroO#+:rOO#+::xr  ",
+    ".x::roOO++ro#r::+Orxo+::r#OOo:+ooOx:oOr::::::roor:::xoo:::::::r#OOo:oOoOx:oOr:::oOxr#O+xxxxx:roO+xxxxr:r#or::ro#rroOOor+Ooo+::xr  ",
+    ".x::rooxooxo#r:roorro#r:ro++#xoo+Ox:oOr::::::roor:::xoo:::::::ro++#xoo+Ox:oOr:::oOx:+ooo####x:oOoo#o#+:r#or::roOrroo++xoo+o+::xr  ",
+    ".x::ro#rroOOOr:xOO##OO+:ro+xOOO+xox:oOr::::::rOo::::xOo:::::::ro+xOOOx+ox:oOr:::oOx:::::::+Ox:oOr::::::roor:::oOrr#ox#OO+xo+::xr  ",
+    ".x::r##r:xOOorr#OxrrxO#rrooroOor+ox:oOoxxxxxrrOO+xxxoO+:::::::xo+rOOor+ox:oOoxx+OOx:xxxxxxoOx:oO+xxxxxrroO+xx+OOrr#oroOOxxo+rrxr  ",
+    ".x::roor::xoorro+::::+oxroo:xoo:xox:xooooooox:xooooooor:::::::rox:xo+:xox:xoooooo+rrooooooo+r:+ooooooox:xoooooox:ro+:xoo:xoxrrxr  ",
+    ".x:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::rrrrrrr:rrrrrrrr:rrrrrrrrrrrr:rrrrrr:rrrrrrrrrrrrrx+.  ",
+    ".x::::rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr:::::::::r++++++++++++++++++++++++++++++++++++++++++++++++++++++.   ",
+    ".x:::x########################################################x:::::::r+r.....................................................    ",
+    ".+::r#OOoxrxoOxrrrr+OO+rrr+orxOOxr+xrrrx+r+Oorx+rrrrr+oxrrxOOO#r::::::xx                                                          ",
+    ".+::x#Oorr+rxor:ooxr++rxoxr+.xOOrroox:+o+.+Oo.xxr+ooooxro+r+OO#x:::::r+.                                                          ",
+    ".+::xOOx:o#o:xxr##x:+rr#OOOorr++rro#x:o#+:x#o:xx:x++oO+rx++oOO#x:::::+r                                                           ",
+    ".+::xOOx:xxx:xx:xxrxorr#OOoo:rxxrr##x:o#or:r::+x:rxx+O#+xxrroO#x::::xx.                                                           ",
+    ".x::xOOx:x+x:xx:x:roo+r+++x+:xOOrroox:oOOor::+#+:+OOOO+x#++:+O#x:::r+:                                                            ",
+    ".x::r##x:o#o:+xr#x:ro#+rxrxorxOOrr+xr:rxOOor+##+:rxrr+orrxrxoOor:::xx.                                                            ",
+    ".+r::+##o#ooo##o##oo#oooo###o#ooo##ooooo#O###oo#ooooo###ooo###x:::r+.                                                             ",
+    ".xxr:rrxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxr:::r+r                                                              ",
+    " .x++xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx+++r                                                               ",
+    "  ..:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::..                                                               ",
     "                                                                                                                                  ",
 };
 }
