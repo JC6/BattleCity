@@ -16,7 +16,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tests/nes'))
 from native_window_report import picture, rows, table
 from package import verify
-from switch_menu_acceptance import FIXTURE, measure
+from switch_menu_acceptance import FIXTURE, FOCUS_FIXTURE, control_samples, measure
 from tv_release_gate import decision
 from tv_swap_report import sections
 
@@ -109,7 +109,15 @@ def package(run,previous,out,identity,arm_dir=None,signer=None,reference_arm=Non
     audio=rows(study/'audap-audio.csv')[0]
     measured=measure(run,previous,out/'menu-sizes.csv')
     failed=[r for r in measured if r['role']!='calibration' and not r['passed']]
-    swap=sections(run)
+    floor=(tv/'floor/clock.json').is_file()
+    if floor:
+        from tv_floor_report import sections as floor_sections
+        swap=floor_sections(run)
+        controls=control_samples(run,out/'menu-controls.csv')
+        swap.append('<h2>菜单相邻焦点回归</h2>'+table(('平台','屏高','画面','超过重复波动的色值'),
+                    [[r['platform'],r['height'],r['scene'],r['channels_above_noise']] for r in controls]))
+    else:
+        swap=sections(run)
     html=['<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Battle City · Switch 复刻验收</title>',
           '<style>body{font:16px/1.55 system-ui;max-width:1180px;margin:auto;padding:28px}table{border-collapse:collapse;display:block;overflow:auto}td,th{border:1px solid #adb4ba;padding:4px 8px}img{max-width:100%;height:auto}figure{display:inline-block;width:42%;margin:1em}</style>',
           '<h1>Battle City · Web 与 Android TV 验收</h1>',
@@ -137,7 +145,7 @@ def package(run,previous,out,identity,arm_dir=None,signer=None,reference_arm=Non
     report.write_text('\n'.join(html))
     archive=out/'Switch-TV-Measurements.zip'
     with ZipFile(archive,'w',ZIP_DEFLATED,compresslevel=6) as z:
-        for f in (out/'menu-sizes.csv',run/'presentation-frames.csv',run/'presentation-cost.csv',FIXTURE):
+        for f in (out/'menu-sizes.csv',run/'presentation-frames.csv',run/'presentation-cost.csv',FIXTURE,*([FOCUS_FIXTURE,out/'menu-controls.csv'] if floor else [])):
             add_evidence(z,f.name,source=f)
         for folder in [tv,run/'web-clock-and-endings',run/'campaign-loop',*sorted(run.glob('stage-replay-*')),*sorted(run.glob('upgrade-*'))]:
             for f in sorted(folder.rglob('*')):
@@ -156,6 +164,8 @@ def package(run,previous,out,identity,arm_dir=None,signer=None,reference_arm=Non
         try:os.link(source,dest)
         except OSError:shutil.copyfile(source,dest)
     (out/'SHA256SUMS').write_text(''.join(f'{sha(f)}  {f.name}\n' for f in sorted([out/n for n in files]+[report,archive])))
+    if floor and not all(r['passed'] for r in controls):
+        raise SystemExit('Menu control regression; see menu-controls.csv')
     if failed:
         raise SystemExit('Reserved menu acceptance failed: '+str([(r['platform'],r['height'],r['region'],r['seconds']) for r in failed]))
 

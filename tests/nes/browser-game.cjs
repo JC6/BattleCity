@@ -463,7 +463,18 @@ async function verify(engine, suite) {
         assert.ok(Math.abs(menuBounds.width / menuBounds.height - 16 / 9) < .01);
         await capture(page, 'system-menu');
         await captureMenuSizes(page,'system-menu');
+        if (process.env.BATTLECITY_CAPTURE_DIR) {
+            await menu(page,['Home','Enter']);
+            await reachFocus(page,[.125,.366,.166,.285]);
+            await captureMenuSizes(page,'slot-focus');
+            await menu(page,['Enter']);
+            await captureMenuSizes(page,'confirm-focus');
+            await menu(page,['Backspace','Backspace']);
+            await reachFocus(page,[.389,.253,.222,.061],'ArrowDown');
+            await captureMenuSizes(page,'load-focus');
+        }
         await reachFocus(page,[.262,.702,.221,.061],'ArrowDown');
+        await captureMenuSizes(page,'settings-focus');
         await menu(page,['Enter']);
         await reachFocus(page,[.106,.350,.180,.215]);
         await menu(page,['Enter']);

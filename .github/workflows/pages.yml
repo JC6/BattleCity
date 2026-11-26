@@ -25,10 +25,10 @@ jobs:
       actions: read
     uses: ./.github/workflows/mame-runtime.yml
     with:
-      previous_tv_run: ${{ inputs.previous_tv_run || (startsWith(github.ref, 'refs/heads/validation/switch-parity-swap-') && '45761439730') || (startsWith(github.ref, 'refs/heads/validation/switch-parity-damage-') && '45744441858') || (startsWith(github.ref, 'refs/heads/validation/switch-parity-buffer-') && '45715102305') || (startsWith(github.ref, 'refs/heads/validation/switch-parity-sampling-') && '45649698219') || (startsWith(github.ref, 'refs/heads/validation/switch-parity-egl-') && '45560615317') || (startsWith(github.ref, 'refs/heads/validation/switch-parity-partial-') && '45537473297') || (startsWith(github.ref, 'refs/heads/validation/switch-parity-compositor-') && '45426153747') || (startsWith(github.ref, 'refs/heads/validation/switch-parity-native-window-20261124') && '45394628713') || '' }}
+      previous_tv_run: ${{ inputs.previous_tv_run || (startsWith(github.ref, 'refs/heads/validation/switch-parity-floor-') && '45840031317') || (startsWith(github.ref, 'refs/heads/validation/switch-parity-swap-') && '45761439730') || (startsWith(github.ref, 'refs/heads/validation/switch-parity-damage-') && '45744441858') || (startsWith(github.ref, 'refs/heads/validation/switch-parity-buffer-') && '45715102305') || (startsWith(github.ref, 'refs/heads/validation/switch-parity-sampling-') && '45649698219') || (startsWith(github.ref, 'refs/heads/validation/switch-parity-egl-') && '45560615317') || (startsWith(github.ref, 'refs/heads/validation/switch-parity-partial-') && '45537473297') || (startsWith(github.ref, 'refs/heads/validation/switch-parity-compositor-') && '45426153747') || (startsWith(github.ref, 'refs/heads/validation/switch-parity-native-window-20261124') && '45394628713') || '' }}
 
   acceptance:
-    if: startsWith(github.ref, 'refs/heads/validation/switch-parity-swap-') || inputs.previous_tv_run != ''
+    if: startsWith(github.ref, 'refs/heads/validation/switch-parity-floor-') || startsWith(github.ref, 'refs/heads/validation/switch-parity-swap-') || inputs.previous_tv_run != ''
     needs: runtime
     permissions:
       contents: read
@@ -36,7 +36,7 @@ jobs:
     uses: ./.github/workflows/switch-acceptance.yml
     with:
       tested: ${{ format('{0}', github.run_id) }}
-      previous: ${{ inputs.previous_tv_run || '45761439730' }}
+      previous: ${{ inputs.previous_tv_run || (startsWith(github.ref, 'refs/heads/validation/switch-parity-floor-') && '45840031317') || '45761439730' }}
 
   build:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'

@@ -84,6 +84,10 @@ jobs:
           server_pid=$!
           trap 'kill "$server_pid"' EXIT
           curl --retry 8 --retry-connrefused -fsS "$BATTLECITY_UPGRADE_URL" -o /dev/null
+          if [[ "$GITHUB_REF_NAME" == validation/switch-parity-floor-* && "$ENGINE" == webkit ]]; then
+            mkdir -p observations/screens
+            export BATTLECITY_CAPTURE_DIR="$PWD/observations/screens"
+          fi
           node tests/nes/browser-game.cjs http://127.0.0.1:8765/previous/ cartridge/game.lbl "$ENGINE" controls 2>&1 | tee "observations/upgrade-$ENGINE.log"
       - uses: actions/upload-artifact@v4
         if: always()

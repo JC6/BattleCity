@@ -93,6 +93,24 @@ def preliminary(root,renderer):
     assert controls in ('passed','failed')
     sampling=renderer=='egl-tv' and 'prepared-battle' in json.loads((root/'prototype/clock.json').read_text())['windows']
     measured={}
+    if (root/'floor/clock.json').is_file():
+        from tv_floor_report import evaluate
+        floor=evaluate(root/'floor')
+        measured.update(floorPixelsPassed=floor['matched'],floorReceiptsPassed=floor['receipts'],
+                        floorSpeedPassed=floor['passed'])
+        if floor['passed']:
+            folder=root/'direct-check'
+            direct=json.loads((folder/'clock.json').read_text())['windows']
+            expected={f'{scene}-uncached-{n}'+('-explosions' if scene=='explosions' else '')
+                      for scene in ('battle','explosions') for n in (1,2,3)}
+            assert set(direct)==expected
+            from tv_buffer_report import frame_boundaries
+            for name,windows in direct.items():
+                assert len(windows)==1 and 'cacheWindow=0' in (folder/(name+'-window.txt')).read_text()
+                assert len(frame_boundaries(folder,name,windows[0]))==windows[0]['frames']
+            measured['directGamePassed']=all(qualifying(w[0],DRIVERS[renderer]) for w in direct.values())
+            # Formal boots may only promote the exact path exercised by the direct-game windows.
+            measured['packagedDirectPassed']='cacheWindow=0' in (root/'prototype/battle-window.txt').read_text()
     cost=root/'presentation/clock.json'
     if cost.is_file():
         windows=json.loads(cost.read_text())['windows']

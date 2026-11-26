@@ -1,0 +1,188 @@
+[
+  {
+    "region": "save-focus",
+    "scene": "system-menu",
+    "role": "calibration",
+    "video": "S26lUv598_o",
+    "seconds": 656.541,
+    "raw_sha256": "e71e0b8bb3b405fae13a71de2c7842496be57df66c7ce4b8814a61cdbc6f0e8d",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        97.5,
+        1180.5,
+        38.5,
+        635.0
+      ],
+      "scaled_size": [
+        1279,
+        719
+      ],
+      "offset": [
+        1,
+        0
+      ]
+    },
+    "mask": "78daeddcc10e8230144541fcff9f76678014bd0f1e10e2cc4a13dd1cdbda45e93401000000000ff65a51e4681845fb8b6ebffbf7a2fbc228da19e6339ccdfaafb37e9e2af9ce72c99072b08ece5a958b2a391ea471d1d122ccee4c8a9e52d46caffcdd287a5351d1b2991f17d52bdcef2baaa8a28a2aaae8038bda8a5637a58a5e5a7412b49854060000000000000000ca9c7b6a6ee524d909453d2ad25ed489dcb86870245751456f9df48a2aaaa8a29b9fb2830a774e9e066f0daae8099b7bb76a346e45972f14bdb0a8fb9e7ee6a95ca1a5685e34afb3be6f4fd1718cc26073136154a630d6d6bf849247cbb8d1b5bb8ca261194100fabd0121f302c5"
+  },
+  {
+    "region": "save-focus",
+    "scene": "system-menu",
+    "role": "calibration",
+    "video": "S26lUv598_o",
+    "seconds": 656.916,
+    "raw_sha256": "2c74497cb238f3514db8db6e26ee4c119c37d25718bdec91d263d76e26e97d01",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "scaled_size": [
+        1280,
+        720
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "mask": "78daeddc310ec320104541fbfe974e1725c889ff0610429957d9edc80b1416c72149922449922469dbce36249d3444e788bebc91bcc428897e7c235aa5797ecda6fe6eeadb6126da2d9af134fe44efbfd1335c28400e72225adda21251c35edbc1892e13c5966ce1a928b17431254a942851a244f7137572aa9ea08812dd5a549224499224499224499224496af3e3c9682da2443710f5476e45f4204a942851a25da04457893a41c527a78228d20094e81ad1f707f541119d20ea76a260d8f30b9f88c6a044a7891696080bea85cd2f344447d3b8d175340dd1193438bfdbdcdf9727e96f7a00aa1c0349"
+  },
+  {
+    "region": "save-focus",
+    "scene": "system-menu",
+    "role": "validation",
+    "video": "S26lUv598_o",
+    "seconds": 657.104,
+    "raw_sha256": "59875162f53ae8de51bd810c56ed04de33b087692e9edbc5303b4b11c303430c",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "scaled_size": [
+        1280,
+        720
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "mask": "78daeddcc10e82301040c1edffffb4211e1028b2ad1530ce3b690297d116484a23244992244992a4f32aafe1d8a549e394bed3fe51b4749d447490e8fc85635d348bb3d49f4ee3f881e8e260a33e217a04546a71247a57517eef995617f1c44fa00454103d57d4a0ef9b50890e264dfd97d5fc3044f414d1204af4474461359112254a9428d1ef894a9224499224499224499224499b2c3b19cc65214f076866213e2ba27717454a942851ed7105d16b44a1e6477cfee5656829d1e379d4ebb6cda044878a1e8ffaf9786c4717a56987b1483e859a5033d367cbfd28d1c4f459885e20babdc9275ad1697b185a1d47b476417a7e4eef256adfbc86511f4489de9b1488a478005ab5040e"
+  },
+  {
+    "region": "save-focus",
+    "scene": "system-menu",
+    "role": "validation",
+    "video": "S26lUv598_o",
+    "seconds": 657.291,
+    "raw_sha256": "66a059b98c090a0ef16636a7e820ced49ebeafc338a2c6eeeed1a3dd78d093ca",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "scaled_size": [
+        1280,
+        720
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "mask": "78daeddcc10e82301040c1e5ff7fdaa8186d90760b0d489c771192f632a1ad074284244992244992745c53118f559a69db2ca4bb6d880eb6798e9cde371cbf8ba6710afdfb348e3b448bc1567d42b4054494e8a544f9d5991ebf9114059a7d568912bdc4864a743069639843a91b952851a2ff241a3951586952a227885af4dd1b29d123458368bf2807499224499224499224499224f5e5bd93c15cde24db005af5224af422a248891225aa35ae207a8e28d4fc8a4f8b221d256ae57781121d7fccb745cb0b550ea504d527bc0db579d2f4fc1f25da06257a8a682cbf074974a9335f673feef09a43b47a20cda2fd4f36d1fa0a264af4c74981488a1b9a3a03f7"
+  },
+  {
+    "region": "save-focus",
+    "scene": "system-menu",
+    "role": "calibration",
+    "video": "dv9axuULtdA",
+    "seconds": 1115.704,
+    "raw_sha256": "9dee5893a523bd8ec48224674d08060b109da661569879afd8f46789c4c6cfe1",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        94.5,
+        1185.5,
+        36.5,
+        636.5
+      ],
+      "scaled_size": [
+        1269,
+        715
+      ],
+      "offset": [
+        5,
+        2
+      ]
+    },
+    "mask": "78daeddc410ec220144551d8ffa69d11aab17de8afd578cecc84d10d509a545a0300000080cfe95b82bc1ba67749b3328a5e58f4e9af7f2ffa5a1845a3326198319dadfafd553fa552b4661f6d619d3148cfa2493a46485994699e9fc2454b39886fb92f3dc08339aae80945350bf7d278d5eb5558d41c55545145f164fab2a28ea26beff88ad61ff38f878995275501000000000000008065be7baa6ea5e809457d3f9a17f58d7379d1a6a8a28a2aaaa8a2bf59d499343d8bfa377869d0b4a849baf0ba94151d9b047b5be836d8e150458b32b9ef29d93e176f2752b4b468bbff6f9ea20f69e64bc656b75d1b6a4d19f78f569751b4bc8ca0ca005ce706a7230322"
+  },
+  {
+    "region": "save-focus",
+    "scene": "system-menu",
+    "role": "validation",
+    "video": "dv9axuULtdA",
+    "seconds": 1116.079,
+    "raw_sha256": "9e8b168c591aa456b648e432e7239fd76e053ea5907fd9f0561cb99289264ab4",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        94.5,
+        1185.5,
+        36.5,
+        636.5
+      ],
+      "scaled_size": [
+        1269,
+        715
+      ],
+      "offset": [
+        5,
+        2
+      ]
+    },
+    "mask": "78daeddcb116c220104541f6ff7fdac6caea2dac31eadc86069a490a4e4e602d499224499224e9b2ea2522a732857456a68812bdb56815d1086765385544bb3c44a7456bfa21206dac2078ce0474839428d15f11c516ef4ca389cc72d468162fa244898ae865a444897eb5e802da26e5204992244992244992244992a45efe7b9ac6224a94285111254a543ba24c63cfc6d9656813504e8313fd3c6822fa1cc18d897a515b464d51aa673c44c77988be4187e8340d51a2771775eb704eb3b394e2d60712497fd403cb060480"
+  }
+]

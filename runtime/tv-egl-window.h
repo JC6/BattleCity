@@ -67,6 +67,8 @@ class tv_egl_window {
     std::string fixed_marker;
     bool prepared=false, measure_producer=false, producer_complete=false;
     FILE *boundaries=nullptr;
+    enum class background { game, cached, clear };
+    background producer_background=background::game;
     std::string producer_path;
     GLint viewport=-1;
     int texture_w=0, texture_h=0;
@@ -172,6 +174,11 @@ public:
             cache_window=::access((std::string(root)+"/tv-egl-uncached").c_str(),F_OK)!=0;
             fixed_marker=std::string(root)+"/tv-fixed";
             measure_producer=::access((std::string(root)+"/tv-producer-only").c_str(),F_OK)==0;
+            producer_background=background::game;
+            if (measure_producer) {
+                if (::access((std::string(root)+"/tv-floor-cached").c_str(),F_OK)==0) producer_background=background::cached;
+                if (::access((std::string(root)+"/tv-floor-clear").c_str(),F_OK)==0) producer_background=background::clear;
+            }
             producer_path=std::string(root)+"/tv-producer.json";
             if (::access((std::string(root)+"/tv-egl-prepared").c_str(),F_OK)==0) mode=profile_mode::prepared;
             if (::access((std::string(root)+"/tv-egl-upload").c_str(),F_OK)==0) mode=profile_mode::upload;
@@ -247,8 +254,8 @@ void main() {
                     std::fprintf(file,"bufferAge=%d swapDamage=%d incremental=%d perFrameFlush=%d hintApi=%s\n",
                                  age_supported,swap_damage!=nullptr,incremental,sync_log,
                                  report_damage ? (khr_damage ? "KHR" : "EXT") : "plain");
-                    std::fprintf(file,"generation=%u renderer=%s requestedInterval=%d configMin=%d configMax=%d displayTimestamps=%d\n",
-                        generation,reinterpret_cast<const char *>(glGetString(GL_RENDERER)),immediate ? 0 : 1,minimum,maximum,present_supported);
+                    std::fprintf(file,"generation=%u renderer=%s requestedInterval=%d configMin=%d configMax=%d displayTimestamps=%d cacheWindow=%d\n",
+                        generation,reinterpret_cast<const char *>(glGetString(GL_RENDERER)),immediate ? 0 : 1,minimum,maximum,present_supported,cache_window);
                     std::fclose(file);
                 }
             }
@@ -389,9 +396,36 @@ void main() {
         if (measure_producer && !producer_complete && ::access(fixed_marker.c_str(),F_OK)==0) {
             producer_complete=true;
             constexpr uint64_t first=uint64_t(1)<<40;
-            auto start_time=battlecity_tv::now_ns();
-            uint64_t count=0;
-            int64_t last=start_time;
+            const ARect all{0,0,sw,sh};
+            GLuint flat_fbo=0,flat_color=0;
+            auto clear_background=[]() {
+                glClearColor(0.f,64.f/255.f,128.f/255.f,1.f);
+                glClear(GL_COLOR_BUFFER_BIT);
+            };
+            if (producer_background==background::cached) {
+                glGenRenderbuffers(1,&flat_color);
+                glBindRenderbuffer(GL_RENDERBUFFER,flat_color);
+                glRenderbufferStorage(GL_RENDERBUFFER,GL_RGBA8,sw,sh);
+                glGenFramebuffers(1,&flat_fbo);
+                glBindFramebuffer(GL_FRAMEBUFFER,flat_fbo);
+                glFramebufferRenderbuffer(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_RENDERBUFFER,flat_color);
+                if (glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE) return false;
+                clear_background();
+            }
+            uint64_t blits=0,clears=0;
+            auto restore=[&](ARect delta) {
+                if (producer_background==background::game) { copy_window(delta,sw,sh); return; }
+                glBindFramebuffer(GL_FRAMEBUFFER,0);
+                if (producer_background==background::cached) {
+                    glBindFramebuffer(GL_READ_FRAMEBUFFER,flat_fbo);
+                    glBlitFramebuffer(0,0,sw,sh,0,0,sw,sh,GL_COLOR_BUFFER_BIT,GL_NEAREST);
+                    ++blits;
+                } else {
+                    clear_background();
+                    ++clears;
+                }
+                surface_change=all;
+            };
             // Both positions are inside the visible crop. Restore the previous
             // square from the cached game image before drawing its new position.
             const ARect left{192,120,200,128}, right{216,120,224,128};
@@ -403,9 +437,12 @@ void main() {
                 glClear(GL_COLOR_BUFFER_BIT);
                 glDisable(GL_SCISSOR_TEST);
             };
+            const auto start_time=battlecity_tv::now_ns();
+            uint64_t count=0;
+            int64_t last=start_time;
             do {
                 const auto render_start=battlecity_tv::now_ns();
-                copy_window(count ? movement : ARect{0,0,sw,sh},sw,sh);
+                restore(count ? movement : all);
                 paint_marker((count & 1) ? right : left);
                 int64_t swap_start=0;
                 if (!swap(first+count,render_start,swap_start)) return false;
@@ -417,13 +454,14 @@ void main() {
             copy_window({0,0,sw,sh},sw,sh);
             const auto temp=producer_path+".tmp";
             if (auto *file=std::fopen(temp.c_str(),"w")) {
-                std::fprintf(file,"{\"frames\":%llu,\"lastSubmittedFrame\":%llu,\"wall\":%.9f,\"width\":%d,\"height\":%d}\n",
-                    (unsigned long long)count,(unsigned long long)(first+count-1),(last-start_time)/1e9,sw,sh);
+                std::fprintf(file,"{\"frames\":%llu,\"lastSubmittedFrame\":%llu,\"wall\":%.9f,\"width\":%d,\"height\":%d,\"blits\":%llu,\"clears\":%llu}\n",
+                    (unsigned long long)count,(unsigned long long)(first+count-1),(last-start_time)/1e9,sw,sh,
+                    (unsigned long long)blits,(unsigned long long)clears);
                 if (std::fclose(file)==0) std::rename(temp.c_str(),producer_path.c_str());
             }
             if (verify_marker) {
                 for (int phase=0;phase<4;++phase) {
-                    copy_window(phase ? movement : ARect{0,0,sw,sh},sw,sh);
+                    restore(phase ? movement : all);
                     if (phase==1 || phase==2) paint_marker(phase==1 ? left : right);
                     int64_t stamp=0;
                     if (!swap(0,0,stamp)) return false;
@@ -439,6 +477,8 @@ void main() {
                 }
                 copy_window({0,0,sw,sh},sw,sh);
             }
+            if (flat_fbo) glDeleteFramebuffers(1,&flat_fbo);
+            if (flat_color) glDeleteRenderbuffers(1,&flat_color);
         }
         return swap(frame,start,before_swap);
     }

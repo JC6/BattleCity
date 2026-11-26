@@ -198,7 +198,7 @@ def screen_rgb(image, size):
                           input=image, capture_output=True, check=True).stdout
 
 
-def capture_moving_square(results, name):
+def capture_moving_square(results, name, floor=False):
     images=[]
     for phase in range(4):
         flag=f'files/tv-fixed-probe-{phase}'
@@ -212,6 +212,11 @@ def capture_moving_square(results, name):
         private('rm','-f',flag)
     from tv_swap_report import marker_observation
     observation=marker_observation(images,width,height)
+    if floor:
+        import hashlib
+        observation['rgbSha256']=[hashlib.sha256(rgb).hexdigest() for rgb in images]
+        # Require a large visible area in precisely the requested background colour.
+        observation['solidPixels']=sum(images[0][i:i+3]==bytes((0,64,128)) for i in range(0,len(images[0]),3))
     (results/f'{name}-marker.json').write_text(json.dumps(observation,indent=2))
 
 
@@ -445,7 +450,7 @@ def calibration_grid(rgb, screen_width, xs, ys):
             'valid':colour_error<=8 and 30 in transitions and 5<=horizontal<=7}
 
 
-def record_render(results, labels, directory, write_private, scenes_only=False, prototype=False, held_out=False, formal=False, pipeline=False, sweep=False, presentation=False):
+def record_render(results, labels, directory, write_private, scenes_only=False, prototype=False, held_out=False, formal=False, pipeline=False, sweep=False, presentation=False, floor=False, direct_check=False):
     ini = (f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\n'
            'autoframeskip 0\nframeskip 0\npause_brightness 1.0\n')
     # A missing override exercises the installed candidate's packaged default.
@@ -475,20 +480,28 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
                     name=f'{case}-{variant}-{repeat+1}'
                     if case=='explosions': name+='-explosions'
                     modes[name]=None
+    if floor:
+        modes={f'producer-{variant}-{n}':None for n in (1,2,3)
+               for variant in (('cached','clear') if n%2 else ('clear','cached'))}
+    if direct_check:
+        modes={f'{scene}-uncached-{n}'+('-explosions' if scene=='explosions' else ''):None
+               for n in (1,2,3) for scene in ('battle','explosions')}
+    sampled=prototype or presentation or floor or direct_check
     def select(mode, scale):
-        private('rm','-f','files/tv-core-only','files/tv-producer-only')
+        private('rm','-f','files/tv-core-only','files/tv-producer-only','files/tv-floor-cached','files/tv-floor-clear')
         private('rm','-f','files/tv-egl-full-copy','files/tv-plain-swap','files/tv-moving-check','files/tv-sync-log')
-        if presentation:
+        if presentation or floor or direct_check:
             variant=mode.split('-')[1]
             write_private('tv-egl-full-copy','1')
-            if variant=='plain': write_private('tv-plain-swap','1')
+            if floor: write_private('tv-floor-'+variant,'1')
+            if variant=='plain' or floor or direct_check: write_private('tv-plain-swap','1')
             if mode.startswith('producer-'): write_private('tv-moving-check','1')
         if mode.startswith('core-'): write_private('tv-core-only','1')
         if mode.startswith('producer-'): write_private('tv-producer-only','1')
         markers=('prepared','upload','direct','uncached','immediate','legacy')
         private('rm','-f',*['files/tv-egl-'+key for key in markers])
         for key in markers:
-            if mode==key or mode.startswith(key+'-'):
+            if mode==key or mode.startswith(key+'-') or (direct_check and key=='uncached'):
                 write_private('tv-egl-'+key,'1')
         if mode.startswith('full-'):
             write_private('tv-force-full','1')
@@ -562,10 +575,10 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
             row['presentationsPerSecond']=row['frames']/row['wall']
             rows=[row]
         else:
-            for number in range(1,2 if prototype or presentation else 4):
+            for number in range(1,2 if sampled else 4):
                 rows = wait(profile_rows, lambda r: len(r)>=number, f'{name} 30-second window {number}',interval=1.0)
                 (results/(name+'.jsonl')).write_bytes(private('cat','files/tv-profile.jsonl'))
-            assert [r['run'] for r in rows]==([1] if prototype or presentation else [1,2,3])
+            assert [r['run'] for r in rows]==([1] if sampled else [1,2,3])
             for row in rows:
                 assert row['wall']>=30 and row['frames']>0 and row['sampleRate']>0 and row['samples']>0, row
                 if name.startswith('core-'):
@@ -585,11 +598,11 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
                     raw=private('cat','files/tv-frame-map.csv',check=False)
                     return any(line.split(b',')[1:2]==[str(endpoint).encode()] for line in raw.splitlines())
                 wait(written,bool,'buffered EGL measurement endpoint',interval=.5)
-            if presentation and name.startswith('producer-'):
+            if (presentation or floor) and name.startswith('producer-'):
                 # SurfaceFlinger emits the final queued fences on subsequent
                 # swaps. The four screenshot phases use frame IDs outside the
                 # measured window and let its pending buffers retire.
-                capture_moving_square(results,name)
+                capture_moving_square(results,name,floor)
             time.sleep(.5)
             adb('shell','perfetto','--attach='+trace_key,'--stop',check=False)
             trace=adb('exec-out','cat',trace_path,check=False)
@@ -601,7 +614,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
             if not shown[:1].isdigit():shown=b''
             if not trace.startswith(b'\x0a'):trace=b''
             (results/(name+'-display.pftrace.gz')).write_bytes(gzip.compress(trace,mtime=0))
-            if presentation:
+            if presentation or floor or direct_check:
                 (results/(name+'-hints.csv')).write_bytes(private('cat','files/tv-hints.csv'))
             (results/(name+'-frame-map.csv')).write_bytes(mapping)
             (results/(name+'-present.csv')).write_bytes(shown)
@@ -609,7 +622,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         if name.endswith('explosions'):
             assert int(private('cat','files/tv-stress')) >= 720, 'blast fixture never ran in battle'
         summaries[name] = rows
-        if prototype or presentation: (results/'clock.json').write_text(json.dumps({'battle':markers,'windows':summaries},indent=2))
+        if sampled: (results/'clock.json').write_text(json.dumps({'battle':markers,'windows':summaries},indent=2))
         layers = adb('shell','dumpsys','SurfaceFlinger','--list').decode().splitlines()
         prefix = results/(name+'-surface.txt')
         with prefix.open('wb') as f:
@@ -624,8 +637,9 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
     if not scenes_only:
         assert len(set(markers.values()))==1, markers
         (results/'clock.json').write_text(json.dumps({'battle':markers,'windows':summaries},indent=2))
-    if prototype or presentation:
+    if sampled:
         stop()
+        private('rm','-f','files/tv-floor-cached','files/tv-floor-clear')
         private('rm','-f','files/tv-force-full','files/tv-egl-immediate','files/tv-egl-prepared','files/tv-egl-upload','files/tv-egl-direct','files/tv-egl-uncached','files/tv-egl-legacy')
         return
     # Separate launches keep the frozen visual fixtures out of the clock samples.
@@ -796,9 +810,9 @@ def run(apk, labels, results, suite, previous=None, formal=False):
         if suite=='coop-endings':
             record_endings(labels,directory,results,write_private,('coop-stage42','coop-stage18'))
             return
-        if suite in ('render','scenes','prototype','held-out','pipeline','geometry','presentation'):
+        if suite in ('render','scenes','prototype','held-out','pipeline','geometry','presentation','floor','direct-check'):
             record_render(results,labels,directory,write_private,scenes_only=suite in ('scenes','held-out','pipeline','geometry'),
-                          prototype=suite=='prototype',held_out=suite in ('held-out','pipeline','geometry'),formal=formal,pipeline=suite=='pipeline',sweep=suite=='geometry',presentation=suite=='presentation')
+                          prototype=suite=='prototype',held_out=suite in ('held-out','pipeline','geometry'),formal=formal,pipeline=suite=='pipeline',sweep=suite=='geometry',presentation=suite=='presentation',floor=suite=='floor',direct_check=suite=='direct-check')
             return
         write_private('tv-observer.lua',observer(labels,directory))
         ini=f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\nwavwrite {directory}/tv-audio.wav\n'
@@ -853,7 +867,23 @@ def run(apk, labels, results, suite, previous=None, formal=False):
             capture('system-menu')
             time.sleep(.2)
             capture('system-menu-repeat')
+            def capture_pair(name):
+                capture(name)
+                time.sleep(.2)
+                capture(name+'-repeat')
+            if suite=='menu-samples':
+                one.tap(SOUTH)
+                wait(lambda:focused((.125,.366,.166,.285)),bool,'first save slot')
+                capture_pair('slot-focus')
+                one.tap(SOUTH)
+                capture_pair('confirm-focus')
+                one.tap(EAST)
+                one.tap(EAST)
+                reach((.389,.253,.222,.061),one.down,'Load')
+                capture_pair('load-focus')
             reach(settings_button,one.down,'Settings')
+            if suite=='menu-samples':
+                capture_pair('settings-focus')
             reach(screen_card,lambda:one.tap(SOUTH),'Screen Settings card')
             one.tap(SOUTH)
             def shooter_width():
@@ -1052,7 +1082,7 @@ def run(apk, labels, results, suite, previous=None, formal=False):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('apk','labels','results'): parser.add_argument(name,type=Path)
-    parser.add_argument('--suite',action='append',choices=('presentation','geometry','pipeline','controls','menu-samples','coop-endings','timing','auto-frameskip','render','scenes','candidate-controls','prototype','held-out'))
+    parser.add_argument('--suite',action='append',choices=('floor','direct-check','presentation','geometry','pipeline','controls','menu-samples','coop-endings','timing','auto-frameskip','render','scenes','candidate-controls','prototype','held-out'))
     parser.add_argument('--formal',action='store_true',help='measure the packaged candidate and capture its software reference')
     parser.add_argument('--record-candidate-failure',action='store_true',
                         help='record a failing optional candidate control run for the release selector')
@@ -1063,6 +1093,11 @@ if __name__=='__main__':
     for suite in args.suite or ('controls','timing','render','scenes','candidate-controls'):
         folder=args.results if suite=='controls' else args.results/suite
         try:
+            if suite=='direct-check':
+                from tv_floor_report import evaluate
+                if not evaluate(args.results/'floor')['passed']:
+                    print('Direct game drawing skipped after measured producer comparison',flush=True)
+                    continue
             if suite=='menu-samples':
                 size=adb('shell','wm','size').decode()
                 prior_size=re.search(r'Override size: (\d+x\d+)',size)
