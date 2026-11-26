@@ -166,3 +166,10 @@ Crolister 的英文录像展示了普通编辑器的进入、退出、重新进�
 发行方列出了存档与回退功能。高播放量的日版 Namcot、街机版《VS. Battle City》和任天堂 Wii U Virtual Console 演示分别属于其他发行。英文合集的另两段录像出现 Steam 链接或 LT/LB 提示。此次公开检索仍缺少能同时看清英文 Switch 画面与操作、连续展示隐藏留言的进出、无人操作待机或连续两次回退的录像。[万代南梦宫产品页](https://www.bandainamcoent.com/games/namco-museum-archives-vol-2) · [日版 Switch](https://www.youtube.com/watch?v=lkMni8x1wKg&t=59s) · [街机发行辨认](https://www.youtube.com/watch?v=C4KWYT0N_ow&t=1008s)
 
 另复核一部 5,488 次播放的 Switch 合集演示。作者介绍日版实体卡。8:07 的标题同时显示 NAMCOT、©1985 BNEI 以及三个英文选项。片中从标题剪入第一关，随后剪到第二关的小号计分，再转入下一款游戏。标题能单独核对，剪辑间隔不能用于推算待机长度。[Switch 合集标题](https://www.youtube.com/watch?v=FQS7wANiHXg&t=487s) · [第二关计分](https://www.youtube.com/watch?v=FQS7wANiHXg&t=543s)
+
+
+### 第二段英文 Switch 系统菜单实录
+
+一段复核时播放量为 39,842 的录像从英文 Vol. 2 选入《坦克大战》，展示了双人第四关结束和第五关开局。18:35.892 的系统菜单能独立检查空存档槽。录像取景与原参考有少量缩放和平移，因此分别记录原取景和按菜单外框四边对齐后的重合率。定位外框时排除了存档槽。按外框对齐后，Web 与 Android TV 的 1080p 标签重合率均从约 88.3% 升至 91.0%。720p 在两端都由 91.8% 降至 89.6%，重复截图波动为零。这个降幅也出现在未配准的对照中。原始值、配准值和叠图列在离线报告中。[实录 18:35](https://www.youtube.com/watch?v=dv9axuULtdA&t=1115s) · [验收报告](../../build/battlecity/Switch-TV-Comparison.html)
+
+本轮另核对了一段红白机隐藏留言录像。约 1:04 显示留言，约 1:16 回到空编辑区，片头保留旧 Namco 署名。英文 Switch 的隐藏留言进出、无人操作待机、连续两次回退、大号数字 2、3、4、7 和结算音乐尾音仍待目标版本直接核验。[红白机留言片段](https://www.youtube.com/watch?v=mcMO5JnnMHs&t=64s) · [发行方产品页](https://www.bandainamcoent.com/games/namco-museum-archives-vol-2)

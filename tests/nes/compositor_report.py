@@ -71,6 +71,7 @@ def build(root, run, dest, trials, previous=None):
         if not clock.is_file():continue
         for name,samples in read(clock)['windows'].items():
             row=samples[0];n=row['frames']
+            if name=='producer-battle':continue
             values.append([folder.name,name,f"{100*row['emu']/row['wall']:.2f}%",f"{100*row['samples']/row['sampleRate']/row['wall']:.2f}%",
                 n,row.get('nativeSize','—'),row.get('gpuFrames','—') if row.get('driver')=='android-surface-control' else '—',row['attempts'],row['presented'],row.get('completions','—'),row.get('pending','—'),
                 ' / '.join(f"{row.get(k,0)/n:.2f}" for k in ('waitMs','lockMs','copyMs','postMs'))])
@@ -87,7 +88,7 @@ def build(root, run, dest, trials, previous=None):
     if renderer=='egl-tv':
         measurements_rows=[]
         for scene in ('battle','explosions'):
-            variants=[key for key in samples if key==scene or key.endswith('-'+scene)]
+            variants=[key for key in samples if key!='producer-battle' and (key==scene or key.endswith('-'+scene))]
             for variant in variants:
                 row=samples[variant][0]
                 assert measurements['battle'][variant]==measurements['battle'][scene]
@@ -102,6 +103,9 @@ def build(root, run, dest, trials, previous=None):
                     row.get('individuallyObserved','—'),row.get('verifiedPresentations','—'),row.get('displayEvidence','未采集'),
                     f"{row['swapMsPerFrame']:.2f}" if row.get('mappedFrames') else '—'])
         sections.append(table(('场景','实际驱动','NES 帧','成功提交','已记录提交 ID','有效 EGL 时间戳','可逐帧关联','完整窗口确认','呈现凭据','交换耗时 ms/帧'),measurements_rows))
+        if 'producer-battle' in samples:
+            from tv_buffer_report import buffer_sections
+            sections.extend(buffer_sections(run))
         if 'prepared-battle' in samples:
             timing=[]
             for name,records in samples.items():
@@ -166,7 +170,7 @@ def build(root, run, dest, trials, previous=None):
     if (original/'visual.json').is_file():
         sections.append('<h2>从 GPU 输入到电视窗口</h2><p>纯绿、四色角标、校准图和第 633 帧分别记录 NES 光栅、GPU 实际整数纹理、展开缓冲、交换前窗口和系统截图。纹理列直接核对同尺寸的 RGB565 通道值。</p>')
         checks=[]
-        for pipe,label in [(original,'暂停后'),(live/'pipeline','暂停前')]:
+        for pipe,label in [(original,'暂停前' if 'producer-battle' in samples else '主验收'),(live/'pipeline','暂停前')]:
             if not (pipe/'visual.json').is_file():continue
             if pipe.parent==live:
                 assert (live/'tested-sha256.txt').read_bytes()==(tv/'tested-sha256.txt').read_bytes()
@@ -265,6 +269,19 @@ def build(root, run, dest, trials, previous=None):
         sections.append('<p>下表比较同一英文 Switch 截图上的六处菜单区域。每个分辨率均独立启动旧、新画面并重复截图。每项按预设标准与重复截图波动比较。</p>')
         sections.append(table(('平台','像素高度','区域','旧版 IoU','新版 IoU','变化','重复波动','达标'),
             [[r['platform'],r['height'],r['region'],r['old_iou'],r['new_iou'],r['delta'],r['repeat_variation'],'是' if r['passed']=='True' else '否'] for r in sizes]))
+        for crop in sorted((run/'menu-evidence').glob('*/*/*-overlay.png')):
+            platform,height=crop.relative_to(run/'menu-evidence').parts[:2]
+            sections.append(picture(crop,f'{platform} {height}p · {crop.stem} · 从左到右为 Switch、旧版、新版和轮廓叠图'))
+    holdout=run/'reference-review/menu-holdout.csv'
+    if holdout.is_file():
+        sections.append('<h2>第二位 Switch 玩家的存档标签</h2><p>独立录像先以标题定位同一页。分别记录原始取景和按菜单外框四边配准的结果，四条边的取样均在标签之外。图中红色为仅原版覆盖，青色为仅复刻版覆盖，白色为两者重合。<a href="https://www.youtube.com/watch?v=dv9axuULtdA&amp;t=1115s">原片 18:35</a></p>')
+        sections.append(table(('平台','高度','原始旧版','原始新版','配准旧版','配准新版','重复截图误差'),
+            [[r[k] for k in ('platform','height','raw_previous','raw_current','previous_iou','current_iou','repeat_noise')] for r in rows(holdout)]))
+        worse = [r for r in rows(holdout) if float(r['previous_iou'])-float(r['current_iou']) > float(r['repeat_noise'])]
+        if worse:
+            differences = '、'.join(f"{r['platform']} {r['height']}p（{float(r['previous_iou']):.1%} → {float(r['current_iou']):.1%}）" for r in worse)
+            sections.append('<p>独立录像中，以下存档标签的配准重合率下降，幅度超过重复采样误差。'+html.escape(differences)+'。</p>')
+        sections.append(picture(run/'reference-review/switch-slot-overlay.png','独立 Switch 截图、旧版、新版和轮廓叠图'))
     web_clocks=[]
     for engine in ('chromium','webkit'):
         for cadence in ('native','60','120'):
@@ -347,7 +364,7 @@ def build(root, run, dest, trials, previous=None):
         pair=rows(run/'reference-review/coop-stage42.csv')[0]
         sections.append(f'<p>英文 Switch 的双人第 42 关从最后两个总数出现到 GAME OVER 为 {float(pair["switch_total_to_over_s"]):.3f} 秒，本次 Web 卡带读屏实测 {float(pair["replica_total_to_over_s"]):.3f} 秒。第 18 关两名玩家分别获得 40400 和 68100 分，游戏显示 HISCORE 68100 后回到双人标题。同一屏摄中，大号 6 的 56 格笔画在三个时刻全部匹配。</p>')
     outstanding=('隐藏留言的入口操作与返回顺序、无输入的待机过程、连续回退的逐次跨度以及大号 HISCORE 数字 2、3、4、7' if
-        (run/'reference-review/coop-stage42.csv').exists() else '双人完整结局、确定无输入的待机过程、连续回退的逐次跨度以及大号 HISCORE 数字 2、3、4、6、7')
+        (run/'reference-review/coop-stage42.csv').exists() or holdout.is_file() else '双人完整结局、确定无输入的待机过程、连续回退的逐次跨度以及大号 HISCORE 数字 2、3、4、6、7')
     sections+=[f'<p>音色和音源释放时序维持现有实现。{outstanding}，仍缺英文 Switch 直接证据。</p>',
         '<p>日版 Switch 录像中，第 35 关的单人结算接入下一关，后来在地图编辑器入口显示了原作隐藏留言。该录像采用日版合集界面。<a href="https://www.youtube.com/watch?v=90hI6s_3iZ4&t=7166s">日版关末</a> · <a href="https://www.youtube.com/watch?v=90hI6s_3iZ4&t=7375s">日版隐藏留言</a></p>',
         '<p><a href="https://www.nintendo.com/us/store/products/namco-museum-archives-vol-2-switch/">任天堂游戏页</a> · <a href="https://nc.bn-ent.net/product/useful.php">万代南梦宫功能说明</a> · <a href="https://www.youtube.com/watch?v=S26lUv598_o&t=657s">系统菜单原片</a> · <a href="https://www.youtube.com/watch?v=uc_If5fksfA&t=270s">Xupgeeks 英文 Switch 结算录像</a></p>',
@@ -363,7 +380,7 @@ def build(root, run, dest, trials, previous=None):
                 if folder!=run and len(rel.parts)>1:
                     if rel.parts[0]!='tv-device-results':continue
                     if len(rel.parts)>2 and rel.parts[1] not in ('prototype','pipeline','held-out','candidate-controls','render','scenes','second'):continue
-                if not f.is_file() or not (rel.parts[0] in ('tv-device-results','web-clock-and-endings','upgrade-chromium','upgrade-webkit','campaign-loop') or rel.parts[0].startswith('stage-replay-') or rel.parts[0] in ('menu-evidence','reference-review','live-readback') or (rel.parts[0]=='local-web' and f.suffix=='.log') or f.name in ('build-retry.json','window-probe.json','window-benchmark.json','presentation-audit.csv','menu-sizes.csv','artifact-receipts.json','job-status.json','job-steps.json','gpu-shader.log','native-payloads.json','layer-geometry.json','stages.json','menu-regions.csv','commit.txt','run.txt','artifact.json')):continue
+                if not f.is_file() or not (rel.parts[0] in ('tv-device-results','web-clock-and-endings','upgrade-chromium','upgrade-webkit','campaign-loop') or rel.parts[0].startswith('stage-replay-') or rel.parts[0] in ('menu-evidence','reference-review','live-readback') or (rel.parts[0]=='local-web' and f.suffix=='.log') or f.name in ('frame-boundaries.csv','build-retry.json','window-probe.json','window-benchmark.json','presentation-audit.csv','menu-sizes.csv','artifact-receipts.json','job-status.json','job-steps.json','gpu-shader.log','native-payloads.json','layer-geometry.json','stages.json','menu-regions.csv','commit.txt','run.txt','artifact.json')):continue
                 if f.suffix not in ('.json','.csv','.png','.gz','.log','.txt','.jsonl','.sha256','.wav','.tsv','.jpg','.cpp','.sh'):continue
                 z.write(f,str(Path(folder.name)/rel))
         for f in [root/'tail-codec.csv',root/'audio-recheck/terminal-av-sync.csv',*sorted((root/'reference-frames').glob('*.png'))]:
@@ -371,9 +388,9 @@ def build(root, run, dest, trials, previous=None):
         for f in (root/'research').glob('*'):
             if f.suffix in ('.tsv','.csv','.jpg'):
                 z.write(f,'research/'+f.name)
-        for n in ('compositor_report.py','tv_stage_analysis.py','tv_layer_geometry.py','tv_presentation.py','test_tv_presentation.py','tv_release_gate.py','native_window_report.py','tv_gpu_shader.cjs','tv_window_probe.py','switch_terminal_sample.py','tv_tail_codec.py','switch_menu_regions.py','switch_score_sample.py','switch_lettering.py','switch_coop_terminal.py','ending.lua','browser-ending.cjs','browser-game.cjs','television.py','tv-scenes.lua','tv-blast-load.lua','terminal_av_sync.py','ending_audio.py','ending_calibration.py','terminal_tally.py','switch_cues.py','compare_switch_audio.py'):
+        for n in ('tv_buffer_report.py','compositor_report.py','tv_stage_analysis.py','tv_layer_geometry.py','tv_presentation.py','test_tv_presentation.py','tv_release_gate.py','native_window_report.py','tv_gpu_shader.cjs','tv_window_probe.py','switch_terminal_sample.py','tv_tail_codec.py','switch_menu_regions.py','switch_score_sample.py','switch_lettering.py','switch_coop_terminal.py','ending.lua','browser-ending.cjs','browser-game.cjs','television.py','tv-scenes.lua','tv-blast-load.lua','terminal_av_sync.py','ending_audio.py','ending_calibration.py','terminal_tally.py','switch_cues.py','compare_switch_audio.py'):
             z.write(Path(__file__).with_name(n),'methods/'+n)
-        for name in ('tv-gpu-raster.h','tv-raster-shader.h','tv-native-window.h','tv-capture.h','tv-egl-window.h','tv-sdl-swap.patch','tv-egl.patch'):
+        for name in ('tv-isolation.patch','tv-gpu-raster.h','tv-raster-shader.h','tv-native-window.h','tv-capture.h','tv-egl-window.h','tv-sdl-swap.patch','tv-egl.patch'):
             z.write(Path(__file__).resolve().parents[2]/'runtime'/name,'methods/'+name)
 
 

@@ -152,6 +152,44 @@ async function checkShooterPreview(page, mode) {
         assert.ok(Math.abs(v-expected[i][j])<6, 'preview '+i+' expected '+expected[i]+' measured '+actual)));
 }
 
+// Only activate an item once its four cyan selection corners are on screen.
+async function screenFocus(page, rect) {
+    const png=await page.locator('#display').screenshot();
+    return page.evaluate(async ({png,rect:[x,y,w,h]}) => {
+        const image=new Image();
+        image.src='data:image/png;base64,'+png;
+        await image.decode();
+        const canvas=document.createElement('canvas');
+        canvas.width=320;
+        canvas.height=180;
+        const ctx=canvas.getContext('2d');
+        ctx.drawImage(image,0,0,320,180);
+        const pixels=ctx.getImageData(0,0,320,180).data;
+        let corners=0;
+        for (const cx of [x-.004,x+w+.004].map(v=>Math.round(v*320))) {
+            for (const cy of [y-.008,y+h+.008].map(v=>Math.round(v*180))) {
+                let cyan=0;
+                for (let yy=cy-4; yy<=cy+4; yy++) for (let xx=cx-5; xx<=cx+5; xx++) {
+                    const pos=4*(320*yy+xx);
+                    const r=pixels[pos], g=pixels[pos+1], b=pixels[pos+2];
+                    if (g>95 && b>120 && b-r>70 && g-r>35) cyan++;
+                }
+                if (cyan>=2) corners++;
+            }
+        }
+        return corners>=3;
+    }, {png:png.toString('base64'),rect});
+}
+
+async function reachFocus(page, rect, key) {
+    for (let attempt=0; attempt<10; attempt++) {
+        if (await screenFocus(page,rect)) return;
+        if (key) await menu(page,[key]);
+        else await renderFrames(page,2);
+    }
+    throw new Error('Menu focus did not reach '+rect.join(','));
+}
+
 async function checkScreenMode(page, mode) {
     try {
         await page.waitForFunction(expected => document.querySelector('#display').dataset.mode === expected,
@@ -388,7 +426,7 @@ async function verify(engine, suite) {
             await verifyCombat(page);
             return;
         }
-        if (suite && suite !== 'controls') {
+        if (suite && !['controls','menu-samples'].includes(suite)) {
             await verifyScenarios(page, suite);
             if (suite === 'opening') await verifyScenarios(page, suite, 2);
             return;
@@ -425,10 +463,16 @@ async function verify(engine, suite) {
         assert.ok(Math.abs(menuBounds.width / menuBounds.height - 16 / 9) < .01);
         await capture(page, 'system-menu');
         await captureMenuSizes(page,'system-menu');
-        await menu(page, ['Home','ArrowDown','ArrowDown','Enter','Home','Enter','Home','ArrowRight','ArrowRight','Enter']);
+        await reachFocus(page,[.262,.702,.221,.061],'ArrowDown');
+        await menu(page,['Enter']);
+        await reachFocus(page,[.106,.350,.180,.215]);
+        await menu(page,['Enter']);
+        await reachFocus(page,[.170,.496,.141,.147]);
+        await reachFocus(page,[.516,.496,.141,.147],'ArrowRight');
+        await menu(page,['Enter']);
+        await checkScreenMode(page,'2');
         await capture(page, 'screen-settings');
         await captureMenuSizes(page,'screen-settings');
-        await checkScreenMode(page, '2');
         for(const mode of [0,1,2,3]) {
             await menu(page, ['Home', ...Array(mode).fill('ArrowRight'), 'Enter']);
             await checkScreenMode(page, String(mode));
@@ -441,9 +485,18 @@ async function verify(engine, suite) {
         await checkScreenMode(page,'2');
         // Enable both filters, then exercise their actual effect on the saved
         // viewport after the menu is closed.
-        await menu(page, ['End','ArrowUp','Enter','ArrowUp','Enter']);
-        assert.equal(await page.evaluate(() => Module.canvas.dataset.picture), '3');
+        await menu(page,['End']);
+        for (const [i,flags] of [[1,'2'],[0,'3']]) {
+            await reachFocus(page,[.625,.201+.058*i,.169,.041],'ArrowUp');
+            await menu(page,['Enter']);
+            await page.waitForFunction(value=>Module.canvas.dataset.picture===value,flags);
+        }
         assert.equal(await page.evaluate(() => Module.canvas.style.imageRendering), 'auto');
+        if (suite==='menu-samples') {
+            assert.deepEqual(errors,[]);
+            console.log('Passed keyboard menu, screen modes and both picture filters');
+            return;
+        }
         await menu(page, ['Home','Enter','End','Enter']);
         await menu(page, ['Home','ArrowRight','ArrowRight','Enter']);
         await capture(page, 'controller-settings');
@@ -704,8 +757,8 @@ async function verify(engine, suite) {
     if (!url) throw new Error('Serve the packaged site and pass its URL');
     const requested = process.argv[4];
     const suite = process.argv[5];
-    if (suite && suite !== 'controls' && (requested !== 'chromium' || !['attract', 'opening', 'combat', 'ending', 'campaign', 'game', 'audio'].includes(suite))) {
-        throw new Error('Use controls for either browser, or attract, opening, combat, ending, campaign, game or audio for Chromium');
+    if (suite && !['controls', 'menu-samples'].includes(suite) && (requested !== 'chromium' || !['attract', 'opening', 'combat', 'ending', 'campaign', 'game', 'audio'].includes(suite))) {
+        throw new Error('Use controls or menu-samples for either browser, or attract, opening, combat, ending, campaign, game or audio for Chromium');
     }
     for (const engine of [chromium, webkit]) {
         if (!requested || engine.name() === requested) await verify(engine, suite);

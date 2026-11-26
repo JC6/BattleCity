@@ -96,6 +96,59 @@ def compare_sizes(reference, samples, output, improving=('save-focus','empty-slo
     return rows
 
 
+def register_menu_frame(reference, capture, output):
+    """Align two full menus on their outside borders, independently of slot content."""
+    from statistics import median
+
+    def borders(bitmap):
+        def peak(points):
+            chroma=[]
+            for x,y,coordinate in points:
+                pos=3*(1280*y+x)
+                chroma.append((bitmap[pos+2]-bitmap[pos],coordinate))
+            maximum=max(value for value,_ in chroma)
+            return median(coordinate for value,coordinate in chroma if value>=maximum-2)
+
+        left,right=[median(peak((x,y,x) for x in xs) for y in range(140,336,4))
+                    for xs in (range(80,110),range(1170,1201))]
+        # Use the side margins of the top bar to avoid its central title lettering.
+        columns=[*range(155,228,4),*range(1060,1120,4)]
+        top,bottom=[median(peak((x,y,y) for y in ys) for x in columns)
+                    for ys in (range(24,50),range(621,649))]
+        return (left,right,top,bottom)
+
+    a,b=borders(grid(reference)),borders(grid(capture))
+    width=round(1280*(a[1]-a[0])/(b[1]-b[0]))
+    height=round(720*(a[3]-a[2])/(b[3]-b[2]))
+    dx,dy=round(a[0]-b[0]*width/1280),round(a[2]-b[2]*height/720)
+    if not (0<=dx<=1280-width and 0<=dy<=720-height):
+        raise ValueError('Held-out capture does not fit the calibrated display bounds')
+    filters=f'scale=1280:720:flags=area,format=rgb24,scale={width}:{height}:flags=bilinear,pad=1280:720:{dx}:{dy}'
+    subprocess.run(['ffmpeg','-v','error','-y','-filter_threads','1','-i',str(capture),'-vf',filters,
+                    '-frames:v','1','-threads','1',str(output)],check=True)
+    return dict(reference_edges=a,capture_edges=b,scaled_size=[width,height],offset=[dx,dy])
+
+
+def save_menu_overlay(reference, previous, current, region, dest):
+    """Show the three unmodified crops and their aligned Switch/current colour masks."""
+    _, _, rect, colour = next(entry for entry in REGIONS if entry[0]==region)
+    x0,y0,x1,y1=rect
+    images=[grid(file) for file in (reference,previous,current)]
+    target,observed=(mask(images[i],rect,colour) for i in (0,2))
+    pixels=bytearray()
+    for y in range(y0,y1):
+        for rgb in images:
+            pixels.extend(rgb[(1280*y+x0)*3:(1280*y+x1)*3])
+        for x in range(x0,x1):
+            point=(x,y)
+            pixels.extend((226,226,226) if point in target and point in observed else
+                          (245,81,89) if point in target else (55,203,238) if point in observed else (0,0,0))
+    size=f'{(x1-x0)*4}x{y1-y0}'
+    subprocess.run(['ffmpeg','-v','error','-y','-f','rawvideo','-pix_fmt','rgb24','-s',size,
+                    '-i','pipe:0','-vf','scale=iw*3:ih*3:flags=neighbor','-frames:v','1',
+                    '-threads','1',str(dest)],input=pixels,check=True)
+
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('reference',type=Path)
