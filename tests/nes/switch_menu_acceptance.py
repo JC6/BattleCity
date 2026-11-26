@@ -48,5 +48,5 @@ def measure(run,previous,destination):
                                  passed=delta>noise if region in TARGETS else delta>=-noise))
     with destination.open('w',newline='') as f:
         w=csv.DictWriter(f,rows[0]);w.writeheader();w.writerows(rows)
-    assert len(rows)==104
+    assert len(references)==28 and len(rows)==112
     return rows

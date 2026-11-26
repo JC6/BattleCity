@@ -212,6 +212,11 @@ jobs:
             BATTLECITY_CAPTURE_DIR="$PWD/build/web-observations/screens" node tests/nes/browser-game.cjs http://127.0.0.1:8765/ build/shared/game.lbl
             exit "$clock_status"
           fi
+      - name: Retain Web failure context for individual test retries
+        if: failure() && inputs.cartridge == 'game'
+        run: |
+          mkdir -p build/web-observations
+          tail -120 "$RUNNER_TEMP/battlecity-test.log" > build/web-observations/failure.log
       - uses: actions/upload-artifact@v4
         if: always() && inputs.cartridge == 'game'
         with:

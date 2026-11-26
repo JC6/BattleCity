@@ -78,3 +78,13 @@ jobs:
             delivery/Switch-TV-Measurements.zip
             delivery/menu-sizes.csv
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: switch-acceptance-manifest
+          path: |
+            delivery/SHA256SUMS
+            delivery/menu-sizes.csv
+            inputs/current/presentation-cost.csv
+            inputs/current/tv-device-results/release-gate.json
+          if-no-files-found: error

@@ -7,10 +7,10 @@ The mask field holds one byte per ROI pixel in row-major order, compressed with 
 and hex-encoded. The original fixed reference uses an empty registration object.
 
 The system menu has two calibration and two reserved captures from each recording.
-Screen Settings uses two calibration and two reserved captures from the common
+Screen Settings uses two calibration and four reserved captures from the common
 English collection menu. Both labels describe the collection shell. Repeated
 captures within one video share an author and a recording. Each of the six regions
-also has one fixed anchor. Freeze the samples before changing the artwork.
+also has one fixed anchor. The second pair at 65.72 and 66.82 seconds was reserved before the edge correction. The original reserved pair is also checked.
 
 Sources are [English collection gameplay](https://www.youtube.com/watch?v=S26lUv598_o)
 and [the second Switch recording](https://www.youtube.com/watch?v=dv9axuULtdA).

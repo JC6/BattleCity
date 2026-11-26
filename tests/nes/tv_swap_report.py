@@ -2,8 +2,11 @@
 import csv
 import json
 import re
+import subprocess
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from statistics import median
-from native_window_report import table
+from native_window_report import picture, table
 from tv_presentation_cost import window_summary
 
 
@@ -81,11 +84,46 @@ def audit(folder,output=None):
     return summaries
 
 
+def marker_strip(folder, name, output):
+    observation=json.loads((folder/(name+'-marker.json')).read_text())
+    bounds=[box for box in (observation['left'],observation['right']) if box]
+    if len(bounds)!=2:return None
+    width,height=observation['size']
+    left=max(0,min(b[0] for b in bounds)-4)
+    top=max(0,min(b[1] for b in bounds)-4)
+    w=min(width,max(b[2] for b in bounds)+4)-left
+    h=min(height,max(b[3] for b in bounds)+4)-top
+    if w>128 or h>64:return None
+    cmd=['ffmpeg','-v','error','-y','-filter_complex_threads','1']
+    for n in range(4):cmd+=['-i',str(folder/f'{name}-marker-{n}.png')]
+    filters=[f'[{i}:v]crop={w}:{h}:{left}:{top}:exact=1[p{i}]' for i in range(4)]
+    filters.append('[p0][p1][p2][p3]hstack=inputs=4,scale=iw*4:ih*4:flags=neighbor[out]')
+    subprocess.run([*cmd,'-filter_complex',';'.join(filters),'-map','[out]','-threads','1',
+                    '-frames:v','1',str(output)],check=True)
+    return picture(output,name+' · 初始、左、右、复原（实拍局部放大）')
+
+
 def sections(run):
-    rows=audit(run/'tv-device-results/presentation',run)
+    folder=run/'tv-device-results/presentation'
+    rows=audit(folder,run)
+    pairs=[]
+    for scene in ('producer','battle','explosions'):
+        for n in range(1,4):
+            pair={r['variant']:r for r in rows if r['scene']==scene and r['repeat']==n}
+            a,b=pair['plain'],pair['hinted']
+            def delta(field):
+                return b[field]-a[field]
+            pairs.append([scene,n,f"{delta('observed_fps'):+.2f}",f"{delta('swap_p50_ms'):+.3f}",
+                          f"{delta('swap_p95_ms'):+.3f}",f"{100*delta('game'):+.2f}" if a['game'] is not None else '—',
+                          f"{100*delta('pcm'):+.2f}" if a['pcm'] is not None else '—'])
+    with TemporaryDirectory() as temp:
+        strips=[marker_strip(folder,f'producer-{variant}-1',Path(temp)/(variant+'.png')) for variant in ('plain','hinted')]
     return ['<h2>电视全图复制与交换范围</h2><p>同一安装包、同一初始战斗状态、1195 × 960 缓冲。每次交换使用分批日志，面积按实际调用参数计算。</p>',
             table(('场景','交换','实际接口','轮次','显示 / 提交','显示帧/秒','局部提示 / 总提示','平均面积','游戏速度','PCM 速度','交换 P50 ms','交换 P95 ms','方块复原'),
                   [[r['scene'],r['variant'],r['hint_api'],r['repeat'],f"{r['observed']} / {r['submitted']}",f"{r['observed_fps']:.2f}",
                     f"{r['partial_rectangles']} / {r['hinted_calls']}",f"{r['mean_area_fraction']:.2%}",
                     f"{r['game']:.2%}" if r['game'] is not None else '—',f"{r['pcm']:.2%}" if r['pcm'] is not None else '—',
-                    r['swap_p50_ms'],r['swap_p95_ms'],r['marker'] if r['marker'] is not None else '—'] for r in rows])]
+                    r['swap_p50_ms'],r['swap_p95_ms'],r['marker'] if r['marker'] is not None else '—'] for r in rows]),
+            '<h3>同轮差值</h3><p>各项取带矩形交换减普通交换。游戏与 PCM 速度列以百分点为单位。</p>',
+            table(('场景','轮次','显示帧/秒差','交换 P50 差 ms','交换 P95 差 ms','游戏差','PCM 差'),pairs),
+            *[strip for strip in strips if strip]]

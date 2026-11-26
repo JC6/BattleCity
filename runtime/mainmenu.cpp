@@ -578,6 +578,23 @@ private:
         }
         if (!wallpaper) {
             constexpr float px=1.f/1280, py=1.f/720;
+            for (int i=0;i<2;++i) {
+                auto &c=container();
+                float const top=(137+42*i)*py;
+                rounded(c,802*px,top,34*px,34*py,17*px,17*py,rgb_t(0,19,64));
+                // Both badges contain the same pixel S. The lower flag has scan lines.
+                static constexpr unsigned glyph[]={0x3c,0x66,0x60,0x3c,0x06,0x66,0x3c};
+                for (int row=0;row<7;++row)
+                    for (int col=0;col<7;++col)
+                        if (glyph[row] & (0x40>>col))
+                            box(c,(805+2*col)*px,top+(9+2*row)*py,2*px,2*py,rgb_t(100,4,16));
+                auto gold=rgb_t(104,79,8);
+                box(c,819*px,top+8*py,3*px,21*py,gold);
+                box(c,817*px,top+27*py,7*px,3*py,gold);
+                for (int row=0;row<12;++row)
+                    box(c,822*px,top+(9+row)*py,(1+std::min(row,11-row)*2)*px,py,
+                        i && row%2 ? rgb_t(64,51,8) : gold);
+            }
             container().add_quad(801*px,136*py,837*px,214*py,rgb_t::white(),badges,blend);
             int picture=battlecity_picture(-1);
             for (int i=0;i<2;++i) {

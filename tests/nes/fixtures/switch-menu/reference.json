@@ -678,5 +678,67 @@
       ]
     },
     "mask": "78daed97db0e84200c4467feffa737ae31947b1944d78d7d22e2914ba133026ffc5f3084468da1a484b2182a4795eba21441366301587cdb01b21732c82bc1bdf7e4112ba33c0294d7786f1e9f06aaf7eaf2d2a116ab4575550775ed8088552ee6624536ec6b6a7ecd5aa98eec2e67253bb209672517800967e5cddee68de24f75b9a309d3762ac0614e625336705e444b6627e906bf9b8374fc66790a6e339903dcc23a36a299a879d25e64bcba907edb57035170d518300f61aaae32926f08e13aad71e70eaa270792cf49419c0f42fcd3413b8b6e09a7f31a678720bb93ee3a57caee0209d0456742e6268475243eb91306fe"
+  },
+  {
+    "region": "picture-icons",
+    "scene": "screen-settings",
+    "role": "validation",
+    "video": "S26lUv598_o",
+    "seconds": 65.72,
+    "raw_sha256": "10caec0a504b03b86627ad2d34efab2300c06106be90103d1b3265e42f13f985",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        635.75
+      ],
+      "capture_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "scaled_size": [
+        1280,
+        722
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "mask": "78daed964716c4200c43edfb5f7ade94d08c832c088b79789582a8c6fa22274ea4d01c9c2a22d54ed04240aa5ed04265750ae89c1ef001dfefe53778a2b623205d4a61b9044f28bd115397e31145daa95e5fc01c0537f621e1f7705c616e5c7635d857ef388253cd73105468ce6fe7ae0a94ac23e1fadb611a2a298cd78eee0d81abdcef99150e2ff174256f3373d27638a3e3bcf530c6bf10120b5674c24d02120d56cf91d58222c702d2c77f8d270f74c9198d2fc74a6344e8a060c0e69aaa0e087be478efc8922dae2d9314038c47ac284ab145d6ab13b5a88df2aa71f4c054a132d2815b81b2b5feb91090d0649d222be10149c242738a3059290b484a22d9d574ae94ef0524dd61ac91780144ec066c"
+  },
+  {
+    "region": "picture-icons",
+    "scene": "screen-settings",
+    "role": "validation",
+    "video": "S26lUv598_o",
+    "seconds": 66.82,
+    "raw_sha256": "3386207600f97697927adce5bb626a894667703e7188825fcb783e17d3c8695c",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        635.75
+      ],
+      "capture_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "scaled_size": [
+        1280,
+        722
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "mask": "78daed964716c4200c43edfb5f7ade94d08c832c088b79789582a8c6fa22274ea4d01c9c2a22d54ed04240aa5ed04265750ae89c1ef001dfefe53778a2b623205d4a61b9044f28bd115397e31145daa95e5fc01c0537f621e1f7705c616e5c7635d857ef388253cd73105468ce6fe7ae0a94ac23e1fadb611a2a298cd78eee0d81abdcef99150e2ff174256f3373d27638a3e3bcf530c6bf10120b5674c24d02120d56cf91d58222c702d2c77f8d270f74c9198d2fc74a6344e8a060c0e69aaa0e087be478efc8922dae2d9314038c47ac284ab145d6ab13b5a88df2aa71f4c054a132d2815b81b2b5feb91090d0649d222be10149c242738a3059290b484a22d9d574ae94ef0524dd61ac91780144ec066c"
   }
 ]

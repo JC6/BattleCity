@@ -10,7 +10,7 @@ import shutil
 import sys
 from html import escape
 from pathlib import Path
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tests/nes'))
@@ -23,6 +23,21 @@ from tv_swap_report import sections
 
 def sha(file):
     with file.open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
+
+
+def add_evidence(archive,name,source=None,data=None):
+    # A GitHub artifact can be extracted on any filesystem. Archive order,
+    # permissions and timestamps must not depend on the extraction machine.
+    info=ZipInfo(Path(name).as_posix(),(1980,1,1,0,0,0))
+    info.create_system=3
+    info.external_attr=0o100644<<16
+    info.compress_type=ZIP_DEFLATED
+    with archive.open(info,'w') as target:
+        if source is None:
+            target.write(data)
+        else:
+            with source.open('rb') as stream:
+                shutil.copyfileobj(stream,target)
 
 
 def certificate(signer,apk):
@@ -123,17 +138,17 @@ def package(run,previous,out,identity,arm_dir=None,signer=None,reference_arm=Non
     archive=out/'Switch-TV-Measurements.zip'
     with ZipFile(archive,'w',ZIP_DEFLATED,compresslevel=6) as z:
         for f in (out/'menu-sizes.csv',run/'presentation-frames.csv',run/'presentation-cost.csv',FIXTURE):
-            z.write(f,f.name)
-        for folder in [tv,run/'web-clock-and-endings',run/'campaign-loop',*run.glob('stage-replay-*'),*run.glob('upgrade-*')]:
+            add_evidence(z,f.name,source=f)
+        for folder in [tv,run/'web-clock-and-endings',run/'campaign-loop',*sorted(run.glob('stage-replay-*')),*sorted(run.glob('upgrade-*'))]:
             for f in sorted(folder.rglob('*')):
                 if f.is_file() and f.name not in ('artifact.json','emulator.log','logcat.txt','device.log'):
-                    z.write(f,f.relative_to(run))
+                    add_evidence(z,f.relative_to(run),source=f)
         for f in sorted((previous/'web-clock-and-endings/screens').glob('*.png')):
             if any(f.name.startswith(scene+'-') for scene in ('system-menu','screen-settings')):
-                z.write(f,'previous/web-clock-and-endings/screens/'+f.name)
+                add_evidence(z,'previous/web-clock-and-endings/screens/'+f.name,source=f)
         for f in sorted(study.iterdir()):
-            z.write(f,'switch-terminal/'+f.name)
-        z.writestr('identity.txt',identity+'\n')
+            add_evidence(z,'switch-terminal/'+f.name,source=f)
+        add_evidence(z,'identity.txt',data=(identity+'\n').encode())
     for name,source in files.items():
         dest=out/name
         if dest.exists() and sha(dest)==sha(source):continue
