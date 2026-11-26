@@ -529,7 +529,8 @@ async function verify(engine, suite) {
         try {
             await page.waitForTimeout(21100);
             await capture(page,'staff-credits-middle');
-            await page.waitForTimeout(37500);
+            // Screenshot capture time varies across browsers. Watch the card
+            // immediately and require the producer line to settle at the centre.
             await page.waitForFunction(() => {
                 const canvas=document.createElement('canvas');
                 canvas.width=320; canvas.height=180;
@@ -542,8 +543,11 @@ async function verify(engine, suite) {
                     minX=Math.min(minX,x); maxX=Math.max(maxX,x);
                     minY=Math.min(minY,y); maxY=Math.max(maxY,y);
                 }
-                return minY>=86 && minY<=91 && maxY<=95 && minX<100 && maxX>220;
-            },null,{polling:80,timeout:90000});
+                const centered=minY>=86 && minY<=91 && maxY<=95 && minX<100 && maxX>220;
+                if (!centered) { window.producerCenteredSince=undefined; return false; }
+                window.producerCenteredSince ??= performance.now();
+                return performance.now()-window.producerCenteredSince>=320;
+            },null,{polling:80,timeout:120000});
             await capture(page,'staff-credits-final');
         } finally { await page.keyboard.up('ArrowDown'); }
         // Credits return to the four Settings cards. Wait for all four blue
