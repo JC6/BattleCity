@@ -1,4 +1,4 @@
-"""Align the terminal cue near visible GAME OVER in three identified public recordings."""
+"""Align the terminal cue near visible GAME OVER in identified public recordings."""
 import argparse
 import csv
 import hashlib
@@ -17,14 +17,18 @@ CASES = (
 )
 
 
-def measure(native_wav, native_onset, clips, output):
+SNOLEY = ('snoley-ending-audio', '3nhbhT7hfqU', 435.733276, 448, 451,
+          '07d10d3a3c4928ce536dfe69f68f3ffb4669111209b3340e50ea651a81868449')
+
+
+def measure(native_wav, native_onset, clips, output, cases=CASES):
     ref = centered_frames(pcm(native_wav, native_onset, 1.48), 256)
     local_tail = tail(pcm(native_wav, native_onset, 2.15), .012)
     with output.open('w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(('clip', 'video_id', 'clip_start_s', 'sha256', 'search_start_s', 'search_end_s',
                          'best_time_s', 'spectral_cosine', 'tail_0_6pct', 'tail_1_2pct', 'tail_2_4pct', 'local_tail_1_2pct'))
-        for name, video, origin, left, right, expected in CASES:
+        for name, video, origin, left, right, expected in cases:
             clip = clips/(name+'.m4a')
             with clip.open('rb') as source:
                 assert hashlib.file_digest(source,'sha256').hexdigest()==expected
@@ -46,5 +50,6 @@ if __name__=='__main__':
     parser.add_argument('native_onset',type=float)
     parser.add_argument('clips',type=Path)
     parser.add_argument('output',type=Path)
+    parser.add_argument('--snoley', action='store_true', help='measure the English Switch stage-one recording by Snoley')
     args=parser.parse_args()
-    measure(args.native_wav,args.native_onset,args.clips,args.output)
+    measure(args.native_wav,args.native_onset,args.clips,args.output,(SNOLEY,) if args.snoley else CASES)

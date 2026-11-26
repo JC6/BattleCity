@@ -121,9 +121,11 @@ def register_menu_frame(reference, capture, output):
     width=round(1280*(a[1]-a[0])/(b[1]-b[0]))
     height=round(720*(a[3]-a[2])/(b[3]-b[2]))
     dx,dy=round(a[0]-b[0]*width/1280),round(a[2]-b[2]*height/720)
-    if not (0<=dx<=1280-width and 0<=dy<=720-height):
-        raise ValueError('Held-out capture does not fit the calibrated display bounds')
-    filters=f'scale=1280:720:flags=area,format=rgb24,scale={width}:{height}:flags=bilinear,pad=1280:720:{dx}:{dy}'
+    if not (0.95 <= width/1280 <= 1.05 and 0.95 <= height/720 <= 1.05 and abs(dx)<64 and abs(dy)<36):
+        raise ValueError(f'Menu borders do not register: {a} against {b}')
+    left,top=max(0,-dx),max(0,-dy)
+    right,bottom=min(width,1280-dx),min(height,720-dy)
+    filters=f'scale=1280:720:flags=area,format=rgb24,scale={width}:{height}:flags=bilinear,crop={right-left}:{bottom-top}:{left}:{top}:exact=1,pad=1280:720:{max(0,dx)}:{max(0,dy)}'
     subprocess.run(['ffmpeg','-v','error','-y','-filter_threads','1','-i',str(capture),'-vf',filters,
                     '-frames:v','1','-threads','1',str(output)],check=True)
     return dict(reference_edges=a,capture_edges=b,scaled_size=[width,height],offset=[dx,dy])
