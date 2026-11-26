@@ -1,0 +1,64 @@
+name: Verify archived television packages
+on:
+  push:
+    branches: ['validation/tv-signatures-*']
+  workflow_dispatch:
+    inputs:
+      tested:
+        description: Run that built the four television APKs
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  signatures:
+    runs-on: ubuntu-24.04
+    steps:
+      - id: source
+        env:
+          TESTED: ${{ inputs.tested }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tested="${TESTED:-${GITHUB_REF_NAME##*-}}"
+          [[ "$tested" =~ ^[0-9]+$ ]]
+          mkdir -p verification
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$tested" --jq '{id,head_sha,html_url}' > verification/source.json
+          echo "run=$tested" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.source.outputs.run }}
+          pattern: game-tv*
+          path: packages
+      - name: Verify APK signatures and record public certificate fingerprints
+        shell: python
+        run: |
+          import csv, hashlib, os, re, subprocess
+          from pathlib import Path
+          sdk = Path(os.environ['ANDROID_HOME'])
+          signer = sdk / 'build-tools/34.0.0/apksigner'
+          if not signer.is_file():
+              subprocess.run([sdk / 'cmdline-tools/latest/bin/sdkmanager', 'build-tools;34.0.0'], check=True)
+          root = Path('packages')
+          with Path('verification/apk-signatures.csv').open('w', newline='') as output:
+              csvout = csv.writer(output)
+              csvout.writerow(['artifact', 'apk', 'sha256', 'certificate_sha256'])
+              for folder, base in [('game-tv', 'tv'), ('game-tv-emulator', 'tv-emulator')]:
+                  certs = set()
+                  for suffix in ['', '-candidate']:
+                      apk = root / folder / (base + suffix + '.apk')
+                      result = subprocess.check_output([signer, 'verify', '--print-certs', apk], text=True)
+                      certificate, = re.findall(r'^Signer #1 certificate SHA-256 digest: ([0-9a-f]{64})$', result, re.M)
+                      certs.add(certificate)
+                      with apk.open('rb') as stream:
+                          digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+                      csvout.writerow([folder, apk.name, digest, certificate])
+                  assert len(certs) == 1, folder
+      - uses: actions/upload-artifact@v4
+        with:
+          name: television-signatures
+          path: verification/
+          if-no-files-found: error
