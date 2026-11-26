@@ -1,0 +1,80 @@
+name: Package measured Switch comparison
+
+on:
+  workflow_call:
+    inputs:
+      tested:
+        type: string
+        required: true
+      previous:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tested:
+        description: Tested BattleCity Web run ID
+        type: string
+        required: true
+      previous:
+        description: Baseline BattleCity Web run ID
+        type: string
+        required: true
+  push:
+    branches: ['validation/switch-report-*']
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - id: runs
+        env:
+          TESTED: ${{ inputs.tested }}
+          PREVIOUS: ${{ inputs.previous }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if [[ -z "$TESTED" ]]; then
+            [[ "$GITHUB_REF_NAME" =~ ^validation/switch-report-([0-9]+)-([0-9]+)$ ]]
+            TESTED=${BASH_REMATCH[1]} PREVIOUS=${BASH_REMATCH[2]}
+          fi
+          [[ "$TESTED" =~ ^[0-9]+$ && "$PREVIOUS" =~ ^[0-9]+$ && "$TESTED" != "$PREVIOUS" ]]
+          revision=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TESTED" --jq .head_sha)
+          [[ "$revision" =~ ^[a-f0-9]{40}$ ]]
+          echo "tested=$TESTED" >> "$GITHUB_OUTPUT"
+          echo "previous=$PREVIOUS" >> "$GITHUB_OUTPUT"
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.runs.outputs.tested }}
+          path: inputs/current
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.runs.outputs.previous }}
+          name: web-clock-and-endings
+          path: inputs/previous/web-clock-and-endings
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Recheck hashes, device receipts, regressions and menu samples
+        env:
+          REVISION: ${{ steps.runs.outputs.revision }}
+          TESTED: ${{ steps.runs.outputs.tested }}
+          PREVIOUS: ${{ steps.runs.outputs.previous }}
+        run: |
+          python3 tools/package-switch-acceptance.py inputs/current inputs/previous delivery --identity "$REVISION / $TESTED (baseline $PREVIOUS)"
+          (cd delivery && sha256sum -c SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: switch-acceptance
+          path: |
+            delivery/SHA256SUMS
+            delivery/Switch-TV-Comparison.html
+            delivery/Switch-TV-Measurements.zip
+            delivery/menu-sizes.csv
+          if-no-files-found: error

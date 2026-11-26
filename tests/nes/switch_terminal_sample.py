@@ -21,6 +21,10 @@ SNOLEY = ('snoley-ending-audio', '3nhbhT7hfqU', 435.733276, 448, 451,
           '07d10d3a3c4928ce536dfe69f68f3ffb4669111209b3340e50ea651a81868449')
 
 
+AUDAP = ('swap-audap-audio', 'qb1BUVeAquI', 605.966664, 625.5, 628,
+         '275735c41d3448f36ffaebda9d1d12cae4e347ea89a351f222759ad8127541d8')
+
+
 def measure(native_wav, native_onset, clips, output, cases=CASES):
     ref = centered_frames(pcm(native_wav, native_onset, 1.48), 256)
     local_tail = tail(pcm(native_wav, native_onset, 2.15), .012)
@@ -50,6 +54,8 @@ if __name__=='__main__':
     parser.add_argument('native_onset',type=float)
     parser.add_argument('clips',type=Path)
     parser.add_argument('output',type=Path)
-    parser.add_argument('--snoley', action='store_true', help='measure the English Switch stage-one recording by Snoley')
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument('--audap',action='store_true',help='measure the English Switch stage-two recording by audap')
+    source.add_argument('--snoley', action='store_true', help='measure the English Switch stage-one recording by Snoley')
     args=parser.parse_args()
-    measure(args.native_wav,args.native_onset,args.clips,args.output,(SNOLEY,) if args.snoley else CASES)
+    measure(args.native_wav,args.native_onset,args.clips,args.output,(AUDAP,) if args.audap else (SNOLEY,) if args.snoley else CASES)

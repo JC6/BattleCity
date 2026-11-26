@@ -177,3 +177,11 @@ Crolister 的英文录像展示了普通编辑器的进入、退出、重新进�
 ### 英文 Switch 单人 1400 分终局
 
 Snoley 的英文 Switch 合集录像在第 1 关显示 TOTAL 14，随后出现 GAME OVER，标题回来时显示本局 1400、纪录 20000。TOTAL 14 在 446.750 秒稳定可读，GAME OVER 在 449.150 秒可读，间隔 2.400 秒。录制文件的相邻帧为 16.7 毫秒。按画面将音乐起点的搜索区间限定在 448–451 秒，最佳对齐在 449.325 秒，频谱相似度为 0.5466，低于同批录音采用的 0.70 门槛。这段录像可核对画面顺序，未提供足以测量尾音的新样本。复核该段的命令在原有测量脚本后加 `--snoley`。[终局原片](https://www.youtube.com/watch?v=3nhbhT7hfqU&t=448s) · [对齐方法](../../tests/nes/switch_terminal_sample.py)
+
+### 第二关 15 击毁的英文 Switch 结算
+
+audap 的英文合集录像在 7:13–10:53 连续展示《坦克大战》。第二关结算时，画面显示玩家 5,900 分、纪录 20,000 分和击毁总数 15。TOTAL 15 在 624.233 秒首次连续可读，GAME OVER 在 626.633 秒首次连续可读，相隔 2.400 秒。该时间段采集帧间隔为 16.7 毫秒。随后标题仍显示 5,900 和 20,000，未触发大号纪录数字画面。[结算原片](https://www.youtube.com/watch?v=qb1BUVeAquI&t=624s) · [逐帧测量](../../tests/nes/fixtures/switch-terminal/audap-visual.csv)
+
+按画面限定音轨搜索区间后，结束音乐最佳对齐点为 626.890 秒，频谱相似度为 0.8129，通过原有 0.70 门槛。以峰值的 2.4% 为阈值，首次持续 100 毫秒低于阈值的起点，录像为 1.62 秒，复刻为 1.58 秒。以 0.6% 和 1.2% 测量时，录像在测量区间内均未达到持续静音条件。此次结果为 40 毫秒差异增加了一份独立样本，现有混合音轨仍无法定位到具体声道。[音轨测量](../../tests/nes/fixtures/switch-terminal/audap-audio.csv) · [复测脚本](../../tests/nes/switch_terminal_sample.py)
+
+本轮按 13 组检索词得到 100 个去重视频条目。官方日版宣传片、英语发行预告和较高播放量的评论提供合集与画面线索。掌机拍摄能看到实机和玩家，另有录像全程展示日版合集。在抽查片段中未取得英文合集连续两次肩键回退的输入和对应落点、完整的无输入待机区间、隐藏留言的进入与退出，以及大号数字 2、3、4、7 的新增证据。[发行方说明](https://www.bandainamcoent.com/games/namco-museum-archives-vol-2) · [官方日版宣传片](https://www.youtube.com/watch?v=qWgP_TVWLA0) · [掌机录像](https://www.youtube.com/watch?v=b-wahHxs4D0) · [英文合集评论](https://www.youtube.com/watch?v=b6MitTs0gZg)

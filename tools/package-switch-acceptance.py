@@ -4,6 +4,8 @@ import csv
 import hashlib
 import json
 import os
+import re
+import subprocess
 import shutil
 import sys
 from html import escape
@@ -23,7 +25,14 @@ def sha(file):
     with file.open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
 
 
-def package(run,previous,out,identity,arm_dir=None):
+def certificate(signer,apk):
+    output=subprocess.check_output([signer,'verify','--print-certs',str(apk)],text=True)
+    match=re.search(r'^Signer #1 certificate SHA-256 digest: ([a-f0-9]{64})$',output,re.M)
+    if not match:raise ValueError(f'Missing APK signer for {apk}')
+    return match[1]
+
+
+def package(run,previous,out,identity,arm_dir=None,signer=None,reference_arm=None):
     out.mkdir(parents=True,exist_ok=True)
     tv=run/'tv-device-results'
     gate=decision(tv,renderer='egl-tv')
@@ -32,6 +41,7 @@ def package(run,previous,out,identity,arm_dir=None):
     cartridge=run/'cartridge/game.nes'
     digest=sha(cartridge)
     assert tested['build/shared/game.nes']==digest
+    expected_certificate=certificate(signer,reference_arm) if arm_dir else None
     promoted=gate['default']=='egl-tv'
     files={'game.nes':cartridge,'game.lbl':run/'cartridge/game.lbl',
            'BattleCity-Web.zip':run/'game-web/BattleCity-Web.zip'}
@@ -49,7 +59,7 @@ def package(run,previous,out,identity,arm_dir=None):
                 def payload(path):
                     with ZipFile(path) as z:return {f:hashlib.sha256(z.read(f)).digest() for f in z.namelist()
                                                     if not f.endswith('/') and not f.startswith('META-INF/')}
-                assert payload(signed)==payload(source)
+                assert certificate(signer,signed)==expected_certificate and payload(signed)==payload(source)
                 source=signed
             verify(source,cartridge,abi)
             files[dest+label+'.apk']=source
@@ -65,8 +75,23 @@ def package(run,previous,out,identity,arm_dir=None):
             data=[json.loads(l) for l in (run/f'web-clock-and-endings/{engine}-{hz}.jsonl').read_text().splitlines() if l.startswith('{')]
             data=[r for r in data if 'run' in r]
             assert [r['run'] for r in data]==[1,2,3]
+            assert all(.99<=r['speed']<=1.01 and .99<=r['audioSpeed']<=1.01 for r in data)
             clocks.extend(data)
-    assert json.loads((tv/'upgrade.json').read_text())['cartridge']==digest
+    upgrade=json.loads((tv/'upgrade.json').read_text())
+    assert upgrade['cartridge']==digest and upgrade['thumbnailPreserved'] and upgrade['lockPreserved']
+    endings=[]
+    for platform,folder in [('web',run/'web-clock-and-endings'),('tv',tv/'timing')]:
+        for case in ('neutral','record','skip-over','coop-stage18','coop-stage42'):
+            capture=folder/f'{platform}-{case}'
+            events=rows(capture/'events.csv')
+            assert events and (capture/'game.wav').stat().st_size>44
+            titles=[r['value'] for r in events if r['event']=='two-player-title']
+            if case.startswith('coop-'):
+                assert titles[-1]=={'coop-stage18':'40400/68100/68100','coop-stage42':'15000/68100/45800'}[case]
+            endings.append([platform,case,len(events),titles[-1] if titles else '—'])
+    study=ROOT/'tests/nes/fixtures/switch-terminal'
+    visual=rows(study/'audap-visual.csv')[0]
+    audio=rows(study/'audap-audio.csv')[0]
     measured=measure(run,previous,out/'menu-sizes.csv')
     failed=[r for r in measured if r['role']!='calibration' and not r['passed']]
     swap=sections(run)
@@ -83,7 +108,16 @@ def package(run,previous,out,identity,arm_dir=None):
     for scene in ('system-menu','screen-settings'):
         for h in (720,1080):
             html.append(picture(run/f'web-clock-and-endings/screens/{scene}-{h}.png',f'Web · {scene} · {h}p'))
-    html.append('<p>英语 Switch 版本的连续两次回退落点、无输入演示的输入边界、隐藏讯息完整进出、大号结算数字与短尾音仍缺少直接测量。</p></html>')
+    html.extend(['<h2>结算画面与音频</h2>',
+                 table(('平台','结局','记录事件','双人标题分数'),endings),
+                 f'<p>新核对的英文 Switch 第二关实录显示 15 击毁。TOTAL 15 首次连续可读为 {float(visual["total_s"]):.3f} 秒，'
+                 f'GAME OVER 为 {float(visual["game_over_s"]):.3f} 秒，间隔 {float(visual["interval_s"]):.3f} 秒。'
+                 '<a href="https://www.youtube.com/watch?v=qb1BUVeAquI&amp;t=624s">原始实录</a></p>',
+                 f'<p>结束音乐的频谱相似度为 {audio["spectral_cosine"]}。在 2.4% 阈值下，录像的可听尾音为 '
+                 f'{audio["tail_2_4pct"]} 秒，复刻为 1.58 秒。录像在 0.6% 和 1.2% 阈值下均未达到持续静音条件。'
+                 '这份混合音轨仍无法将差异定位到具体的音符或声道。</p>',
+                 '<p>连续两次回退的落点、无人操作待机、隐藏留言的进入与退出，以及大号结算数字 2、3、4、7，'
+                 '仍待英文 Switch 目标版本直接核验。本轮设备证据限于 x86 电视模拟器。</p></html>'])
     report=out/'Switch-TV-Comparison.html'
     report.write_text('\n'.join(html))
     archive=out/'Switch-TV-Measurements.zip'
@@ -97,6 +131,8 @@ def package(run,previous,out,identity,arm_dir=None):
         for f in sorted((previous/'web-clock-and-endings/screens').glob('*.png')):
             if any(f.name.startswith(scene+'-') for scene in ('system-menu','screen-settings')):
                 z.write(f,'previous/web-clock-and-endings/screens/'+f.name)
+        for f in sorted(study.iterdir()):
+            z.write(f,'switch-terminal/'+f.name)
         z.writestr('identity.txt',identity+'\n')
     for name,source in files.items():
         dest=out/name
@@ -114,5 +150,9 @@ if __name__=='__main__':
     for name in ('current','previous','output'):parser.add_argument(name,type=Path)
     parser.add_argument('--identity',required=True)
     parser.add_argument('--signed-arm',type=Path)
+    parser.add_argument('--signing-reference',type=Path,help='installed ARM64 release with the required certificate')
+    parser.add_argument('--apksigner',default=shutil.which('apksigner'))
     args=parser.parse_args()
-    package(args.current,args.previous,args.output,args.identity,args.signed_arm)
+    if args.signed_arm and not (args.signing_reference and args.apksigner):
+        parser.error('--signed-arm requires --signing-reference and apksigner')
+    package(args.current,args.previous,args.output,args.identity,args.signed_arm,args.apksigner,args.signing_reference)

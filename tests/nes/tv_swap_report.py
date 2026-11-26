@@ -2,7 +2,6 @@
 import csv
 import json
 import re
-from pathlib import Path
 from statistics import median
 from native_window_report import table
 from tv_presentation_cost import window_summary
@@ -85,8 +84,8 @@ def audit(folder,output=None):
 def sections(run):
     rows=audit(run/'tv-device-results/presentation',run)
     return ['<h2>电视全图复制与交换范围</h2><p>同一安装包、同一初始战斗状态、1195 × 960 缓冲。每次交换使用分批日志，面积按实际调用参数计算。</p>',
-            table(('场景','交换','轮次','显示 / 提交','局部提示 / 总提示','平均面积','游戏速度','PCM 速度','交换 P50 ms','交换 P95 ms','方块复原'),
-                  [[r['scene'],r['variant'],r['repeat'],f"{r['observed']} / {r['submitted']}",
+            table(('场景','交换','实际接口','轮次','显示 / 提交','显示帧/秒','局部提示 / 总提示','平均面积','游戏速度','PCM 速度','交换 P50 ms','交换 P95 ms','方块复原'),
+                  [[r['scene'],r['variant'],r['hint_api'],r['repeat'],f"{r['observed']} / {r['submitted']}",f"{r['observed_fps']:.2f}",
                     f"{r['partial_rectangles']} / {r['hinted_calls']}",f"{r['mean_area_fraction']:.2%}",
                     f"{r['game']:.2%}" if r['game'] is not None else '—',f"{r['pcm']:.2%}" if r['pcm'] is not None else '—',
                     r['swap_p50_ms'],r['swap_p95_ms'],r['marker'] if r['marker'] is not None else '—'] for r in rows])]

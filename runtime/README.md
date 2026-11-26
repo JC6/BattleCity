@@ -141,4 +141,10 @@ python3 tools/package-switch-acceptance.py current previous delivery --identity 
 The four APKs, browser ZIP, cartridge, labels, HTML, measurement archive and SHA-256
 manifest use the release gate's measured renderer. Installing over an existing
 ARM64 build requires its signing certificate. Supply those locally signed APKs with
-`--signed-arm DIRECTORY` to include them after verifying their payloads.
+`--signed-arm DIRECTORY --signing-reference PREVIOUS.apk --apksigner PATH`
+to check both the payloads and the signing certificate.
+
+The reusable `switch-acceptance.yml` workflow also packages two existing runs
+independently of the emulator. Supply numeric `tested` and `previous` run IDs.
+A `validation/switch-report-<tested>-<previous>` branch triggers the same comparison.
+The report records the tested commit, even when the reporting tools have advanced.

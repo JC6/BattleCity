@@ -33,31 +33,10 @@ jobs:
     permissions:
       contents: read
       actions: read
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
-        with:
-          path: inputs/current
-      - uses: actions/download-artifact@v4
-        with:
-          github-token: ${{ github.token }}
-          run-id: ${{ inputs.previous_tv_run || '45761439730' }}
-          name: web-clock-and-endings
-          path: inputs/previous/web-clock-and-endings
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - name: Verify game packages and assemble the comparison
-        run: python3 tools/package-switch-acceptance.py inputs/current inputs/previous delivery --identity "$GITHUB_SHA / $GITHUB_RUN_ID"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: switch-acceptance
-          path: |
-            delivery/SHA256SUMS
-            delivery/Switch-TV-Comparison.html
-            delivery/Switch-TV-Measurements.zip
-            delivery/menu-sizes.csv
-          if-no-files-found: error
+    uses: ./.github/workflows/switch-acceptance.yml
+    with:
+      tested: ${{ format('{0}', github.run_id) }}
+      previous: ${{ inputs.previous_tv_run || '45761439730' }}
 
   build:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'

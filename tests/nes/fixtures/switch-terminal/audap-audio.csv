@@ -1,0 +1,2 @@
+clip,video_id,clip_start_s,sha256,search_start_s,search_end_s,best_time_s,spectral_cosine,tail_0_6pct,tail_1_2pct,tail_2_4pct,local_tail_1_2pct
+swap-audap-audio,qb1BUVeAquI,605.966664,275735c41d3448f36ffaebda9d1d12cae4e347ea89a351f222759ad8127541d8,625.5,628,626.89,0.8129,,,1.62,1.58
