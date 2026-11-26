@@ -5,7 +5,7 @@ import json
 from statistics import median
 
 from native_window_report import table
-from tv_presentation import csv_records, reconcile, surface_receipts
+from tv_presentation import csv_records, reconcile
 
 PACKAGE = 'org.jiangc.bc.runtime'
 CASES = {'corners', 'calibration', 'moving-633', 'blast-700'}
@@ -16,26 +16,20 @@ def frame_boundaries(folder, name, row):
     shown = (folder / (name+'-present.csv')).read_bytes()
     trace = gzip.decompress((folder / (name+'-display.pftrace.gz')).read_bytes())
     audit = row.copy()
-    reconcile([audit], mapping, shown, trace, PACKAGE)
+    stamps, = reconcile([audit], mapping, shown, trace, PACKAGE)
     assert all(row[k] == audit[k] for k in ('displayEvidence','verifiedPresentations','individuallyObserved'))
     last = row['lastSubmittedFrame']
     sent = {nes:(gen,buffer) for gen,nes,buffer,_ in csv_records(mapping) if last-row['frames'] < nes <= last}
-    egl = {(gen,nes,buf):time for gen,nes,buf,time in csv_records(shown)}
-    layer = audit.get('displayLayer')
-    system = surface_receipts(trace, PACKAGE)[layer] if layer else {}
     with (folder/(name+'-boundaries.csv')).open() as file:
         bounds = {nes:(gen,begin,swap,end) for gen,nes,begin,swap,end in
                   (map(int,r) for r in csv.reader(file)) if nes in sent}
     assert set(bounds)==set(sent)
     output=[]
-    for nes,(gen,buf) in sent.items():
+    for (nes,(gen,buf)),stamp in zip(sent.items(),stamps,strict=True):
         generation,begin,swap,end=bounds[nes]
         assert generation==gen and 0<begin<=swap<=end
-        stamp = system.get(buf, 0) if layer else 0
-        if audit['displayEvidence'] == 'EGL_DISPLAY_PRESENT_TIME_ANDROID':
-            stamp = egl.get((gen, nes, buf), 0)
         output.append([name,nes,buf,begin,swap,end,stamp if stamp>0 else ''])
-    assert sum(bool(r[-1]) for r in output) == audit['verifiedPresentations']
+    assert sum(bool(r[-1]) for r in output) == audit['individuallyObserved']
     return output
 
 

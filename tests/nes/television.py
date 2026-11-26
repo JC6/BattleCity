@@ -585,6 +585,11 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
                     raw=private('cat','files/tv-frame-map.csv',check=False)
                     return any(line.split(b',')[1:2]==[str(endpoint).encode()] for line in raw.splitlines())
                 wait(written,bool,'buffered EGL measurement endpoint',interval=.5)
+            if presentation and name.startswith('producer-'):
+                # SurfaceFlinger emits the final queued fences on subsequent
+                # swaps. The four screenshot phases use frame IDs outside the
+                # measured window and let its pending buffers retire.
+                capture_moving_square(results,name)
             time.sleep(.5)
             adb('shell','perfetto','--attach='+trace_key,'--stop',check=False)
             trace=adb('exec-out','cat',trace_path,check=False)
@@ -601,8 +606,6 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
             (results/(name+'-frame-map.csv')).write_bytes(mapping)
             (results/(name+'-present.csv')).write_bytes(shown)
             reconcile(rows,mapping,shown,trace,PACKAGE)
-            if presentation and name.startswith('producer-'):
-                capture_moving_square(results,name)
         if name.endswith('explosions'):
             assert int(private('cat','files/tv-stress')) >= 720, 'blast fixture never ran in battle'
         summaries[name] = rows

@@ -561,8 +561,15 @@ async function verify(engine, suite) {
                     blue > edge[j - 1] + 30 && blue > edge[j - 2] + 55);
             });
         }, null, {timeout:15000});
-        await menu(page, ['Home','ArrowRight','Enter']);
-        await menu(page, ['Home','ArrowLeft','Enter']);
+        // The credits can finish between input samples. Observe each visible
+        // selection before activating it on the newly mounted menu.
+        await menu(page,['Home']);
+        await reachFocus(page,[.106,.350,.180,.215],'Home');
+        await reachFocus(page,[.309,.350,.180,.215],'ArrowRight');
+        await menu(page,['Enter']);
+        await reachFocus(page,[.170,.496,.141,.147]);
+        await reachFocus(page,[.689,.496,.141,.147],'ArrowLeft');
+        await menu(page,['Enter']);
         await page.waitForFunction(() => document.querySelector('main').dataset.wallpaper === '3');
         await renderFrames(page, 2);
         await capture(page, 'wallpaper-settings');

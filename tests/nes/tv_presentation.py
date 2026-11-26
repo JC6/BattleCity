@@ -87,6 +87,7 @@ def reconcile(rows, mapping, presented, trace, package):
     except (TypeError, ValueError):
         layers = {}
 
+    receipts = []
     for row in rows:
         count, last = row['frames'], row['lastSubmittedFrame']
         sent = [item for item in buffers if last-count < item[1] <= last]
@@ -98,6 +99,7 @@ def reconcile(rows, mapping, presented, trace, package):
         times = [native.get((gen, nes, buf), 0) for gen, nes, buf, _ in sent]
         source = 'unverified'
         partial = observed_count(times) if valid else 0
+        selected = times if partial else [0] * len(sent)
         row.pop('displayLayer', None)
         if valid and partial == count:
             source = 'EGL_DISPLAY_PRESENT_TIME_ANDROID'
@@ -108,8 +110,12 @@ def reconcile(rows, mapping, presented, trace, package):
             if len(complete) == 1:
                 source = 'SurfaceFlinger PRESENT_FENCE'
                 row['displayLayer'] = complete[0]
+                selected = [layers[complete[0]].get(i, 0) for i in ids]
             elif len(coverage) == 1:
-                partial = max(partial, next(iter(coverage.values())))
+                name, observed = next(iter(coverage.items()))
+                if observed > partial:
+                    partial = observed
+                    selected = [layers[name].get(i, 0) for i in ids]
 
         row['displayEvidence'] = source
         row['mappedFrames'] = len(sent)
@@ -120,3 +126,5 @@ def reconcile(rows, mapping, presented, trace, package):
         row['systemReceiptLayers'] = {name: sum(obs.get(i, 0) > 0 for i in ids)
                                       for name, obs in layers.items()}
         row['swapMsPerFrame'] = sum(item[3] for item in sent)/1e6/len(sent) if sent else 0
+        receipts.append([max(0, stamp) for stamp in selected])
+    return receipts

@@ -27,11 +27,12 @@ AUDAP = ('swap-audap-audio', 'qb1BUVeAquI', 605.966664, 625.5, 628,
 
 def measure(native_wav, native_onset, clips, output, cases=CASES):
     ref = centered_frames(pcm(native_wav, native_onset, 1.48), 256)
-    local_tail = tail(pcm(native_wav, native_onset, 2.15), .012)
+    local = pcm(native_wav, native_onset, 2.15)
+    local_tails = [tail(local, threshold) for threshold in (.012, .024)]
     with output.open('w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(('clip', 'video_id', 'clip_start_s', 'sha256', 'search_start_s', 'search_end_s',
-                         'best_time_s', 'spectral_cosine', 'tail_0_6pct', 'tail_1_2pct', 'tail_2_4pct', 'local_tail_1_2pct'))
+                         'best_time_s', 'spectral_cosine', 'tail_0_6pct', 'tail_1_2pct', 'tail_2_4pct', 'local_tail_1_2pct', 'local_tail_2_4pct'))
         for name, video, origin, left, right, expected in cases:
             clip = clips/(name+'.m4a')
             with clip.open('rb') as source:
@@ -45,7 +46,7 @@ def measure(native_wav, native_onset, clips, output, cases=CASES):
             if score>=.7:
                 data = pcm(clip,pos-origin,2.15)
                 tails = [tail(data,fraction) for fraction in (.006,.012,.024)]
-            writer.writerow((name,video,origin,expected,left,right,round(pos,3),round(score,4),*tails,local_tail))
+            writer.writerow((name,video,origin,expected,left,right,round(pos,3),round(score,4),*tails,*local_tails))
 
 
 if __name__=='__main__':

@@ -129,7 +129,7 @@ def package(run,previous,out,identity,arm_dir=None,signer=None,reference_arm=Non
                  f'GAME OVER 为 {float(visual["game_over_s"]):.3f} 秒，间隔 {float(visual["interval_s"]):.3f} 秒。'
                  '<a href="https://www.youtube.com/watch?v=qb1BUVeAquI&amp;t=624s">原始实录</a></p>',
                  f'<p>结束音乐的频谱相似度为 {audio["spectral_cosine"]}。在 2.4% 阈值下，录像的可听尾音为 '
-                 f'{audio["tail_2_4pct"]} 秒，复刻为 1.58 秒。录像在 0.6% 和 1.2% 阈值下均未达到持续静音条件。'
+                 f'{audio["tail_2_4pct"]} 秒，复刻为 {audio["local_tail_2_4pct"]} 秒。录像在 0.6% 和 1.2% 阈值下均未达到持续静音条件。'
                  '这份混合音轨仍无法将差异定位到具体的音符或声道。</p>',
                  '<p>连续两次回退的落点、无人操作待机、隐藏留言的进入与退出，以及大号结算数字 2、3、4、7，'
                  '仍待英文 Switch 目标版本直接核验。本轮设备证据限于 x86 电视模拟器。</p></html>'])

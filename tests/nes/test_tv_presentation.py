@@ -34,6 +34,15 @@ class PresentationTest(unittest.TestCase):
         self.assertEqual(self.check(shown=b'1,11,80,200\n1,12,81,300\n'),(2,'EGL_DISPLAY_PRESENT_TIME_ANDROID'))
         self.assertEqual(self.check(receipt(80,200)+receipt(81,300)),(2,'SurfaceFlinger PRESENT_FENCE'))
 
+    def test_partial_fences_survive_without_qualifying_the_window(self):
+        row={'frames':2,'lastSubmittedFrame':12}
+        mapped=b'1,11,80,20\n1,12,81,50\n'
+        stamps=reconcile([row],mapped,b'',receipt(80,200),PACKAGE)
+        self.assertEqual(stamps,[[200,0]])
+        self.assertEqual((row['individuallyObserved'],row['verifiedPresentations']),(1,0))
+        invalid=receipt(80,200)+receipt(81,190)
+        self.assertEqual(reconcile([row],mapped,b'',invalid,PACKAGE),[[0,0]])
+
     def test_ambiguous_or_missing(self):
         first=receipt(80,200)
         second=receipt(81,300)
