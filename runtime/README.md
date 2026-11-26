@@ -148,3 +148,9 @@ The reusable `switch-acceptance.yml` workflow also packages two existing runs
 independently of the emulator. Supply numeric `tested` and `previous` run IDs.
 A `validation/switch-report-<tested>-<previous>` branch triggers the same comparison.
 The report records the tested commit, even when the reporting tools have advanced.
+
+### Measured full-window swaps on the television emulator
+
+The Android 14 x86 television run associated 23,262 of 23,262 submissions with individual display receipts in 18 matched windows. The driver used KHR for damage hints. Median gameplay and PCM speed with hints were 69.57% and 68.96% in battle. SDL remains the default. The four packages passed independent Android SDK signature verification. [Device and Web run](https://github.com/JC6/BattleCity/actions/runs/45840031317) · [Public certificates](https://github.com/JC6/BattleCity/actions/runs/45846472783)
+
+The offline comparison embeds the original television screenshots. An independent run regenerated the HTML and the raw measurement archive from the tested artifacts. Both files matched the locally generated SHA-256 values byte for byte. [Independent report build](https://github.com/JC6/BattleCity/actions/runs/45906402534)
