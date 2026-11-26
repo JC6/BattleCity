@@ -11,7 +11,54 @@ class tv_egl_window {
     GLuint program=0, raster=0, native=0, expanded=0, framebuffer=0, corners=0;
     GLuint window_texture=0, window_fbo=0;
     int window_w=0,window_h=0;
-    bool cache_window=true;
+    bool cache_window=true, incremental=false, sync_log=false;
+    PFNEGLSWAPBUFFERSWITHDAMAGEKHRPROC swap_damage=nullptr;
+    ARect changes[8]{}, surface_change{};
+    unsigned history_size=0, history_next=0, log_count=0;
+    bool count_repairs=false;
+    uint64_t partial_copies=0, full_copies=0;
+    static bool has_extension(const char *extensions,const char *name) {
+        if (!extensions) return false;
+        const size_t n=std::strlen(name);
+        for (const char *p=extensions; (p=std::strstr(p,name)); p+=n)
+            if ((p==extensions || p[-1]==' ') && (p[n]==0 || p[n]==' ')) return true;
+        return false;
+    }
+    static bool empty(ARect r) { return r.left>=r.right || r.top>=r.bottom; }
+    static ARect merged(ARect a, ARect b) {
+        if (empty(a)) return b;
+        if (empty(b)) return a;
+        return {std::min(a.left,b.left),std::min(a.top,b.top),
+                std::max(a.right,b.right),std::max(a.bottom,b.bottom)};
+    }
+    // Rectangles here are in EGL's bottom-left window coordinates.
+    void copy_window(ARect delta,int w,int h) {
+        const ARect all{0,0,w,h};
+        surface_change=history_size ? delta : all;
+        ARect repair=all;
+        EGLint age=0;
+        if (incremental && eglQuerySurface(display,surface,EGL_BUFFER_AGE_EXT,&age) &&
+                age>0 && history_size && unsigned(age-1)<=history_size) {
+            repair=delta;
+            for (int i=1;i<age;++i)
+                repair=merged(repair,changes[(history_next+8-i)%8]);
+        }
+        if (count_repairs) {
+            if (repair.left==0 && repair.top==0 && repair.right==w && repair.bottom==h) ++full_copies;
+            else ++partial_copies;
+        }
+        if (!empty(repair)) {
+            glBindFramebuffer(GL_READ_FRAMEBUFFER,window_fbo);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER,0);
+            glBlitFramebuffer(repair.left,repair.top,repair.right,repair.bottom,
+                              repair.left,repair.top,repair.right,repair.bottom,GL_COLOR_BUFFER_BIT,GL_NEAREST);
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER,0);
+    }
+    void flush_logs() {
+        for (FILE *f : {frames,boundaries,presentations}) if (f) std::fflush(f);
+
+    }
     GLint geometry=-1, derivative=-1;
     int native_w=0,native_h=0;
     enum class profile_mode { game, prepared, upload, direct };
@@ -28,6 +75,11 @@ class tv_egl_window {
     struct frame_id { uint64_t nes; EGLuint64KHR buffer; };
     std::deque<frame_id> pending;
     FILE *frames=nullptr, *presentations=nullptr;
+    static FILE *open_log(const std::string &path) {
+        FILE *file=std::fopen(path.c_str(),"a");
+        if (file) std::setvbuf(file,nullptr,_IOFBF,128*1024);
+        return file;
+    }
     unsigned generation=0;
 
     static void texture(GLuint &id, GLint filter) {
@@ -50,9 +102,10 @@ class tv_egl_window {
                 (unsigned long long)item.nes,(unsigned long long)item.buffer,(long long)(ok ? time : EGL_TIMESTAMP_INVALID_ANDROID));
             pending.pop_front();
         }
-        if (presentations) std::fflush(presentations);
+        if (sync_log && presentations) std::fflush(presentations);
     }
 public:
+    void finish_sample() { flush_logs(); }
     ~tv_egl_window() {
         close();
         if (boundaries) std::fclose(boundaries);
@@ -73,7 +126,10 @@ public:
         program=raster=native=expanded=framebuffer=corners=0;
         window_texture=window_fbo=0; window_w=window_h=0; cache_window=true;
         texture_w=texture_h=native_w=native_h=0; prepared=false; mode=profile_mode::game;
+        flush_logs();
         pending.clear(); present_supported=false;
+        history_size=history_next=0; incremental=false; swap_damage=nullptr;
+        count_repairs=false;
     }
     bool open(ANativeWindow *window,EGLSurface existing) {
         if (context!=EGL_NO_CONTEXT && program) return true;
@@ -95,6 +151,16 @@ public:
         if (surface==EGL_NO_SURFACE || !eglMakeCurrent(display,surface,surface,context)) return false;
         const char *root=SDL_GetAndroidInternalStoragePath();
         const bool measuring=battlecity_tv::measuring.load(std::memory_order_relaxed);
+        const auto *extensions=eglQueryString(display,EGL_EXTENSIONS);
+        const bool age_supported=has_extension(extensions,"EGL_EXT_buffer_age") ||
+            has_extension(extensions,"EGL_KHR_partial_update");
+        if (has_extension(extensions,"EGL_KHR_swap_buffers_with_damage"))
+            swap_damage=reinterpret_cast<PFNEGLSWAPBUFFERSWITHDAMAGEKHRPROC>(eglGetProcAddress("eglSwapBuffersWithDamageKHR"));
+        else if (has_extension(extensions,"EGL_EXT_swap_buffers_with_damage"))
+            swap_damage=reinterpret_cast<PFNEGLSWAPBUFFERSWITHDAMAGEKHRPROC>(eglGetProcAddress("eglSwapBuffersWithDamageEXT"));
+        incremental=age_supported && !(measuring && root && ::access((std::string(root)+"/tv-egl-full-copy").c_str(),F_OK)==0);
+        sync_log=measuring && root && ::access((std::string(root)+"/tv-sync-log").c_str(),F_OK)==0;
+        count_repairs=measuring;
         const bool immediate=measuring && root && ::access((std::string(root)+"/tv-egl-immediate").c_str(),F_OK)==0;
         if (!eglSwapInterval(display,immediate ? 0 : 1)) return false;
         if (measuring && root) {
@@ -164,14 +230,16 @@ void main() {
         if (battlecity_tv::measuring.load(std::memory_order_relaxed)) {
             present_supported=timestamps && supported && eglSurfaceAttrib(display,surface,EGL_TIMESTAMPS_ANDROID,EGL_TRUE)
                 && supported(display,surface,EGL_DISPLAY_PRESENT_TIME_ANDROID);
-            if (root && !boundaries) boundaries=std::fopen((std::string(root)+"/tv-boundaries.csv").c_str(),"a");
-            if (root && !frames) frames=std::fopen((std::string(root)+"/tv-frame-map.csv").c_str(),"a");
-            if (root && !presentations) presentations=std::fopen((std::string(root)+"/tv-present.csv").c_str(),"a");
+            if (root && !boundaries) boundaries=open_log(std::string(root)+"/tv-boundaries.csv");
+            if (root && !frames) frames=open_log(std::string(root)+"/tv-frame-map.csv");
+            if (root && !presentations) presentations=open_log(std::string(root)+"/tv-present.csv");
             EGLint minimum=0,maximum=0;
             eglGetConfigAttrib(display,config,EGL_MIN_SWAP_INTERVAL,&minimum);
             eglGetConfigAttrib(display,config,EGL_MAX_SWAP_INTERVAL,&maximum);
             if (root) {
                 if (FILE *file=std::fopen((std::string(root)+"/tv-window.txt").c_str(),"a")) {
+                    std::fprintf(file,"bufferAge=%d swapDamage=%d incremental=%d perFrameFlush=%d\n",
+                                 age_supported,swap_damage!=nullptr,incremental,sync_log);
                     std::fprintf(file,"generation=%u renderer=%s requestedInterval=%d configMin=%d configMax=%d displayTimestamps=%d\n",
                         generation,reinterpret_cast<const char *>(glGetString(GL_RENDERER)),immediate ? 0 : 1,minimum,maximum,present_supported);
                     std::fclose(file);
@@ -249,6 +317,7 @@ void main() {
             // Keep the fully sampled window, including unchanged pixels. A native
             // same-size blit writes every pixel of each newly acquired back buffer.
             const bool resized=window_w!=sw || window_h!=sh;
+            if (resized) history_size=history_next=0;
             if (cache_window && resized) {
                 glBindTexture(GL_TEXTURE_2D,window_texture);
                 glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,sw,sh,0,GL_RGBA,GL_UNSIGNED_BYTE,nullptr);
@@ -275,10 +344,12 @@ void main() {
                 glDisable(GL_SCISSOR_TEST);
             }
             if (cache_window) {
-                glBindFramebuffer(GL_READ_FRAMEBUFFER,window_fbo);
-                glBindFramebuffer(GL_DRAW_FRAMEBUFFER,0);
-                glBlitFramebuffer(0,0,sw,sh,0,0,sw,sh,GL_COLOR_BUFFER_BIT,GL_NEAREST);
-                glBindFramebuffer(GL_FRAMEBUFFER,0);
+                ARect delta{};
+                if (resized || sw!=w || sh!=h) delta={0,0,sw,sh};
+                else if (changed && !prepared)
+                    delta={std::max(0,int(dirty.left)-1),std::max(0,h-int(dirty.bottom)-1),
+                           std::min(w,int(dirty.right)+1),std::min(h,h-int(dirty.top)+1)};
+                copy_window(delta,sw,sh);
             }
         }
         if (!prepared && (mode==profile_mode::prepared || mode==profile_mode::upload) &&
@@ -315,14 +386,21 @@ void main() {
             int64_t last=start_time;
             do {
                 const auto render_start=battlecity_tv::now_ns();
-                glBindFramebuffer(GL_READ_FRAMEBUFFER,window_fbo);
-                glBindFramebuffer(GL_DRAW_FRAMEBUFFER,0);
-                glBlitFramebuffer(0,0,sw,sh,0,0,sw,sh,GL_COLOR_BUFFER_BIT,GL_NEAREST);
+                // Alternate a real 8x8 patch in the measured producer only.
+                copy_window(count ? ARect{0,0,8,8} : ARect{0,0,sw,sh},sw,sh);
+                glEnable(GL_SCISSOR_TEST);
+                glScissor(0,0,8,8);
+                glClearColor((count & 1) ? 1.f : 0.f,1.f,0.f,1.f);
+                glClear(GL_COLOR_BUFFER_BIT);
+                glDisable(GL_SCISSOR_TEST);
                 int64_t swap_start=0;
                 if (!swap(first+count,render_start,swap_start)) return false;
                 ++count;
                 last=battlecity_tv::now_ns();
             } while (last-start_time<30000000000LL);
+            flush_logs();
+            // Restore the prepared image before returning to normal emulation.
+            copy_window({0,0,sw,sh},sw,sh);
             const auto temp=producer_path+".tmp";
             if (auto *file=std::fopen(temp.c_str(),"w")) {
                 std::fprintf(file,"{\"frames\":%llu,\"lastSubmittedFrame\":%llu,\"wall\":%.9f,\"width\":%d,\"height\":%d}\n",
@@ -338,17 +416,35 @@ private:
         EGLuint64KHR id=0;
         if (frame && frames && next_id && !next_id(display,surface,&id)) id=0;
         before_swap=frame ? battlecity_tv::now_ns() : 0;
-        if (!eglSwapBuffers(display,surface)) return false;
+        EGLBoolean success;
+        if (incremental && cache_window && swap_damage && !empty(surface_change)) {
+            EGLint rect[]={surface_change.left,surface_change.top,surface_change.right-surface_change.left,
+                           surface_change.bottom-surface_change.top};
+            success=swap_damage(display,surface,rect,1);
+        } else success=eglSwapBuffers(display,surface);
+        if (!success) { history_size=history_next=0; return false; }
+        changes[history_next]=surface_change;
+        history_next=(history_next+1)%8;
+        history_size=std::min(history_size+1,8u);
         if (frame && frames) {
             const auto after_swap=battlecity_tv::now_ns();
             if (boundaries) {
                 std::fprintf(boundaries,"%u,%llu,%lld,%lld,%lld\n",generation,(unsigned long long)frame,
                     (long long)render_start,(long long)before_swap,(long long)after_swap);
-                std::fflush(boundaries);
+
             }
             std::fprintf(frames,"%u,%llu,%llu,%lld\n",generation,(unsigned long long)frame,(unsigned long long)id,
                          (long long)(after_swap-before_swap));
-            std::fflush(frames);
+            if ((log_count+1)%128==0 && count_repairs) {
+                const char *dir=SDL_GetAndroidInternalStoragePath();
+                if (dir) if (auto *f=std::fopen((std::string(dir)+"/tv-window.txt").c_str(),"a")) {
+                    std::fprintf(f,"copiesFull=%llu copiesPartial=%llu\n",
+                                 (unsigned long long)full_copies,(unsigned long long)partial_copies);
+                    std::fclose(f);
+                }
+            }
+            ++log_count;
+            if (sync_log || log_count%128==0) flush_logs();
             if (id && present_supported && presentations) pending.push_back({frame,id});
         }
         if (!pending.empty()) poll_presentations();

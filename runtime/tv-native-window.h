@@ -20,6 +20,7 @@ class tv_native_window
     tv_egl_window egl;
     EGLSurface shared_surface=EGL_NO_SURFACE;
     bool watching = false;
+    uint64_t state_generation=0;
     std::atomic<bool> exposed{false};
     static bool SDLCALL on_window_event(void *context,SDL_Event *event) {
         if (event->type==SDL_EVENT_DID_ENTER_FOREGROUND || event->type==SDL_EVENT_WINDOW_RESTORED ||
@@ -116,6 +117,7 @@ class tv_native_window
 	}
 
 public:
+    void finish_sample() { egl.finish_sample(); }
 	struct timing { tv_surface_queue::timing transaction{}; int64_t draw = 0, lock = 0, copy = 0, post = 0, area = 0; bool fast = false; };
 	~tv_native_window() { if (watching) SDL_RemoveEventWatch(on_window_event,this); close(); }
 	void close()
@@ -181,6 +183,11 @@ public:
 		if (capture) capture->source(list,saved);
 		const auto *game = (picture || menu) ? nullptr : screen_quad(list);
         if (direct) {
+            const auto generation=battlecity_tv::state_generation.load(std::memory_order_relaxed);
+            if (generation!=state_generation) {
+                state_generation=generation;
+                fresh=true;
+            }
             const int iw=game ? game->texture.width : w, ih=game ? game->texture.height : h;
             ARect dirty{0,0,w,h};
             if (!egl.hold_input(iw,ih,w,h) || capture || fresh) {

@@ -428,7 +428,7 @@ def calibration_grid(rgb, screen_width, xs, ys):
             'valid':colour_error<=8 and 30 in transitions and 5<=horizontal<=7}
 
 
-def record_render(results, labels, directory, write_private, scenes_only=False, prototype=False, held_out=False, formal=False, pipeline=False, sweep=False):
+def record_render(results, labels, directory, write_private, scenes_only=False, prototype=False, held_out=False, formal=False, pipeline=False, sweep=False, presentation=False):
     ini = (f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\n'
            'autoframeskip 0\nframeskip 0\npause_brightness 1.0\n')
     # A missing override exercises the installed candidate's packaged default.
@@ -448,8 +448,23 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
             modes[scene]=None
             for name in eligible:
                 modes[name+'-'+scene]=None
+    if presentation:
+        # Interleave variants to avoid assigning all early/late samples to the same driver.
+        variants=('sync','batch','damage')
+        modes={}
+        for repeat in range(3):
+            for case in ('producer','battle','explosions'):
+                for variant in variants[repeat:]+variants[:repeat]:
+                    name=f'{case}-{variant}-{repeat+1}'
+                    if case=='explosions': name+='-explosions'
+                    modes[name]=None
     def select(mode, scale):
         private('rm','-f','files/tv-core-only','files/tv-producer-only')
+        private('rm','-f','files/tv-egl-full-copy','files/tv-sync-log')
+        if presentation:
+            variant=mode.split('-')[1]
+            if variant!='damage': write_private('tv-egl-full-copy','1')
+            if variant=='sync': write_private('tv-sync-log','1')
         if mode.startswith('core-'): write_private('tv-core-only','1')
         if mode.startswith('producer-'): write_private('tv-producer-only','1')
         markers=('prepared','upload','direct','uncached','immediate','legacy')
@@ -527,10 +542,10 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
             row['presentationsPerSecond']=row['frames']/row['wall']
             rows=[row]
         else:
-            for number in range(1,2 if prototype else 4):
+            for number in range(1,2 if prototype or presentation else 4):
                 rows = wait(profile_rows, lambda r: len(r)>=number, f'{name} 30-second window {number}',interval=1.0)
                 (results/(name+'.jsonl')).write_bytes(private('cat','files/tv-profile.jsonl'))
-            assert [r['run'] for r in rows]==([1] if prototype else [1,2,3])
+            assert [r['run'] for r in rows]==([1] if prototype or presentation else [1,2,3])
             for row in rows:
                 assert row['wall']>=30 and row['frames']>0 and row['sampleRate']>0 and row['samples']>0, row
                 if name.startswith('core-'):
@@ -542,6 +557,14 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
                 row['pass'] = (0.99<=row['gameSpeed']<=1.01 and 0.99<=row['pcmSpeed']<=1.01
                                and row['presented']==row['attempts'] and row['presented']==row['frames'])
         if trace_enabled:
+            if rows[0].get('driver')=='android-egl-window':
+                # Buffered writers flush each block. Keep the trace active until the
+                # measured endpoint has been exported; extra frames are outside the window.
+                endpoint=rows[-1]['lastSubmittedFrame']
+                def written():
+                    raw=private('cat','files/tv-frame-map.csv',check=False)
+                    return any(line.split(b',')[1:2]==[str(endpoint).encode()] for line in raw.splitlines())
+                wait(written,bool,'buffered EGL measurement endpoint',interval=.5)
             time.sleep(.5)
             adb('shell','perfetto','--attach='+trace_key,'--stop',check=False)
             trace=adb('exec-out','cat',trace_path,check=False)
@@ -559,7 +582,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         if name.endswith('explosions'):
             assert int(private('cat','files/tv-stress')) >= 720, 'blast fixture never ran in battle'
         summaries[name] = rows
-        if prototype: (results/'clock.json').write_text(json.dumps({'battle':markers,'windows':summaries},indent=2))
+        if prototype or presentation: (results/'clock.json').write_text(json.dumps({'battle':markers,'windows':summaries},indent=2))
         layers = adb('shell','dumpsys','SurfaceFlinger','--list').decode().splitlines()
         prefix = results/(name+'-surface.txt')
         with prefix.open('wb') as f:
@@ -574,7 +597,7 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
     if not scenes_only:
         assert len(set(markers.values()))==1, markers
         (results/'clock.json').write_text(json.dumps({'battle':markers,'windows':summaries},indent=2))
-    if prototype:
+    if prototype or presentation:
         stop()
         private('rm','-f','files/tv-force-full','files/tv-egl-immediate','files/tv-egl-prepared','files/tv-egl-upload','files/tv-egl-direct','files/tv-egl-uncached','files/tv-egl-legacy')
         return
@@ -722,7 +745,7 @@ def run(apk, labels, results, suite, previous=None, formal=False):
         slot = f'files/states/{prior}/nes/1.sta'
     # Leave existing player files intact. A completed run removes its own slot.
     test_files = ['files/'+name for name in ('nes.ini','tv-observer.lua','tv-observation',
-                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv','tv-profile.jsonl','tv-fixed','tv-low-buffer','tv-core-only','tv-producer-only','tv-producer.json','tv-boundaries.csv','tv-egl-legacy','tv-egl-prepared','tv-egl-upload','tv-egl-immediate','tv-egl-direct','tv-egl-uncached','tv-texture.ppm','tv-capture','tv-expanded.ppm','tv-source.ppm','tv-expanded.tmp','tv-force-full','tv-layer.ppm','tv-layer.tmp')]
+                                               'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv','tv-profile.jsonl','tv-fixed','tv-low-buffer','tv-core-only','tv-producer-only','tv-egl-full-copy','tv-sync-log','tv-producer.json','tv-boundaries.csv','tv-egl-legacy','tv-egl-prepared','tv-egl-upload','tv-egl-immediate','tv-egl-direct','tv-egl-uncached','tv-texture.ppm','tv-capture','tv-expanded.ppm','tv-source.ppm','tv-expanded.tmp','tv-force-full','tv-layer.ppm','tv-layer.tmp')]
     test_files.extend((slot,slot+'.png',slot+'.lock'))
     if slot!=current_slot: test_files.extend((current_slot,current_slot+'.png',current_slot+'.lock'))
     for name in test_files:
@@ -744,9 +767,9 @@ def run(apk, labels, results, suite, previous=None, formal=False):
         if suite=='coop-endings':
             record_endings(labels,directory,results,write_private,('coop-stage42','coop-stage18'))
             return
-        if suite in ('render','scenes','prototype','held-out','pipeline','geometry'):
+        if suite in ('render','scenes','prototype','held-out','pipeline','geometry','presentation'):
             record_render(results,labels,directory,write_private,scenes_only=suite in ('scenes','held-out','pipeline','geometry'),
-                          prototype=suite=='prototype',held_out=suite in ('held-out','pipeline','geometry'),formal=formal,pipeline=suite=='pipeline',sweep=suite=='geometry')
+                          prototype=suite=='prototype',held_out=suite in ('held-out','pipeline','geometry'),formal=formal,pipeline=suite=='pipeline',sweep=suite=='geometry',presentation=suite=='presentation')
             return
         write_private('tv-observer.lua',observer(labels,directory))
         ini=f'autoboot_delay 0\nautoboot_script {directory}/tv-observer.lua\nwavwrite {directory}/tv-audio.wav\n'
@@ -1000,7 +1023,7 @@ def run(apk, labels, results, suite, previous=None, formal=False):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('apk','labels','results'): parser.add_argument(name,type=Path)
-    parser.add_argument('--suite',action='append',choices=('geometry','pipeline','controls','menu-samples','coop-endings','timing','auto-frameskip','render','scenes','candidate-controls','prototype','held-out'))
+    parser.add_argument('--suite',action='append',choices=('presentation','geometry','pipeline','controls','menu-samples','coop-endings','timing','auto-frameskip','render','scenes','candidate-controls','prototype','held-out'))
     parser.add_argument('--formal',action='store_true',help='measure the packaged candidate and capture its software reference')
     parser.add_argument('--record-candidate-failure',action='store_true',
                         help='record a failing optional candidate control run for the release selector')

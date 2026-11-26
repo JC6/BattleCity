@@ -10,6 +10,7 @@
 
 namespace battlecity_tv {
 inline std::atomic<bool> measuring{false};
+inline std::atomic<uint64_t> state_generation{0};
 inline std::atomic<uint64_t> pcm_frames{0};
 inline std::atomic<unsigned> pcm_rate{0};
 
@@ -62,6 +63,7 @@ public:
         }
     }
 
+    int completed_windows() const { return windows; }
     bool needs_boundary(double emulated) const {
         return active && emulated>=10.0 && (!start.wall || now_ns()-start.wall>=30000000000LL);
     }

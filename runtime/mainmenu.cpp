@@ -273,13 +273,15 @@ public:
             // The tab rises above the card, leaving the lock on a black background.
             for (int y=0;y<29;++y) {
                 int const inset=y<14 ? int(std::round(13-std::sqrt(169-std::pow(13-y,2)))) : 0;
-                int const end=y<3 ? 151+y : 153+(y-3)*2/3;
+                int const end=y<3 ? 151+2*y : 156+(y-3)*3/4;
                 box(c,x+inset*px,(265+y)*py,(end-inset)*px,py,blue);
             }
             if (int(i)==selected) brackets(c,x,.366f,.166f,.285f);
             if (occupied(i)) label(ui,target,card.date,x+.003f,269*py,.098f,.028f);
-            else for (int dash=0;dash<12;++dash)
-                box(c,x+(11+9*dash)*px,279*py,7*px,2*py,rgb_t(197,217,236));
+            else for (int dash=0;dash<12;++dash) {
+                box(c,x+(12+9*dash)*px,279*py,7*px,py,rgb_t(220,239,255));
+                box(c,x+(12+9*dash)*px,280*py,7*px,py,rgb_t(152,177,209));
+            }
             label(ui,target,std::to_string(i+1),x+.096f,269*py,.034f,.032f);
             auto lock_color=card.locked ? cyan : rgb_t(53,57,65);
             rounded(c,x+.148f,.372f,.009f,.017f,.0045f,.008f,lock_color);

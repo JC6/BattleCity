@@ -92,7 +92,15 @@ def preliminary(root,renderer):
     controls=json.loads((root/'candidate-controls/result.json').read_text())['result']
     assert controls in ('passed','failed')
     sampling=renderer=='egl-tv' and 'prepared-battle' in json.loads((root/'prototype/clock.json').read_text())['windows']
-    return {**({'pipelinePassed':pipeline_pass(root/'pipeline')} if sampling or (root/'pipeline').is_dir() else {}),
+    measured={}
+    cost=root/'presentation/clock.json'
+    if cost.is_file():
+        windows=json.loads(cost.read_text())['windows']
+        required=[f'{scene}-damage-{i}'+('-explosions' if scene=='explosions' else '')
+                  for scene in ('battle','explosions') for i in (1,2,3)]
+        measured['presentationPassed']=all(len(windows.get(key,[]))==1 and
+            qualifying(windows[key][0],DRIVERS[renderer]) for key in required)
+    return {**measured,**({'pipelinePassed':pipeline_pass(root/'pipeline')} if sampling or (root/'pipeline').is_dir() else {}),
             **({'windowReadbackPassed':swap_readbacks(root)} if renderer=='egl-tv' else {}),
             'prototypePassed':probe_pass(root,renderer),
             'heldOutPassed':all(r['nativePixels']==256*224 and r.get('calibration',{'valid':True})['valid'] and not any(r[k] for k in

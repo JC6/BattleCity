@@ -48,7 +48,7 @@ python3 "$tree/scripts/build/file2str.py" "$repo/runtime/menu-regular.bdc" "$tre
         direct-rewind web-clock nes-palette slot-preview picture menu-viewport
         tv-startup tv-gamepads rewind-boundary
     )
-    if [[ $platform == android ]]; then patches+=(tv-render tv-surface tv-native tv-compositor tv-stages tv-egl tv-isolation); fi
+    if [[ $platform == android ]]; then patches+=(tv-render tv-surface tv-native tv-compositor tv-stages tv-egl tv-isolation tv-damage); fi
     for i in "${!patches[@]}"; do patches[i]="$repo/runtime/${patches[i]}.patch"; done
     mapfile -t files < <(sed -n 's|^--- a/||p' "${patches[@]}" | sort -u)
     stage=$(mktemp -d)
