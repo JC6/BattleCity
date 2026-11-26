@@ -17,7 +17,9 @@ class tv_egl_window {
     enum class profile_mode { game, prepared, upload, direct };
     profile_mode mode=profile_mode::game;
     std::string fixed_marker;
-    bool prepared=false;
+    bool prepared=false, measure_producer=false, producer_complete=false;
+    FILE *boundaries=nullptr;
+    std::string producer_path;
     GLint viewport=-1;
     int texture_w=0, texture_h=0;
     PFNEGLGETNEXTFRAMEIDANDROIDPROC next_id=nullptr;
@@ -53,6 +55,7 @@ class tv_egl_window {
 public:
     ~tv_egl_window() {
         close();
+        if (boundaries) std::fclose(boundaries);
         if (frames) std::fclose(frames);
         if (presentations) std::fclose(presentations);
     }
@@ -97,6 +100,8 @@ public:
         if (measuring && root) {
             cache_window=::access((std::string(root)+"/tv-egl-uncached").c_str(),F_OK)!=0;
             fixed_marker=std::string(root)+"/tv-fixed";
+            measure_producer=::access((std::string(root)+"/tv-producer-only").c_str(),F_OK)==0;
+            producer_path=std::string(root)+"/tv-producer.json";
             if (::access((std::string(root)+"/tv-egl-prepared").c_str(),F_OK)==0) mode=profile_mode::prepared;
             if (::access((std::string(root)+"/tv-egl-upload").c_str(),F_OK)==0) mode=profile_mode::upload;
             if (::access((std::string(root)+"/tv-egl-direct").c_str(),F_OK)==0) mode=profile_mode::direct;
@@ -159,6 +164,7 @@ void main() {
         if (battlecity_tv::measuring.load(std::memory_order_relaxed)) {
             present_supported=timestamps && supported && eglSurfaceAttrib(display,surface,EGL_TIMESTAMPS_ANDROID,EGL_TRUE)
                 && supported(display,surface,EGL_DISPLAY_PRESENT_TIME_ANDROID);
+            if (root && !boundaries) boundaries=std::fopen((std::string(root)+"/tv-boundaries.csv").c_str(),"a");
             if (root && !frames) frames=std::fopen((std::string(root)+"/tv-frame-map.csv").c_str(),"a");
             if (root && !presentations) presentations=std::fopen((std::string(root)+"/tv-present.csv").c_str(),"a");
             EGLint minimum=0,maximum=0;
@@ -282,20 +288,66 @@ void main() {
             cost->draw=expanded_at-uploaded;
             cost->check=now()-expanded_at;
         }
-        if (capture && capture->needs_swap() && sw==w && sh==h) {
+        if (capture && capture->needs_swap()) {
             std::vector<uint32_t> rgba(size_t(sw)*sh);
             glReadPixels(0,0,sw,sh,GL_RGBA,GL_UNSIGNED_BYTE,rgba.data());
             for (int y=0;y<sh/2;++y)
                 std::swap_ranges(rgba.begin()+size_t(y)*sw,rgba.begin()+size_t(y+1)*sw,rgba.begin()+size_t(sh-1-y)*sw);
             capture->swap_input(rgba.data(),sw,sh,sw*4,SDL_PIXELFORMAT_RGBA32);
         }
+        if (window_w!=logged_width || window_h!=logged_height) {
+            logged_width=window_w; logged_height=window_h;
+            const char *dir=SDL_GetAndroidInternalStoragePath();
+            if (frames && dir) {
+                if (auto *log=std::fopen((std::string(dir)+"/tv-window.txt").c_str(),"a")) {
+                    std::fprintf(log,"logical=%dx%d egl=%dx%d\n",w,h,sw,sh);
+                    std::fclose(log);
+                }
+            }
+        }
+        // Once the fixture is ready, hold the emulation thread inside this bounded
+        // producer loop. Frame numbers here are synthetic and never enter gameplay metrics.
+        if (measure_producer && !producer_complete && ::access(fixed_marker.c_str(),F_OK)==0) {
+            producer_complete=true;
+            constexpr uint64_t first=uint64_t(1)<<40;
+            auto start_time=battlecity_tv::now_ns();
+            uint64_t count=0;
+            int64_t last=start_time;
+            do {
+                const auto render_start=battlecity_tv::now_ns();
+                glBindFramebuffer(GL_READ_FRAMEBUFFER,window_fbo);
+                glBindFramebuffer(GL_DRAW_FRAMEBUFFER,0);
+                glBlitFramebuffer(0,0,sw,sh,0,0,sw,sh,GL_COLOR_BUFFER_BIT,GL_NEAREST);
+                int64_t swap_start=0;
+                if (!swap(first+count,render_start,swap_start)) return false;
+                ++count;
+                last=battlecity_tv::now_ns();
+            } while (last-start_time<30000000000LL);
+            const auto temp=producer_path+".tmp";
+            if (auto *file=std::fopen(temp.c_str(),"w")) {
+                std::fprintf(file,"{\"frames\":%llu,\"lastSubmittedFrame\":%llu,\"wall\":%.9f,\"width\":%d,\"height\":%d}\n",
+                    (unsigned long long)count,(unsigned long long)(first+count-1),(last-start_time)/1e9,sw,sh);
+                if (std::fclose(file)==0) std::rename(temp.c_str(),producer_path.c_str());
+            }
+        }
+        return swap(frame,start,before_swap);
+    }
+private:
+    int logged_width=0,logged_height=0;
+    bool swap(uint64_t frame,int64_t render_start,int64_t &before_swap) {
         EGLuint64KHR id=0;
         if (frame && frames && next_id && !next_id(display,surface,&id)) id=0;
         before_swap=frame ? battlecity_tv::now_ns() : 0;
         if (!eglSwapBuffers(display,surface)) return false;
         if (frame && frames) {
+            const auto after_swap=battlecity_tv::now_ns();
+            if (boundaries) {
+                std::fprintf(boundaries,"%u,%llu,%lld,%lld,%lld\n",generation,(unsigned long long)frame,
+                    (long long)render_start,(long long)before_swap,(long long)after_swap);
+                std::fflush(boundaries);
+            }
             std::fprintf(frames,"%u,%llu,%llu,%lld\n",generation,(unsigned long long)frame,(unsigned long long)id,
-                         (long long)(battlecity_tv::now_ns()-before_swap));
+                         (long long)(after_swap-before_swap));
             std::fflush(frames);
             if (id && present_supported && presentations) pending.push_back({frame,id});
         }

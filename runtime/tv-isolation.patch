@@ -1,0 +1,15 @@
+--- a/src/osd/modules/render/drawsdl3soft.cpp
++++ b/src/osd/modules/render/drawsdl3soft.cpp
+@@ -350,6 +350,12 @@
+ 	const auto started = m_meter.active ? battlecity_tv::now_ns() : 0;
+ 	const bool capture = m_stage_capture.armed();
+ 	const bool tracing = m_meter.instrumented && ATrace_isEnabled();
++    // Exercise normal CPU/APU scheduling while removing the OSD presentation cost.
++    if (started && m_meter.core_only && window().machine().time().as_double() >= 9.5) {
++        m_meter.finish(window().machine().time().as_double(), m_profile_screen->frame_number(),
++            "core-audio-only", false, started, started, false, -2, wdim.width(), wdim.height());
++        return 0;
++    }
+ 	if (m_dirty_output) {
+ 		tv_native_window::timing phases{};
+ 		bool const composition = m_scale_mode.is_scale == 6;

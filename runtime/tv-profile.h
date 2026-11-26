@@ -53,6 +53,10 @@ public:
         // Only the test harness creates this file in app-private storage.
         if (auto *file = std::fopen(path.c_str(), "r")) {
             std::fclose(file);
+            if (auto *marker = std::fopen((std::string(directory)+"/tv-core-only").c_str(), "r")) {
+                core_only = true;
+                std::fclose(marker);
+            }
             instrumented = active = true;
             measuring.store(true, std::memory_order_relaxed);
         }
@@ -112,6 +116,7 @@ public:
         }
     }
 
+    bool core_only=false;
     bool instrumented=false;
     bool active=false;
     inline static std::atomic<int64_t> core_ns{0};

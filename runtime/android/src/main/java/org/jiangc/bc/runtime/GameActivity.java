@@ -12,12 +12,20 @@ import java.nio.file.StandardCopyOption;
 
 public final class GameActivity extends SDLActivity {
     private boolean showingMenu;
-    private boolean measureSmallBuffer;
+    private int bufferScale;
     private boolean smallBuffer;
 
     @Override
     protected void onCreate(Bundle state) {
-        measureSmallBuffer = new File(getFilesDir(), "tv-low-buffer").isFile();
+        File marker = new File(getFilesDir(), "tv-low-buffer");
+        if (marker.isFile()) {
+            try {
+                String value = new String(Files.readAllBytes(marker.toPath()), java.nio.charset.StandardCharsets.US_ASCII).trim();
+                if (value.matches("[1-4]")) bufferScale = Integer.parseInt(value);
+            } catch (IOException error) {
+                android.util.Log.w("BattleCity", "Cannot read test buffer scale", error);
+            }
+        }
         super.onCreate(state);
         if (mLayout == null || mSurface == null) return;
         applyWallpaper(wallpaperMode(-1));
@@ -39,7 +47,7 @@ public final class GameActivity extends SDLActivity {
         android.content.SharedPreferences prefs = getSharedPreferences("display", MODE_PRIVATE);
         if (requested >= 0 && requested <= 3) {
             prefs.edit().putInt("picture", requested).apply();
-            if (measureSmallBuffer) runOnUiThread(() -> resizeSurface(mLayout.getWidth(), mLayout.getHeight()));
+            if (bufferScale != 0) runOnUiThread(() -> resizeSurface(mLayout.getWidth(), mLayout.getHeight()));
         }
         return prefs.getInt("picture", 0);
     }
@@ -103,10 +111,10 @@ public final class GameActivity extends SDLActivity {
             size.addRule(RelativeLayout.CENTER_IN_PARENT);
             mSurface.setLayoutParams(size);
         }
-        boolean useSmall = measureSmallBuffer && !showingMenu && pictureMode(-1) == 0;
+        boolean useSmall = bufferScale != 0 && !showingMenu && pictureMode(-1) == 0;
         if (smallBuffer != useSmall) {
             smallBuffer = useSmall;
-            if (useSmall) mSurface.getHolder().setFixedSize(256, 240);
+            if (useSmall) mSurface.getHolder().setFixedSize(256 * bufferScale, 240 * bufferScale);
             else mSurface.getHolder().setSizeFromLayout();
         }
         int crop = (full - visible) / 2;

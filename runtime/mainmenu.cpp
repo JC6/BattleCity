@@ -268,13 +268,19 @@ public:
         for (unsigned i=0; i<m_cards.size(); ++i) {
             float x=.125f+.195f*i;
             auto const &card=m_cards[i];
-            panel(c,x,.366f,.166f,.285f,int(i)==selected);
-            for (int band=0;band<14;++band) {
-                float const tapered=.014f*band/14;
-                box(c,x+.003f,.366f+band*.041f/14,.113f+tapered,.041f/14,blue);
+            constexpr float px=1.f/1280, py=1.f/720;
+            panel(c,x,291*py,.166f,.651f-291*py);
+            // The tab rises above the card, leaving the lock on a black background.
+            for (int y=0;y<29;++y) {
+                int const inset=y<14 ? int(std::round(13-std::sqrt(169-std::pow(13-y,2)))) : 0;
+                int const end=y<3 ? 151+y : 153+(y-3)*2/3;
+                box(c,x+inset*px,(265+y)*py,(end-inset)*px,py,blue);
             }
-            label(ui,target,occupied(i) ? card.date : "------------",x+.003f,.367f,.098f,.028f);
-            label(ui,target,std::to_string(i+1),x+.096f,.367f,.034f,.032f);
+            if (int(i)==selected) brackets(c,x,.366f,.166f,.285f);
+            if (occupied(i)) label(ui,target,card.date,x+.003f,269*py,.098f,.028f);
+            else for (int dash=0;dash<12;++dash)
+                box(c,x+(11+9*dash)*px,279*py,7*px,2*py,rgb_t(197,217,236));
+            label(ui,target,std::to_string(i+1),x+.096f,269*py,.034f,.032f);
             auto lock_color=card.locked ? cyan : rgb_t(53,57,65);
             rounded(c,x+.148f,.372f,.009f,.017f,.0045f,.008f,lock_color);
             rounded(c,x+.150f,.375f,.005f,.013f,.0025f,.004f,rgb_t::black());
@@ -561,20 +567,28 @@ private:
             for (int i=0;i<2;++i) {
                 float y=.201f+.058f*i;
                 std::string name=i ? "Scan Lines" : "Anti-Aliasing";
-                rounded(container(),.627f,y-.010f,.027f,.048f,.0135f,.024f,navy);
                 auto &c=container();
-                label(ui(),target(),"S",.628f,y-.003f,.014f,.034f,rgb_t(170,50,56));
-                box(c,.640f,y+.001f,.002f,.027f,rgb_t(164,128,28));
-                rounded(c,.638f,y+.024f,.006f,.005f,.003f,.0025f,rgb_t(164,128,28));
-                for (int band=0;band<6;++band)
-                    box(c,.642f,y+.001f+band*.002f,.008f*(6-band)/6,.002f,rgb_t(164,128,28));
-                for (auto [dx,dy]:{std::pair{0.f,-.010f},{-.008f,0.f},{.008f,0.f},{0.f,.010f}}) {
-                    bool active=dx==0 && dy==(i ? .010f : -.010f);
-                    rounded(c,.658f+dx,y+.009f+dy,.009f,.015f,.0045f,.0075f,rgb_t::white());
-                    if (!active && !(picture & (1<<i)))
-                        rounded(c,.660f+dx,y+.012f+dy,.005f,.009f,.0025f,.0045f,rgb_t::black());
+                constexpr float px=1.f/1280, py=1.f/720;
+                float const top=(137+42*i)*py;
+                rounded(c,802*px,top,34*px,34*py,17*px,17*py,rgb_t(0,19,64));
+                // Both badges contain the same pixel S. The lower flag has scan lines.
+                static constexpr unsigned glyph[]={0x3c,0x66,0x60,0x3c,0x06,0x66,0x3c};
+                for (int row=0;row<7;++row)
+                    for (int col=0;col<7;++col)
+                        if (glyph[row] & (0x40>>col))
+                            box(c,(805+2*col)*px,top+(9+2*row)*py,2*px,2*py,rgb_t(100,4,16));
+                auto gold=rgb_t(104,79,8);
+                box(c,819*px,top+8*py,3*px,21*py,gold);
+                box(c,817*px,top+27*py,7*px,3*py,gold);
+                for (int row=0;row<12;++row)
+                    box(c,822*px,top+(9+row)*py,(1+std::min(row,11-row)*2)*px,py,
+                        i && row%2 ? rgb_t(64,51,8) : gold);
+                for (auto [dx,dy]:{std::pair{0,-7},{-7,0},{7,0},{0,7}}) {
+                    rounded(c,(859+dx)*px,top+(13+dy)*py,8*px,8*py,4*px,4*py,rgb_t(222,222,222));
+                    if (dy!=-7 && !(picture & (1<<i)))
+                        rounded(c,(861+dx)*px,top+(15+dy)*py,4*px,4*py,2*px,2*py,rgb_t::black());
                 }
-                ui().draw_text_full(target(),name,.678f,y,.14f,text_layout::text_justify::LEFT,
+                ui().draw_text_full(target(),name,879*px,y-.003f,.16f,text_layout::text_justify::LEFT,
                     text_layout::word_wrapping::TRUNCATE,mame_ui_manager::NORMAL,rgb_t::white(),
                     rgb_t::transparent(),nullptr,nullptr,.032f);
                 if (selected_index()==i+4) brackets(container(),.625f,y,.169f,.041f);
