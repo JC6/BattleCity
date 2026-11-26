@@ -96,7 +96,12 @@ def preliminary(root,renderer):
     cost=root/'presentation/clock.json'
     if cost.is_file():
         windows=json.loads(cost.read_text())['windows']
-        required=[f'{scene}-damage-{i}'+('-explosions' if scene=='explosions' else '')
+        variant='hinted' if any('-hinted-' in key for key in windows) else 'damage'
+        if variant=='hinted':
+            from tv_swap_report import audit
+            samples=audit(cost.parent)
+            measured['swapEvidencePassed']=all(s['exercised'] and s['all_displayed'] and s['marker'] is not False for s in samples)
+        required=[f'{scene}-{variant}-{i}'+('-explosions' if scene=='explosions' else '')
                   for scene in ('battle','explosions') for i in (1,2,3)]
         measured['presentationPassed']=all(len(windows.get(key,[]))==1 and
             qualifying(windows[key][0],DRIVERS[renderer]) for key in required)

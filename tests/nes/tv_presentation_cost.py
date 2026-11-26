@@ -42,6 +42,9 @@ def window_summary(name, path, row):
 def presentation_sections(run):
     folder=run/'tv-device-results/presentation'
     clocks=json.loads((folder/'clock.json').read_text())
+    if any('-hinted-' in name for name in clocks['windows']):
+        from tv_swap_report import sections
+        return sections(run)
     assert len(set(clocks['battle'].values())) == 1
     summaries=[]
     with (run/'presentation-frames.csv').open('w',newline='') as file:

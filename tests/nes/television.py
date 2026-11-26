@@ -198,6 +198,23 @@ def screen_rgb(image, size):
                           input=image, capture_output=True, check=True).stdout
 
 
+def capture_moving_square(results, name):
+    images=[]
+    for phase in range(4):
+        flag=f'files/tv-fixed-probe-{phase}'
+        wait(lambda: private('ls','-d',flag,check=False).strip(), lambda value:value==flag.encode(), flag)
+        # The swap may return before SurfaceFlinger presents the new image.
+        time.sleep(.25)
+        png=adb('exec-out','screencap','-p')
+        (results/f'{name}-marker-{phase}.png').write_bytes(png)
+        width,height=struct.unpack('>II',png[16:24])
+        images.append(screen_rgb(png,f'{width}:{height}'))
+        private('rm','-f',flag)
+    from tv_swap_report import marker_observation
+    observation=marker_observation(images,width,height)
+    (results/f'{name}-marker.json').write_text(json.dumps(observation,indent=2))
+
+
 def credits_title_y(image):
     # Only the collection title has saturated cyan lettering on a black page.
     rgb = screen_rgb(image, '320:180')
@@ -450,21 +467,22 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
                 modes[name+'-'+scene]=None
     if presentation:
         # Interleave variants to avoid assigning all early/late samples to the same driver.
-        variants=('sync','batch','damage')
+        variants=('plain','hinted')
         modes={}
         for repeat in range(3):
             for case in ('producer','battle','explosions'):
-                for variant in variants[repeat:]+variants[:repeat]:
+                for variant in (variants if repeat%2==0 else reversed(variants)):
                     name=f'{case}-{variant}-{repeat+1}'
                     if case=='explosions': name+='-explosions'
                     modes[name]=None
     def select(mode, scale):
         private('rm','-f','files/tv-core-only','files/tv-producer-only')
-        private('rm','-f','files/tv-egl-full-copy','files/tv-sync-log')
+        private('rm','-f','files/tv-egl-full-copy','files/tv-plain-swap','files/tv-moving-check','files/tv-sync-log')
         if presentation:
             variant=mode.split('-')[1]
-            if variant!='damage': write_private('tv-egl-full-copy','1')
-            if variant=='sync': write_private('tv-sync-log','1')
+            write_private('tv-egl-full-copy','1')
+            if variant=='plain': write_private('tv-plain-swap','1')
+            if mode.startswith('producer-'): write_private('tv-moving-check','1')
         if mode.startswith('core-'): write_private('tv-core-only','1')
         if mode.startswith('producer-'): write_private('tv-producer-only','1')
         markers=('prepared','upload','direct','uncached','immediate','legacy')
@@ -484,6 +502,8 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
         write_private('nes.ini', ini + (f'scalemode {scale}\n' if scale else ''))
     def stop():
         adb('shell','am','force-stop',PACKAGE)
+        private('rm','-f','files/tv-hints.csv','files/tv-moving-check','files/tv-plain-swap','files/tv-egl-full-copy',
+                *(f'files/tv-fixed-probe-{n}' for n in range(4)))
         private('rm','-f','files/tv-fixed','files/tv-profile.jsonl','files/tv-producer.json','files/tv-boundaries.csv','files/tv-capture','files/tv-expanded.ppm','files/tv-source.ppm','files/tv-expanded.tmp','files/tv-layer.ppm','files/tv-layer.tmp','files/tv-texture.tmp','files/tv-texture.ppm','files/tv-swap.tmp','files/tv-swap.ppm','files/tv-frame-map.csv','files/tv-present.csv','files/tv-window.txt','files/tv-swap-renderer.txt')
     def marker():
         last_launch = time.monotonic()
@@ -576,9 +596,13 @@ def record_render(results, labels, directory, write_private, scenes_only=False, 
             if not shown[:1].isdigit():shown=b''
             if not trace.startswith(b'\x0a'):trace=b''
             (results/(name+'-display.pftrace.gz')).write_bytes(gzip.compress(trace,mtime=0))
+            if presentation:
+                (results/(name+'-hints.csv')).write_bytes(private('cat','files/tv-hints.csv'))
             (results/(name+'-frame-map.csv')).write_bytes(mapping)
             (results/(name+'-present.csv')).write_bytes(shown)
             reconcile(rows,mapping,shown,trace,PACKAGE)
+            if presentation and name.startswith('producer-'):
+                capture_moving_square(results,name)
         if name.endswith('explosions'):
             assert int(private('cat','files/tv-stress')) >= 720, 'blast fixture never ran in battle'
         summaries[name] = rows
@@ -746,6 +770,8 @@ def run(apk, labels, results, suite, previous=None, formal=False):
     # Leave existing player files intact. A completed run removes its own slot.
     test_files = ['files/'+name for name in ('nes.ini','tv-observer.lua','tv-observation',
                                                'tv-observation.tmp','tv-audio.wav','ending.csv','ending.lbl','ending.wav','rewind.csv','tv-profile.jsonl','tv-fixed','tv-low-buffer','tv-core-only','tv-producer-only','tv-egl-full-copy','tv-sync-log','tv-producer.json','tv-boundaries.csv','tv-egl-legacy','tv-egl-prepared','tv-egl-upload','tv-egl-immediate','tv-egl-direct','tv-egl-uncached','tv-texture.ppm','tv-capture','tv-expanded.ppm','tv-source.ppm','tv-expanded.tmp','tv-force-full','tv-layer.ppm','tv-layer.tmp')]
+    test_files.extend(['files/tv-moving-check','files/tv-plain-swap','files/tv-hints.csv',
+                       *(f'files/tv-fixed-probe-{n}' for n in range(4))])
     test_files.extend((slot,slot+'.png',slot+'.lock'))
     if slot!=current_slot: test_files.extend((current_slot,current_slot+'.png',current_slot+'.lock'))
     for name in test_files:

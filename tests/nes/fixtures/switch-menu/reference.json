@@ -1,0 +1,682 @@
+[
+  {
+    "region": "title-tab",
+    "scene": "system-menu",
+    "role": "anchor",
+    "video": "S26lUv598_o",
+    "seconds": 657,
+    "raw_sha256": "458b471576baf915e29209115ede48a9f8fb523cced207bb118efedee5c1ab06",
+    "registration": {},
+    "mask": "78daeddced4ec3300c8561e7fe6f1a2181b6d8c751c7d21638eff9c3c74a8a9c27c5e92a22be33083148c85017e2ab1fffc4d73efa89b37efc135ffbe827cefaf14f7ceda39f38ebc73ff1b58f7ee2ac1fffc4d73efa89b37efccbd25d77ae726ea6e03afb54bb29ddb183f72e34e6e372fdd45b56ee06fdccc6f5f6a9b72c1dfa4df453f1a60fbf447fa0ff56fb54fc679c37eb672e6ed24fcd15e724f3b9bc62833c17f2f3b3c737748dbf8e495fc6e8c61bf9749b56a1bb7dcaa73a9f44f1b9be55bf5e0bf15805b5c895fb1003345b12b90e983efc6febfbf3e5357afdd12d86bec451b90ff5f3753cf46fb64f019b6d68b9f4cb3d6ab924cf6b44225de9efc61347a07f877e4a38b5f5d9e0725f5029d60e45eb4fe7785a33f349ca19d0bfd53e2594dd7622bd6a8cd2357fbca47ffa39b9e318e83f533f45cc97ff24adbe3bd5de1d1236b5fe81fedf611ffdb9a35794db2b7ede131fd0df7d588c87fed3f4c35f35fcf5267cecd55f1a20f4df601ffe63883b2dddd338e8ff6ffae13f4b555591fa5703c883cadf97792bdc8d87fe13f1c3ff98fe68ee78beae5fbd85bb180ffd67e2772e6579ac473fa1b357ffbcc2d07f33fe302ee4cc7b947774cb55bbf24f5dd161fd8deda1f618a3bf0d0b7ef8bf5fc9a15ceb677b9ad76a7b7f5c7f3f9e3c22c00fff8da5cc5d4e7a5db72c9bf407faefc46f5f4d89b4beac9f412e5dd4e83a9fee1cabf1ca7d56e3e7fb23e0bfbda4cd76b3be26b6cc0ff46a2f3d1f1ff2247a33abc63bf25b811ffeef55982ab8e167ced16f8c9f4907bf317ea61dfdc6f89977fe5d82317e669e1a18e367ea89317ef81363fcf827c6f6d14f9cf5b30088b17df81363fb2c00e24c1ffec41a3f2b80f8c2c73f71c74f0821e48fe50361338668"
+  },
+  {
+    "region": "save-focus",
+    "scene": "system-menu",
+    "role": "anchor",
+    "video": "S26lUv598_o",
+    "seconds": 657,
+    "raw_sha256": "458b471576baf915e29209115ede48a9f8fb523cced207bb118efedee5c1ab06",
+    "registration": {},
+    "mask": "78daeddc410e8320104051bcffa5bb316d89586774b00bdf5fd904372f089898b626499224499224ddd8f21d8e5d9ae5d44d4cafd3102da6e946121d8a7eae1377ad3f1ad1dd0d2622da0df6d407448f7c9661248b45418e8132a28d6568f75ea91ced4b377da2c54f7f46145bf45444b492342a0a2c8a4a74d63be98f318d2851a20f5b4789ced89960e54e50446f146d44f3a21c24499224499224499224499294cb7727c55cbe243b01fad38be804515fe41225fac47594a8394af471a254c39ac175946806343a479112fdcb121a107d8fc77620da9b05e4cdd5a3873db93321ad00f22f6fd5a2db532bd1f1f299996efd30a2dbf936b84ece6c90176d88ce16e5b88f0344527b01a0b5040d"
+  },
+  {
+    "region": "slot-tab",
+    "scene": "system-menu",
+    "role": "anchor",
+    "video": "S26lUv598_o",
+    "seconds": 657,
+    "raw_sha256": "458b471576baf915e29209115ede48a9f8fb523cced207bb118efedee5c1ab06",
+    "registration": {},
+    "mask": "78daedd6dd0a8020140360f7fe2fdd4d3f9a9c6524b4c9d945889a7c86a6a564320b044271b23e8a01272e34e3a5859736007b71012baf1a8e7ba5b4c7c3870bca555cae64392477321711f7acf950b886ef6aea02fd3b0c72db1ef7b9ee1ba16ae9dfeefbc4e30d7edbd6bb04f7c773821f6ee2db4c994b3cc99d76fb228d8ab74513eeebdb657267660310ba0f94"
+  },
+  {
+    "region": "empty-slot",
+    "scene": "system-menu",
+    "role": "anchor",
+    "video": "S26lUv598_o",
+    "seconds": 657,
+    "raw_sha256": "458b471576baf915e29209115ede48a9f8fb523cced207bb118efedee5c1ab06",
+    "registration": {},
+    "mask": "78daed97db0ac0300843ddfffff4e8438716b30bb434b8e461ec12eb61aceacc244992a4123ab68a83e2e2e817d8f66eb12f897d0437c678d68e77494657f46791fc18795a0419178faee84591fe3e2706c186fd79f95a50cb27b414fc016525aabbe3d36518e6319ad720c68c068b8b0c7af960db95c0786e59dec98bc1317c910c811cc328c750acbf0aa9bc4e63dd07a0"
+  },
+  {
+    "region": "preview-rim",
+    "scene": "screen-settings",
+    "role": "anchor",
+    "video": "S26lUv598_o",
+    "seconds": 65,
+    "raw_sha256": "25c3ccae6bc69bd17f6f65f301be3476e11e875b3dba6df61d142252beca3556",
+    "registration": {},
+    "mask": "78daedd8c10a84301044c1ccffffb4f720c9b4a820d6bb664f454765c790dead34c5eb4e3336991997d00c4a48163ef07ef80e5c1ffb66d8a100eb98f54e909dba004bc980f5c8805d1e19b17464c4423160e9b524968e8c183162c48811133162c4881123468c183162c4881123468c18316222468c183162c4881123468c183162c4881123464cc4881123468c183162c48811232662c4881123468c183162c4881123468c183162c4448c183162c4881123468c183162c4881123468c98881123468c183162c4881123464cc4881123468c183162c4881123468c183162c48889183162c4881123468c183162c4881123468c18311123468c183162c4883d2a5653806c8c183162c4881123468c183162c8ba60c4ae4dccb524f6f4a544164fcc932c9e18b2186cf823b601568b23668d1d55415b83ec7fa1ed80a8645ec8723066b11736af3fe98b1d55361b1a"
+  },
+  {
+    "region": "picture-icons",
+    "scene": "screen-settings",
+    "role": "anchor",
+    "video": "S26lUv598_o",
+    "seconds": 65,
+    "raw_sha256": "25c3ccae6bc69bd17f6f65f301be3476e11e875b3dba6df61d142252beca3556",
+    "registration": {},
+    "mask": "78daed98c112c2200c4437ffffd38eb6158142360b99f1504e3af208424c9e059ef18c73583d548e25ed76e481361c39609972cd26c90e24437633eb98319009d97c272b5b77c81570bc55bc1755c059c839082de2f1b90f42dd2a6e4fd5037b40000122e96e0e0754cec9201c70ffaf6356385640b6589daf11ae724110b6a1927fde21d03e4cec3a30b5cdd5092f75d7c731fe4c76161c49172b9ed592dc360b529a59d992597d1b4ed793dd4b8f824d69a40b64991407074de75a220544b187662947579a93e5c1caa26a7d914084acc378cfc1ef7474fcb4e8b7f94a9a55c9d34357a86c75455735ab7c41e223627a8b88818220715abd0c6efe8f9cfd1c2070f1233cb5e5bf00f463067c"
+  },
+  {
+    "region": "slot-tab",
+    "scene": "system-menu",
+    "role": "calibration",
+    "video": "S26lUv598_o",
+    "seconds": 656.541,
+    "raw_sha256": "e71e0b8bb3b405fae13a71de2c7842496be57df66c7ce4b8814a61cdbc6f0e8d",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        97.5,
+        1180.5,
+        38.5,
+        635.0
+      ],
+      "scaled_size": [
+        1279,
+        719
+      ],
+      "offset": [
+        1,
+        0
+      ]
+    },
+    "mask": "78daedd6510a80300c03d0e6fe97f6431832665a756002cd9788c2b3db6a233a1dff402b4ed60c0c272f4463c6859776e945735ff352af542d317b84b9a76512c9ef5c5adfe66e3e6e05ee8fdf1165eeb851b9c0e5ed714882b4cf72a765cdec43751fac40fdd1e03f0bf59d2bcdbdf1c872b3d9c1a1b8a25ce2919c7008c960da5d78e1e505acc04edc03394d1002"
+  },
+  {
+    "region": "empty-slot",
+    "scene": "system-menu",
+    "role": "calibration",
+    "video": "S26lUv598_o",
+    "seconds": 656.541,
+    "raw_sha256": "e71e0b8bb3b405fae13a71de2c7842496be57df66c7ce4b8814a61cdbc6f0e8d",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        97.5,
+        1180.5,
+        38.5,
+        635.0
+      ],
+      "scaled_size": [
+        1279,
+        719
+      ],
+      "offset": [
+        1,
+        0
+      ]
+    },
+    "mask": "78daed954112802008459ff7bf748b6ac25470cc8a26fea2853af004be4128140a7d58c945e6f4a67c501c1cee31105f335a6fd6226e86c185d06367a9550351252d34f5fb89a262e2ad8769358513462d18663550d7b16763a344f6ad07434bdcc210331286fd11c6d93b3d6f39b3af35fa97db83a4d221eb322d97e4369b81613fbe59c6e730b49db23edc86a18dc13d1874ce7fd1956914387089230c7c50e08322140a595a00ce0b084b"
+  },
+  {
+    "region": "slot-tab",
+    "scene": "system-menu",
+    "role": "calibration",
+    "video": "S26lUv598_o",
+    "seconds": 656.916,
+    "raw_sha256": "2c74497cb238f3514db8db6e26ee4c119c37d25718bdec91d263d76e26e97d01",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "scaled_size": [
+        1280,
+        720
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "mask": "78daedd6dd0a8020140360f7fe2fdd4d3f9a9c6524b4c9d945889a7c86a6a564320b044271b23e8a01272e34e3a5859736007b71012baf1a8e7ba5b4c7c3870bca555cae64392477321711f7acf950b886ef6aea02fd3b0c72db1ef7b9ee1ba16ae9dfeefbc4e30d7edbd6bb04f7c773821f6ee2db4c994b3cc99d76fb228d8ab74513eeebdb657267660310ba0f94"
+  },
+  {
+    "region": "empty-slot",
+    "scene": "system-menu",
+    "role": "calibration",
+    "video": "S26lUv598_o",
+    "seconds": 656.916,
+    "raw_sha256": "2c74497cb238f3514db8db6e26ee4c119c37d25718bdec91d263d76e26e97d01",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "scaled_size": [
+        1280,
+        720
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "mask": "78daed97db0ac0300843ddfffff4e8438716b30bb434b8e461ec12eb61aceacc244992a4123ab68a83e2e2e817d8f66eb12f897d0437c678d68e77494657f46791fc18795a0419178faee84591fe3e2706c186fd79f95a50cb27b414fc016525aabbe3d36518e6319ad720c68c068b8b0c7af960db95c0786e59dec98bc1317c910c811cc328c750acbf0aa9bc4e63dd07a0"
+  },
+  {
+    "region": "slot-tab",
+    "scene": "system-menu",
+    "role": "validation",
+    "video": "S26lUv598_o",
+    "seconds": 657.104,
+    "raw_sha256": "59875162f53ae8de51bd810c56ed04de33b087692e9edbc5303b4b11c303430c",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "scaled_size": [
+        1280,
+        720
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "mask": "78daedd6dd0a8020140360f7fe2fdd4d3f9a9c6524b4c9d945889a7c86a6a564320b044271b23e8a01272e34e3a5859736007b71012baf1a8e7ba5b4c7c3870bca555cae64392477321711f7acf950b886ef6aea02fd3b0c72db1ef7b9ee1ba16ae9dfeefbc4e30d7edbd6bb04f7c773821f6ee2db4c994b3cc99d76fb228d8ab74513eeebdb657267660310ba0f94"
+  },
+  {
+    "region": "empty-slot",
+    "scene": "system-menu",
+    "role": "validation",
+    "video": "S26lUv598_o",
+    "seconds": 657.104,
+    "raw_sha256": "59875162f53ae8de51bd810c56ed04de33b087692e9edbc5303b4b11c303430c",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "scaled_size": [
+        1280,
+        720
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "mask": "78daed97db0ac0300843ddfffff4e8438716b30bb434b8e461ec12eb61aceacc244992a4123ab68a83e2e2e817d8f66eb12f897d0437c678d68e77494657f46791fc18795a0419178faee84591fe3e2706c186fd79f95a50cb27b414fc016525aabbe3d36518e6319ad720c68c068b8b0c7af960db95c0786e59dec98bc1317c910c811cc328c750acbf0aa9bc4e63dd07a0"
+  },
+  {
+    "region": "slot-tab",
+    "scene": "system-menu",
+    "role": "validation",
+    "video": "S26lUv598_o",
+    "seconds": 657.291,
+    "raw_sha256": "66a059b98c090a0ef16636a7e820ced49ebeafc338a2c6eeeed1a3dd78d093ca",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "scaled_size": [
+        1280,
+        720
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "mask": "78daedd6dd0a8020140360f7fe2fdd4d3f9a9c6524b4c9d945889a7c86a6a564320b044271b23e8a01272e34e3a5859736007b71012baf1a8e7ba5b4c7c3870bca555cae64392477321711f7acf950b886ef6aea02fd3b0c72db1ef7b9ee1ba16ae9dfeefbc4e30d7edbd6bb04f7c773821f6ee2db4c994b3cc99d76fb228d8ab74513eeebdb657267660310ba0f94"
+  },
+  {
+    "region": "empty-slot",
+    "scene": "system-menu",
+    "role": "validation",
+    "video": "S26lUv598_o",
+    "seconds": 657.291,
+    "raw_sha256": "66a059b98c090a0ef16636a7e820ced49ebeafc338a2c6eeeed1a3dd78d093ca",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "scaled_size": [
+        1280,
+        720
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "mask": "78daed97db0ac0300843ddfffff4e8438716b30bb434b8e461ec12eb61aceacc244992a4123ab68a83e2e2e817d8f66eb12f897d0437c678d68e77494657f46791fc18795a0419178faee84591fe3e2706c186fd79f95a50cb27b414fc016525aabbe3d36518e6319ad720c68c068b8b0c7af960db95c0786e59dec98bc1317c910c811cc328c750acbf0aa9bc4e63dd07a0"
+  },
+  {
+    "region": "slot-tab",
+    "scene": "system-menu",
+    "role": "calibration",
+    "video": "dv9axuULtdA",
+    "seconds": 1115.704,
+    "raw_sha256": "9dee5893a523bd8ec48224674d08060b109da661569879afd8f46789c4c6cfe1",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        94.5,
+        1185.5,
+        36.5,
+        636.5
+      ],
+      "scaled_size": [
+        1269,
+        715
+      ],
+      "offset": [
+        5,
+        2
+      ]
+    },
+    "mask": "78daedd4410ac0201004c1edff7f3ab78089d18b8169d87e41b18c5675dd2c7272697760027369bfbd60f282c90b2aaf8b0b2a6f9a6fe325db2be3629aeecbdbdcb36318bda0ba6f73fff4e2f236f7e4aff00467dd50c82d0b7735064c4fedf6820a6ce27201ba7610e3"
+  },
+  {
+    "region": "empty-slot",
+    "scene": "system-menu",
+    "role": "calibration",
+    "video": "dv9axuULtdA",
+    "seconds": 1115.704,
+    "raw_sha256": "9dee5893a523bd8ec48224674d08060b109da661569879afd8f46789c4c6cfe1",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        94.5,
+        1185.5,
+        36.5,
+        636.5
+      ],
+      "scaled_size": [
+        1269,
+        715
+      ],
+      "offset": [
+        5,
+        2
+      ]
+    },
+    "mask": "78daedd7d90d80300c04d171ff4d5300325716ec849ddf08e521100ee09c736eac48ca57ee77b0c919e39b9a31225a385662302f838cb1375d543eb91958f6dd989ee18fe89b234532602956201aeaa50c548a568cea47d28681e0ec490b86ec683e70b17f6ddc0fda0040f308ce"
+  },
+  {
+    "region": "slot-tab",
+    "scene": "system-menu",
+    "role": "calibration",
+    "video": "dv9axuULtdA",
+    "seconds": 1116.079,
+    "raw_sha256": "9e8b168c591aa456b648e432e7239fd76e053ea5907fd9f0561cb99289264ab4",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        94.5,
+        1185.5,
+        36.5,
+        636.5
+      ],
+      "scaled_size": [
+        1269,
+        715
+      ],
+      "offset": [
+        5,
+        2
+      ]
+    },
+    "mask": "78daedd3cb09c0400cc450abffa673cd867cf6e08005a30a1e665c95d25d0ccaa5fdf0323019f7110ce1fee565707a2ea8bcb8bce37c2eeefb7941e50db775bb172fa8ee1b6eef14562fa8ee1b6ef714cee059371472cbc2958d61e3dd400536713900ca7a10e3"
+  },
+  {
+    "region": "empty-slot",
+    "scene": "system-menu",
+    "role": "calibration",
+    "video": "dv9axuULtdA",
+    "seconds": 1116.079,
+    "raw_sha256": "9e8b168c591aa456b648e432e7239fd76e053ea5907fd9f0561cb99289264ab4",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        94.5,
+        1185.5,
+        36.5,
+        636.5
+      ],
+      "scaled_size": [
+        1269,
+        715
+      ],
+      "offset": [
+        5,
+        2
+      ]
+    },
+    "mask": "78daed96310ec0200cc49cff7fbaea44a75248504ed57962006120ba00c61863724427221a21a2111212921a591d76b6afbf0d4e3eca67cdf5d38c1552b581359ef1658b13515ed25fc9e645499f4743239d9efc4483fefa5cd2789929f217add5b8c7d063618c9972019bfb08d1"
+  },
+  {
+    "region": "slot-tab",
+    "scene": "system-menu",
+    "role": "validation",
+    "video": "dv9axuULtdA",
+    "seconds": 1116.829,
+    "raw_sha256": "ef1309167839f9761c958cad371052a9954e13d85c1144b1799d35d25adcfd4a",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        94.5,
+        1185.5,
+        36.5,
+        636.5
+      ],
+      "scaled_size": [
+        1269,
+        715
+      ],
+      "offset": [
+        5,
+        2
+      ]
+    },
+    "mask": "78daedd4c109c0300c04416dff4de71d70ac8763b8056d05c321bb6a9a5611944bdb78094cc6fd04c3706f79094ecf0595179737cee7e2eee7059537d167e2d6765e509dc370ff3d85b71754fb0ef744d581c3367471dbd726f81762b9fd730315d8c4e501b9ba10e0"
+  },
+  {
+    "region": "empty-slot",
+    "scene": "system-menu",
+    "role": "validation",
+    "video": "dv9axuULtdA",
+    "seconds": 1116.829,
+    "raw_sha256": "ef1309167839f9761c958cad371052a9954e13d85c1144b1799d35d25adcfd4a",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        94.5,
+        1185.5,
+        36.5,
+        636.5
+      ],
+      "scaled_size": [
+        1269,
+        715
+      ],
+      "offset": [
+        5,
+        2
+      ]
+    },
+    "mask": "78daed96310ec0200cc49cff7fbaea44a75248504ed57962006120ba00c61863724427221a21a2111212921a591d76b6afbf0d4e3eca67cdf5d38c1552b581359ef1658b13515ed25fc9e645499f4743239d9efc4483fefa5cd2789929f217add5b8c7d063618c9972019bfb08d1"
+  },
+  {
+    "region": "slot-tab",
+    "scene": "system-menu",
+    "role": "validation",
+    "video": "dv9axuULtdA",
+    "seconds": 1117.329,
+    "raw_sha256": "645b4ee55b7754e4d20a0cd56872dec651842c1399d454d0735b92df9cea4f80",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        94.5,
+        1185.5,
+        36.5,
+        636.5
+      ],
+      "scaled_size": [
+        1269,
+        715
+      ],
+      "offset": [
+        5,
+        2
+      ]
+    },
+    "mask": "78daedd4c109c0300c04416dff4de71d70ac8763b8056d05c321bb6a9a5611944bdb78094cc6fd04c3706f79094ecf0595179737cee7e2eee7059537d167e2d6765e509dc370ff3d85b71754fb0ef744d581c3367471dbd726f81762b9fd730315d8c4e501b9ba10e0"
+  },
+  {
+    "region": "empty-slot",
+    "scene": "system-menu",
+    "role": "validation",
+    "video": "dv9axuULtdA",
+    "seconds": 1117.329,
+    "raw_sha256": "645b4ee55b7754e4d20a0cd56872dec651842c1399d454d0735b92df9cea4f80",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "capture_edges": [
+        94.5,
+        1185.5,
+        36.5,
+        636.5
+      ],
+      "scaled_size": [
+        1269,
+        715
+      ],
+      "offset": [
+        5,
+        2
+      ]
+    },
+    "mask": "78daed96310ec0200cc49cff7fbaea44a75248504ed57962006120ba00c61863724427221a21a2111212921a591d76b6afbf0d4e3eca67cbf5d38c1552b581359ef1658b13515ed25fc9e645499f4743239d9efc4483fefa5cd2789929f217add5b8c7d063618c997201a6ed08d2"
+  },
+  {
+    "region": "picture-icons",
+    "scene": "screen-settings",
+    "role": "calibration",
+    "video": "S26lUv598_o",
+    "seconds": 64.45,
+    "raw_sha256": "f2222b3cd07518bc9473e3d75917011388c1c28ec00e5f7109c39edf4799dfa6",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        635.75
+      ],
+      "capture_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.75
+      ],
+      "scaled_size": [
+        1280,
+        721
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "mask": "78daed96cb0ec2300c04d7ffffd30841553b2fafb72d07944845b90c49e3d43bc01e7b1cc3c210319ab4d19041133182348d34bb044efea252bfcf9393d683d4923601fd2bcc40ac40abae78ce0570b96402420301054cce356ecb9fa6f48ec4dd19d50fa1b6c48aed3dad6e15d2656dc1fbbf8e7507d041b6e9b455a4bbdc772e80dcd73f5ef32c88981ecfa6d568c3f570dd8ef1378a247bd515b352bf0d0eb5bbcdca542e6f726ed6456b6a564752a11a011e233aeba419a314563e1fd34692cac3ba3dcd1239d39529980a522c4b4c67ea54bbfa64f280f8435a47d01a345e55132490a0dff01ba26e6b2aba859bf37bb382204830d256c7a02f6bc9732e0b92dc59c508785e9074b102604f1bd20b8a5a066f"
+  },
+  {
+    "region": "picture-icons",
+    "scene": "screen-settings",
+    "role": "calibration",
+    "video": "S26lUv598_o",
+    "seconds": 65.15,
+    "raw_sha256": "50871a609f139319e8966e0677a94700f38d3955a523a31d9f8c7da0b48d212d",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        635.75
+      ],
+      "capture_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        635.5
+      ],
+      "scaled_size": [
+        1280,
+        720
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "mask": "78daed98c112c2200c4437ffffd38eb6158142360b99f1504e3af208424c9e059ef18c73583d548e25ed76e481361c39609972cd26c90e24437633eb98319009d97c272b5b77c81570bc55bc1755c059c839082de2f1b90f42dd2a6e4fd5037b40000122e96e0e0754cec9201c70ffaf6356385640b6589daf11ae724110b6a1927fde21d03e4cec3a30b5cdd5092f75d7c731fe4c76161c49172b9ed592dc360b529a59d992597d1b4ed793dd4b8f824d69a40b64991407074de75a220544b187662947579a93e5c1caa26a7d914084acc378cfc1ef7474fcb4e8b7f94a9a55c9d34357a86c75455735ab7c41e223627a8b88818220715abd0c6efe8f9cfd1c2070f1233cb5e5bf00f463067c"
+  },
+  {
+    "region": "picture-icons",
+    "scene": "screen-settings",
+    "role": "validation",
+    "video": "S26lUv598_o",
+    "seconds": 66.35,
+    "raw_sha256": "80de17c8812822a07fe07c907b50c39f863c235ffb243b4c50447986b74c8668",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        635.75
+      ],
+      "capture_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "scaled_size": [
+        1280,
+        722
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "mask": "78daed964716c4200c43edfb5f7ade94d08c832c088b79789582a8c6fa22274ea4d01c9c2a22d54ed04240aa5ed04265750ae89c1ef001dfefe53778a2b623205d4a61b9044f28bd115397e31145daa95e5fc01c0537f621e1f7705c616e5c7635d857ef388253cd73105468ce6fe7ae0a94ac23e1fadb611a2a298cd78eee0d81abdcef99150e2ff174256f3373d27638a3e3bcf530c6bf10120b5674c24d02120d56cf91d58222c702d2c77f8d270f74c9198d2fc74a6344e8a060c0e69aaa0e087be478efc8922dae2d9314038c47ac284ab145d6ab13b5a88df2aa71f4c054a132d2815b81b2b5feb91090d0649d222be10149c242738a3059290b484a22d9d574ae94ef0524dd61ac91780144ec066c"
+  },
+  {
+    "region": "picture-icons",
+    "scene": "screen-settings",
+    "role": "validation",
+    "video": "S26lUv598_o",
+    "seconds": 67.25,
+    "raw_sha256": "cc77aef89bc34984e5f1e40f0e6cf7f0abc0bf13f304c1e7ac5a051c49626ffa",
+    "registration": {
+      "reference_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        635.75
+      ],
+      "capture_edges": [
+        98.5,
+        1180.5,
+        38.5,
+        634.5
+      ],
+      "scaled_size": [
+        1280,
+        722
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "mask": "78daed97db0e84200c4467feffa737ae31947b1944d78d7d22e2914ba133026ffc5f3084468da1a484b2182a4795eba21441366301587cdb01b21732c82bc1bdf7e4112ba33c0294d7786f1e9f06aaf7eaf2d2a116ab4575550775ed8088552ee6624536ec6b6a7ecd5aa98eec2e67253bb209672517800967e5cddee68de24f75b9a309d3762ac0614e625336705e444b6627e906bf9b8374fc66790a6e339903dcc23a36a299a879d25e64bcba907edb57035170d518300f61aaae32926f08e13aad71e70eaa270792cf49419c0f42fcd3413b8b6e09a7f31a678720bb93ee3a57caee0209d0456742e6268475243eb91306fe"
+  }
+]

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "emu.h"
 #include "menu-slot-emblem.h"
+#include "menu-picture-icons.h"
 #include "ui/mainmenu.h"
 #include "wallpaper-previews.h"
 #include "screen-preview.h"
@@ -202,18 +203,25 @@ void footer(mame_ui_manager &ui,render_target &t,bool slots=false, bool settings
 
 } // anonymous namespace
 
+template<size_t H, size_t W>
+static render_texture *menu_bitmap(running_machine &machine, bitmap_argb32 &bitmap, const char (&rows)[H][W],
+                                   const char *keys, const uint32_t *colors)
+{
+    bitmap.allocate(W-1,H);
+    for (size_t y=0;y<H;++y)
+        for (size_t x=0;x<W-1;++x)
+            bitmap.pix(y,x)=colors[std::strchr(keys,rows[y][x])-keys];
+    auto *texture=machine.render().texture_alloc();
+    texture->set_bitmap(bitmap,bitmap.cliprect(),TEXFORMAT_ARGB32);
+    return texture;
+}
+
 class battle_slots
 {
 public:
     explicit battle_slots(running_machine &machine) : m_machine(machine)
     {
-        m_emblem_bitmap.allocate(130,24);
-        for (int y=0; y<24; ++y) for (int x=0; x<130; ++x) {
-            const auto index=std::strchr(slot_emblem::keys,slot_emblem::rows[y][x])-slot_emblem::keys;
-            m_emblem_bitmap.pix(y,x)=slot_emblem::colors[index];
-        }
-        m_emblem=m_machine.render().texture_alloc();
-        m_emblem->set_bitmap(m_emblem_bitmap,m_emblem_bitmap.cliprect(),TEXFORMAT_ARGB32);
+        m_emblem=menu_bitmap(machine,m_emblem_bitmap,slot_emblem::rows,slot_emblem::keys,slot_emblem::colors);
     }
     ~battle_slots() { clear(); m_machine.render().texture_free(m_emblem); }
     void refresh()
@@ -485,11 +493,13 @@ public:
                 wall_textures[i]=item;
             }
         } else {
+            badges=menu_bitmap(machine(),badge_bitmap,picture_icons::rows,picture_icons::keys,picture_icons::colors);
             texture=machine().render().texture_alloc();
             update_sample();
         }
     }
     ~display_menu() override {
+        if (badges) machine().render().texture_free(badges);
         if (texture) machine().render().texture_free(texture);
         for (auto *item:wall_textures) if (item) machine().render().texture_free(item);
     }
@@ -498,6 +508,8 @@ private:
     std::array<bitmap_argb32,3> wall_bitmaps;
     std::array<render_texture *,3> wall_textures{};
     bitmap_argb32 bitmap;
+    bitmap_argb32 badge_bitmap;
+    render_texture *badges=nullptr;
     render_texture *texture=nullptr;
     static constexpr char const *screens[]={"4:3","Zoom","Dot-by-Dot","Full Screen"};
     static constexpr char const *walls[]={"Original","Stars","Symbols","Black"};
@@ -565,26 +577,14 @@ private:
             if (!wallpaper) label(ui(),target(),screens[i],x-.012f,.656f,.165f,.036f);
         }
         if (!wallpaper) {
+            constexpr float px=1.f/1280, py=1.f/720;
+            container().add_quad(801*px,136*py,837*px,214*py,rgb_t::white(),badges,blend);
             int picture=battlecity_picture(-1);
             for (int i=0;i<2;++i) {
                 float y=.201f+.058f*i;
                 std::string name=i ? "Scan Lines" : "Anti-Aliasing";
                 auto &c=container();
-                constexpr float px=1.f/1280, py=1.f/720;
                 float const top=(137+42*i)*py;
-                rounded(c,802*px,top,34*px,34*py,17*px,17*py,rgb_t(0,19,64));
-                // Both badges contain the same pixel S. The lower flag has scan lines.
-                static constexpr unsigned glyph[]={0x3c,0x66,0x60,0x3c,0x06,0x66,0x3c};
-                for (int row=0;row<7;++row)
-                    for (int col=0;col<7;++col)
-                        if (glyph[row] & (0x40>>col))
-                            box(c,(805+2*col)*px,top+(9+2*row)*py,2*px,2*py,rgb_t(100,4,16));
-                auto gold=rgb_t(104,79,8);
-                box(c,819*px,top+8*py,3*px,21*py,gold);
-                box(c,817*px,top+27*py,7*px,3*py,gold);
-                for (int row=0;row<12;++row)
-                    box(c,822*px,top+(9+row)*py,(1+std::min(row,11-row)*2)*px,py,
-                        i && row%2 ? rgb_t(64,51,8) : gold);
                 for (auto [dx,dy]:{std::pair{0,-7},{-7,0},{7,0},{0,7}}) {
                     rounded(c,(859+dx)*px,top+(13+dy)*py,8*px,8*py,4*px,4*py,rgb_t(222,222,222));
                     if (dy!=-7 && !(picture & (1<<i)))

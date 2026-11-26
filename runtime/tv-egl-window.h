@@ -15,7 +15,8 @@ class tv_egl_window {
     PFNEGLSWAPBUFFERSWITHDAMAGEKHRPROC swap_damage=nullptr;
     ARect changes[8]{}, surface_change{};
     unsigned history_size=0, history_next=0, log_count=0;
-    bool count_repairs=false;
+    bool count_repairs=false, report_damage=false, verify_marker=false;
+    FILE *swap_hints=nullptr;
     uint64_t partial_copies=0, full_copies=0;
     static bool has_extension(const char *extensions,const char *name) {
         if (!extensions) return false;
@@ -56,7 +57,7 @@ class tv_egl_window {
         glBindFramebuffer(GL_FRAMEBUFFER,0);
     }
     void flush_logs() {
-        for (FILE *f : {frames,boundaries,presentations}) if (f) std::fflush(f);
+        for (FILE *f : {frames,boundaries,presentations,swap_hints}) if (f) std::fflush(f);
 
     }
     GLint geometry=-1, derivative=-1;
@@ -108,6 +109,7 @@ public:
     void finish_sample() { flush_logs(); }
     ~tv_egl_window() {
         close();
+        if (swap_hints) std::fclose(swap_hints);
         if (boundaries) std::fclose(boundaries);
         if (frames) std::fclose(frames);
         if (presentations) std::fclose(presentations);
@@ -129,7 +131,7 @@ public:
         flush_logs();
         pending.clear(); present_supported=false;
         history_size=history_next=0; incremental=false; swap_damage=nullptr;
-        count_repairs=false;
+        count_repairs=report_damage=verify_marker=false;
     }
     bool open(ANativeWindow *window,EGLSurface existing) {
         if (context!=EGL_NO_CONTEXT && program) return true;
@@ -154,11 +156,14 @@ public:
         const auto *extensions=eglQueryString(display,EGL_EXTENSIONS);
         const bool age_supported=has_extension(extensions,"EGL_EXT_buffer_age") ||
             has_extension(extensions,"EGL_KHR_partial_update");
-        if (has_extension(extensions,"EGL_KHR_swap_buffers_with_damage"))
+        const bool khr_damage=has_extension(extensions,"EGL_KHR_swap_buffers_with_damage");
+        if (khr_damage)
             swap_damage=reinterpret_cast<PFNEGLSWAPBUFFERSWITHDAMAGEKHRPROC>(eglGetProcAddress("eglSwapBuffersWithDamageKHR"));
         else if (has_extension(extensions,"EGL_EXT_swap_buffers_with_damage"))
             swap_damage=reinterpret_cast<PFNEGLSWAPBUFFERSWITHDAMAGEKHRPROC>(eglGetProcAddress("eglSwapBuffersWithDamageEXT"));
         incremental=age_supported && !(measuring && root && ::access((std::string(root)+"/tv-egl-full-copy").c_str(),F_OK)==0);
+        report_damage=swap_damage && !(measuring && root && ::access((std::string(root)+"/tv-plain-swap").c_str(),F_OK)==0);
+        verify_marker=measuring && root && ::access((std::string(root)+"/tv-moving-check").c_str(),F_OK)==0;
         sync_log=measuring && root && ::access((std::string(root)+"/tv-sync-log").c_str(),F_OK)==0;
         count_repairs=measuring;
         const bool immediate=measuring && root && ::access((std::string(root)+"/tv-egl-immediate").c_str(),F_OK)==0;
@@ -231,6 +236,7 @@ void main() {
             present_supported=timestamps && supported && eglSurfaceAttrib(display,surface,EGL_TIMESTAMPS_ANDROID,EGL_TRUE)
                 && supported(display,surface,EGL_DISPLAY_PRESENT_TIME_ANDROID);
             if (root && !boundaries) boundaries=open_log(std::string(root)+"/tv-boundaries.csv");
+            if (root && !swap_hints) swap_hints=open_log(std::string(root)+"/tv-hints.csv");
             if (root && !frames) frames=open_log(std::string(root)+"/tv-frame-map.csv");
             if (root && !presentations) presentations=open_log(std::string(root)+"/tv-present.csv");
             EGLint minimum=0,maximum=0;
@@ -238,8 +244,9 @@ void main() {
             eglGetConfigAttrib(display,config,EGL_MAX_SWAP_INTERVAL,&maximum);
             if (root) {
                 if (FILE *file=std::fopen((std::string(root)+"/tv-window.txt").c_str(),"a")) {
-                    std::fprintf(file,"bufferAge=%d swapDamage=%d incremental=%d perFrameFlush=%d\n",
-                                 age_supported,swap_damage!=nullptr,incremental,sync_log);
+                    std::fprintf(file,"bufferAge=%d swapDamage=%d incremental=%d perFrameFlush=%d hintApi=%s\n",
+                                 age_supported,swap_damage!=nullptr,incremental,sync_log,
+                                 report_damage ? (khr_damage ? "KHR" : "EXT") : "plain");
                     std::fprintf(file,"generation=%u renderer=%s requestedInterval=%d configMin=%d configMax=%d displayTimestamps=%d\n",
                         generation,reinterpret_cast<const char *>(glGetString(GL_RENDERER)),immediate ? 0 : 1,minimum,maximum,present_supported);
                     std::fclose(file);
@@ -279,6 +286,7 @@ void main() {
         if (!hold_input(iw,ih,w,h) && (changed || mode==profile_mode::upload || capture))
             glTexSubImage2D(GL_TEXTURE_2D,0,0,0,iw,ih,GL_RED_INTEGER,GL_UNSIGNED_SHORT,pixels.data());
         const auto uploaded=now();
+        surface_change={};
         const bool direct=mode==profile_mode::direct;
         if (!prepared && (direct || changed)) {
             glBindFramebuffer(GL_FRAMEBUFFER,direct ? 0 : framebuffer);
@@ -384,15 +392,21 @@ void main() {
             auto start_time=battlecity_tv::now_ns();
             uint64_t count=0;
             int64_t last=start_time;
-            do {
-                const auto render_start=battlecity_tv::now_ns();
-                // Alternate a real 8x8 patch in the measured producer only.
-                copy_window(count ? ARect{0,0,8,8} : ARect{0,0,sw,sh},sw,sh);
+            // Both positions are inside the visible crop. Restore the previous
+            // square from the cached game image before drawing its new position.
+            const ARect left{192,120,200,128}, right{216,120,224,128};
+            const ARect movement=merged(left,right);
+            auto paint_marker=[&](ARect spot) {
                 glEnable(GL_SCISSOR_TEST);
-                glScissor(0,0,8,8);
-                glClearColor((count & 1) ? 1.f : 0.f,1.f,0.f,1.f);
+                glScissor(spot.left,spot.top,spot.right-spot.left,spot.bottom-spot.top);
+                glClearColor(1.f,0.f,1.f,1.f);
                 glClear(GL_COLOR_BUFFER_BIT);
                 glDisable(GL_SCISSOR_TEST);
+            };
+            do {
+                const auto render_start=battlecity_tv::now_ns();
+                copy_window(count ? movement : ARect{0,0,sw,sh},sw,sh);
+                paint_marker((count & 1) ? right : left);
                 int64_t swap_start=0;
                 if (!swap(first+count,render_start,swap_start)) return false;
                 ++count;
@@ -407,6 +421,24 @@ void main() {
                     (unsigned long long)count,(unsigned long long)(first+count-1),(last-start_time)/1e9,sw,sh);
                 if (std::fclose(file)==0) std::rename(temp.c_str(),producer_path.c_str());
             }
+            if (verify_marker) {
+                for (int phase=0;phase<4;++phase) {
+                    copy_window(phase ? movement : ARect{0,0,sw,sh},sw,sh);
+                    if (phase==1 || phase==2) paint_marker(phase==1 ? left : right);
+                    int64_t stamp=0;
+                    if (!swap(0,0,stamp)) return false;
+                    const auto ready=fixed_marker+"-probe-"+std::to_string(phase);
+                    FILE *flag=std::fopen(ready.c_str(),"w");
+                    if (!flag) return false;
+                    std::fclose(flag);
+                    const auto deadline=battlecity_tv::now_ns()+90000000000LL;
+                    while (::access(ready.c_str(),F_OK)==0) {
+                        if (battlecity_tv::now_ns()>deadline) return false;
+                        SDL_Delay(20);
+                    }
+                }
+                copy_window({0,0,sw,sh},sw,sh);
+            }
         }
         return swap(frame,start,before_swap);
     }
@@ -417,7 +449,8 @@ private:
         if (frame && frames && next_id && !next_id(display,surface,&id)) id=0;
         before_swap=frame ? battlecity_tv::now_ns() : 0;
         EGLBoolean success;
-        if (incremental && cache_window && swap_damage && !empty(surface_change)) {
+        const bool hinted=report_damage && cache_window && !empty(surface_change);
+        if (hinted) {
             EGLint rect[]={surface_change.left,surface_change.top,surface_change.right-surface_change.left,
                            surface_change.bottom-surface_change.top};
             success=swap_damage(display,surface,rect,1);
@@ -435,6 +468,11 @@ private:
             }
             std::fprintf(frames,"%u,%llu,%llu,%lld\n",generation,(unsigned long long)frame,(unsigned long long)id,
                          (long long)(after_swap-before_swap));
+            if (swap_hints) {
+                const ARect reported=hinted ? surface_change : ARect{0,0,window_w,window_h};
+                std::fprintf(swap_hints,"%u,%llu,%d,%d,%d,%d,%d\n",generation,(unsigned long long)frame,
+                    int(hinted),reported.left,reported.top,reported.right-reported.left,reported.bottom-reported.top);
+            }
             if ((log_count+1)%128==0 && count_repairs) {
                 const char *dir=SDL_GetAndroidInternalStoragePath();
                 if (dir) if (auto *f=std::fopen((std::string(dir)+"/tv-window.txt").c_str(),"a")) {

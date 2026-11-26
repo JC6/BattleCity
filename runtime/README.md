@@ -115,3 +115,30 @@ The measurement ZIP contains the original and registered menu frames, the eight 
 Use `tests/nes/tv_stage_analysis.py` with the held-out output directory and a JSON destination to locate the first divergent stage. The release selector compares all output pixels against a repeated software screenshot. The standalone report links the tested packages to their hashes, both browser upgrade jobs and the TV installation and controller checks.
 
 Web and Android keep save files in cartridge-specific directories. A pair of hashes in the save compatibility table permits copying slots, thumbnails and lock files to the new directory when upgrading. The terminal-tally correction reuses all 220 named cartridge addresses and preserves the previous program everywhere except the two-byte jump operand and 12 formerly unused bytes. Browser and Android have separate upgrade tests because they use different storage systems.
+
+### Reproducing the paired EGL swap comparison
+
+On the swap validation branch, the presentation suite interleaves ordinary swaps
+and swaps with a damage rectangle for three 30-second pairs in each of three
+workloads. Both paths copy the complete 1195 × 960 back buffer and buffer their
+logs. The measured synthetic frames use their own sequence. Four additional
+screenshots check that an eight-pixel square moves 24 pixels and restores both
+locations. Per-frame output records the rectangle in bottom-left EGL coordinates,
+the actual EGL interface and the display receipt. The release gate checks the six
+hinted gameplay windows, the moving square, held-out pixels and both controllers
+before starting two formal cold boots.
+
+The BattleCity Web workflow downloads the previous Web observations and packages
+the comparison. To reproduce it locally, extract each current Actions artifact to
+a directory of its own name under `current/` and the previous `web-clock-and-endings`
+artifact under `previous/`. Python 3.11+ and FFmpeg are required.
+
+```sh
+python3 tools/package-switch-acceptance.py current previous delivery --identity "commit / run"
+(cd delivery && sha256sum -c SHA256SUMS)
+```
+
+The four APKs, browser ZIP, cartridge, labels, HTML, measurement archive and SHA-256
+manifest use the release gate's measured renderer. Installing over an existing
+ARM64 build requires its signing certificate. Supply those locally signed APKs with
+`--signed-arm DIRECTORY` to include them after verifying their payloads.

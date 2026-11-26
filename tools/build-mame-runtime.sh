@@ -65,6 +65,7 @@ fi
 cp "$repo/runtime/screen-preview.h" "$tree/src/frontend/mame/ui/screen-preview.h"
 cp "$repo/runtime/staff-roll.inc" "$tree/src/frontend/mame/ui/staff-roll.inc"
 cp "$repo/runtime/menu-slot-emblem.h" "$tree/src/frontend/mame/ui/menu-slot-emblem.h"
+cp "$repo/runtime/menu-picture-icons.h" "$tree/src/frontend/mame/ui/menu-picture-icons.h"
 if ! cmp -s "$repo/runtime/mainmenu.cpp" "$tree/src/frontend/mame/ui/mainmenu.cpp"; then
     cp "$repo/runtime/mainmenu.cpp" "$tree/src/frontend/mame/ui/mainmenu.cpp"
 fi
