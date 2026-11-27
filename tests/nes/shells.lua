@@ -48,6 +48,7 @@ shell_oam=cpu:install_write_tap(0x200,0x20f,"rendered shell",function(address,ti
         end
     end
     assert(count==10,"shell area differs in direction "..seen)
+    print(string.format("BATTLECITY_SHELL_OAM %d %d %d %d %d",seen,tile,attr,left-1,top+1))
     seen=seen+1
 end)
 shell_result=emu.add_machine_frame_notifier(function()

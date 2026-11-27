@@ -14,9 +14,11 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tests/nes'))
+from ending_parity import BASELINE as ENDING_BASELINE, ROUTES, verify as verify_endings
 from native_window_report import picture, rows, table
 from package import verify
 from switch_menu_acceptance import FIXTURE, FOCUS_FIXTURE, control_samples, measure
+from switch_shell_capture import FIXTURE as SHELL_FIXTURE, report as shell_report
 from tv_release_gate import decision
 from tv_swap_report import sections
 
@@ -50,6 +52,7 @@ def certificate(signer,apk):
 def package(run,previous,out,identity,arm_dir=None,signer=None,reference_arm=None):
     out.mkdir(parents=True,exist_ok=True)
     tv=run/'tv-device-results'
+    ending_counts=verify_endings(run/'web-clock-and-endings',tv/'timing')
     gate=decision(tv,renderer='egl-tv')
     assert gate==json.loads((tv/'release-gate.json').read_text())
     tested={path:digest for digest,path in (line.split() for line in gate['tested'].splitlines())}
@@ -96,7 +99,7 @@ def package(run,previous,out,identity,arm_dir=None,signer=None,reference_arm=Non
     assert upgrade['cartridge']==digest and upgrade['thumbnailPreserved'] and upgrade['lockPreserved']
     endings=[]
     for platform,folder in [('web',run/'web-clock-and-endings'),('tv',tv/'timing')]:
-        for case in ('neutral','record','skip-over','coop-stage18','coop-stage42'):
+        for case in ROUTES:
             capture=folder/f'{platform}-{case}'
             events=rows(capture/'events.csv')
             assert events and (capture/'game.wav').stat().st_size>44
@@ -119,8 +122,6 @@ def package(run,previous,out,identity,arm_dir=None,signer=None,reference_arm=Non
     failed=[r for r in measured if r['role']!='calibration' and not r['passed']]
     floor=(tv/'floor/clock.json').is_file()
     if floor:
-        for case in ('neutral','record','skip-over','coop-stage18','coop-stage42'):
-            assert rows(run/f'web-clock-and-endings/web-{case}/events.csv')==rows(tv/f'timing/tv-{case}/events.csv'),case
         from tv_floor_report import sections as floor_sections
         swap=floor_sections(run)
         controls=control_samples(run,out/'menu-controls.csv')
@@ -129,7 +130,7 @@ def package(run,previous,out,identity,arm_dir=None,signer=None,reference_arm=Non
     else:
         swap=sections(run)
     html=['<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Battle City · Switch 复刻验收</title>',
-          '<style>body{font:16px/1.55 system-ui;max-width:1180px;margin:auto;padding:28px}table{border-collapse:collapse;display:block;overflow:auto}td,th{border:1px solid #adb4ba;padding:4px 8px}img{max-width:100%;height:auto}figure{display:inline-block;width:42%;margin:1em}</style>',
+          '<style>body{font:16px/1.55 system-ui;max-width:1180px;margin:auto;padding:28px}table{border-collapse:collapse;display:block;overflow:auto}td,th{border:1px solid #adb4ba;padding:4px 8px}img{max-width:100%;height:auto}img[alt^="六个连续帧"]{width:288px;image-rendering:pixelated}figure{display:inline-block;width:42%;margin:1em}</style>',
           '<h1>Battle City · Web 与 Android TV 验收</h1>',
           f'<p>验收提交与运行 {escape(identity)}。正式电视包采用 '+('EGL' if promoted else 'SDL')+'。Android TV 显示测量来自 API 34 x86 电视模拟器。</p>',
           table(('项目','结果'),[(k,v) for k,v in gate.items() if k.endswith('Passed')]),
@@ -148,7 +149,9 @@ def package(run,previous,out,identity,arm_dir=None,signer=None,reference_arm=Non
     for scene in ('system-menu','screen-settings'):
         for h in (720,1080):
             html.append(picture(run/f'web-clock-and-endings/screens/{scene}-{h}.png',f'Web · {scene} · {h}p'))
+    html.extend(shell_report(cartridge,out/'switch-shells',run/'campaign-loop/shells.log',run/'campaign-loop/barrels.log'))
     html.extend(['<h2>结算画面与音频</h2>',
+                 f'<p>五条结局的 {sum(ending_counts.values())} 个事件逐行匹配两端与已验收基线，包括帧号、模拟时间、事件名称和值。改变事件值、移动一帧和删除一行的三个打包负例均在首个差异处中止。</p>',
                  table(('平台','结局','记录事件','双人标题分数'),endings),
                  f'<p>新核对的英文 Switch 第二关实录显示 15 击毁。TOTAL 15 首次连续可读为 {float(visual["total_s"]):.3f} 秒，'
                  f'GAME OVER 为 {float(visual["game_over_s"]):.3f} 秒，间隔 {float(visual["interval_s"]):.3f} 秒。'
@@ -178,6 +181,11 @@ def package(run,previous,out,identity,arm_dir=None,signer=None,reference_arm=Non
         for f in sorted((previous/'web-clock-and-endings/screens').glob('*.png')):
             if any(f.name.startswith(scene+'-') for scene in ('system-menu','screen-settings')):
                 add_evidence(z,'previous/web-clock-and-endings/screens/'+f.name,source=f)
+        for f in (ENDING_BASELINE,ENDING_BASELINE.with_name('negative-controls.json'),ENDING_BASELINE.with_suffix('.md')):
+            add_evidence(z,'ending/'+f.name,source=f)
+        for folder in (SHELL_FIXTURE,out/'switch-shells'):
+            for f in sorted(folder.iterdir()):
+                add_evidence(z,'switch-shells/'+f.name,source=f)
         for f in sorted(study.iterdir()):
             add_evidence(z,'switch-terminal/'+f.name,source=f)
         add_evidence(z,'identity.txt',data=(identity+'\n').encode())

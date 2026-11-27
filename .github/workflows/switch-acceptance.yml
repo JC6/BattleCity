@@ -81,6 +81,7 @@ jobs:
           TESTED: ${{ steps.runs.outputs.tested }}
           PREVIOUS: ${{ steps.runs.outputs.previous }}
         run: |
+          python3 tests/nes/test_ending_parity.py
           python3 tools/package-switch-acceptance.py inputs/current inputs/previous delivery --identity "$REVISION / $TESTED (baseline $PREVIOUS)"
           (cd delivery && sha256sum -c SHA256SUMS)
       - uses: actions/upload-artifact@v4

@@ -14,6 +14,8 @@ Web 解压后通过 HTTP 打开，按 Enter 启动。标题滚动时可按 Enter
 
 ## 复验
 
+四个方向已各取两次英文 Switch 发射。48 帧中有 46 帧与正式卡带的炮弹轮廓逐格吻合，另两帧各多一个阈值敏感的边缘像素。玩家坦克向上、向左时仍有一格炮口偏移。一版绘制试验修正了偏移，但改变了三个结局事件的模拟时间，正式包继续沿用已验收版本。打包与 CI 现逐行核对五条结局的全部 830 个事件。[四向逐帧对照及结局报告](build/battlecity/switch-parity-review/Switch-TV-Comparison.html) · [原始测量包](build/battlecity/switch-parity-review/Switch-TV-Measurements.zip) · [可复现的取样](tests/nes/fixtures/switch-shells/README.md)
+
 本地交付的 ARM64 正式版和候选版均沿用了上一版本的签名证书。已核对包名、版本号和所有非签名条目的 SHA-256，两个 APK 的应用内容分别与本轮云端构建一致。Web、两个 x86 APK、卡带、调试标签、离线报告和原始测量包均与云端清单逐字节相同。[Android TV 正式版](build/battlecity/BattleCity-TV.apk) · [Web](build/battlecity/BattleCity-Web.zip) · [离线报告](build/battlecity/Switch-TV-Comparison.html) · [原始测量包](build/battlecity/Switch-TV-Measurements.zip) · [本地校验清单](build/battlecity/SHA256SUMS) · [CI 原包清单](build/battlecity/45915496575/SHA256SUMS) · [云端 APK 签名核验](https://github.com/JC6/BattleCity/actions/runs/45917105691)
 
 Android TV 正式包使用 SDL。1080p x86 电视模拟器在同一 1195×960 窗口交替进行三轮测试。缓存复制实测 44.38–44.83 帧/秒，直接清屏为 44.62–44.71 帧/秒，低于 59.498 帧/秒的实时门槛。六个窗口提交的 8,038 帧都有系统显示回执。四阶段截图逐像素一致，均验证了移动方块旧位置的复原。以上为模拟器纯色画面测量。实体 ARM64 电视实战帧率仍待测。[本轮验收](https://github.com/JC6/BattleCity/actions/runs/45915496575)

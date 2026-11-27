@@ -131,12 +131,19 @@ jobs:
             -cart build/shared/game.nes -video none -sound none -nothrottle -seconds_to_run 60 \
             -autoboot_delay 0 -autoboot_script tests/nes/shells.lua | tee shells.log
           grep -F 'BATTLECITY_SHELLS_OK four anchored OAM silhouettes' shells.log
+          BATTLECITY_LABELS="$PWD/build/shared/game.lbl" SDL_VIDEODRIVER=dummy /usr/games/mame nes \
+            -cart build/shared/game.nes -video none -sound none -nothrottle -seconds_to_run 90 \
+            -autoboot_delay 0 -autoboot_script tests/nes/shell_barrels.lua | tee barrels.log
+          grep -F 'BATTLECITY_BARRELS_OK' barrels.log
           python3 tests/nes/verify_stages.py build/shared/game.nes --suite loop --report loop.csv
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: campaign-loop
-          path: loop.csv
+          path: |
+            loop.csv
+            shells.log
+            barrels.log
 
   package-web:
     needs: cartridge
@@ -435,3 +442,22 @@ jobs:
         with:
           name: tv-device-results
           path: build/tv-result/
+
+  ending-parity:
+    needs: [web-tests, package]
+    if: inputs.cartridge == 'game'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-clock-and-endings
+          path: observations/web
+      - uses: actions/download-artifact@v4
+        with:
+          name: tv-device-results
+          path: observations/tv
+      - name: Verify both ending traces against the accepted recording
+        run: |
+          python3 tests/nes/test_ending_parity.py
+          python3 tests/nes/ending_parity.py observations/web observations/tv/timing

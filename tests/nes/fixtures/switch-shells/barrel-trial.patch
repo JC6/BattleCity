@@ -1,0 +1,81 @@
+--- a/runtime/cartridge/boot.s
++++ b/runtime/cartridge/boot.s
+@@ -1904,10 +1904,14 @@
+     sta tank_tile
+     cpx #2
+     bcs draw_quad
+-    lda _shield_sprites
+-    and slot_bits,x
+-    beq draw_quad
++    jsr player_quad
++    bne player_shield
++    rts
++plain_player_quad:
+     jsr draw_quad
++    pla
++    rts
++player_shield:
+     lda #0
+     sta flip
+     lda _combat_frame
+@@ -2318,3 +2322,50 @@
+     .byte $00,$00,$00,$1e,$12,$a0,$05,$a0,$05,$5a,$5a,$00,$00
+     .byte $00,$00,$00,$0f,$00,$a0,$05,$a0,$05,$b0,$07,$00,$00
+     .byte $00,$00,$00,$d2,$1e,$e8,$4d,$a0,$05,$a0,$05,$00,$00
++
++.segment "PLAYER_ART"
++; Submit the body using the same four OAM slots as the shield and terrain paths.
++player_quad:
++    lda _shield_sprites
++    and slot_bits,x
++    pha
++    ldy tank_offsets,x
++    lda _tanks+2,y
++    beq @up
++    cmp #3
++    beq @left
++    jmp plain_player_quad
++@left:
++    lda #$40
++    sta flip
++@up:
++    ; The upper silhouette moves one pixel left. The left tank mirrors the
++    ; right one horizontally, so exchange the two tiles in each emitted row.
++    pha
++    lda _used_sprites
++    pha
++    jsr draw_quad
++    pla
++    tax
++    pla
++    tay
++@tile:
++    cpx _used_sprites
++    bcs @done
++    cpy #0
++    bne @mirror
++    dec $0203,x
++    jmp @next
++@mirror:
++    lda $0201,x
++    eor #1
++    sta $0201,x
++@next:
++    txa
++    clc
++    adc #4
++    tax
++    bne @tile
++@done:
++    pla
++    rts
+--- a/runtime/cartridge/nrom.cfg
++++ b/runtime/cartridge/nrom.cfg
+@@ -16,6 +16,7 @@
+     DATA: load=PRG, run=RAM, type=rw, define=yes;
+     DEMO: load=PRG, type=ro;
+     ENDING: load=PRG, type=ro;
++    PLAYER_ART: load=PRG, type=ro;
+     OCCUPANCY: load=OCC, type=bss;
+     BSS: load=RAM, type=bss, define=yes;
+     VECTORS: load=VEC, type=ro;

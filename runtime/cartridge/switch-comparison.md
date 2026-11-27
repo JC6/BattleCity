@@ -30,7 +30,7 @@ Android TV API 34 的 1080p x86 模拟器以软件图形后端运行已安装的
 
 本地 Chromium 与 WebKit 的原生回调、标称 60 Hz 和 120 Hz 各测三次。首轮 18 个窗口中有 15 个的游戏和 PCM 同时落在 ±1% 内。报告保留 WebKit 的慢速窗口和追加采样的回调耗时。停止本项目已空闲的 Gradle 进程后，WebKit 60 Hz、120 Hz 共六个窗口的游戏和 PCM 全部回到 ±1%。这些读数描述具体主机当时的运行条件。[离线报告](../../build/battlecity/Switch-Runtime-Comparison.html) · [原始数据](../../build/battlecity/Switch-Runtime-Measurements.zip)
 
-向上炮弹的逐格结论来自 Switch；另外三个方向的形状与定位来自红白机对照。数字 2、3、4、7 的最高分大字、能确认无人操作的 Switch 演示、连续回退的逐次跨度及实体电视输入延迟仍缺直接测量。双人片尾和数字 6 的直接证据见文末。参考材料使用任天堂一方截图、发行方说明及能看清相关帧的英文实录。[任天堂原图](https://www.nintendo.com/eu/media/images/06_screenshots/games_5/nintendo_switch_download_software_2/nswitchds_namcomuseumarchivesvolume2/NSwitchDS_NamcoMuseumArchivesVolume2_01.jpg) · [第一关录像](https://www.youtube.com/watch?v=S26lUv598_o&t=349s) · [回退说明](https://nc.bn-ent.net/product/useful.php)
+文末新增了英文 Switch 的四向炮弹取样及玩家炮口位置实测。数字 2、3、4、7 的最高分大字、能确认无人操作的 Switch 演示、连续回退的逐次跨度及实体电视输入延迟仍缺直接测量。双人片尾和数字 6 的直接证据见文末。参考材料使用任天堂一方截图、发行方说明及能看清相关帧的英文实录。[任天堂原图](https://www.nintendo.com/eu/media/images/06_screenshots/games_5/nintendo_switch_download_software_2/nswitchds_namcomuseumarchivesvolume2/NSwitchDS_NamcoMuseumArchivesVolume2_01.jpg) · [第一关录像](https://www.youtube.com/watch?v=S26lUv598_o&t=349s) · [回退说明](https://nc.bn-ent.net/product/useful.php)
 
 电视验收工具将设备截图缩为 RGB 以识别光标。运行机缺少 FFmpeg 时，从 7.1.1 官方源码构建 PNG 解码器，并先用仓库图片核对输出字节数。它与原有 FFmpeg 对同一张 1080p 设备截图缩放后得到相同的 172,800 字节。[FFmpeg 官方源码](https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz) · [电视验收工作流](../../.github/workflows/mame-runtime.yml)
 
@@ -197,3 +197,11 @@ Cheaper Gamer 的 Switch 合集录像在 8:02 转入《坦克大战》。可见�
 ### Save 选中边框的独立留验
 
 两位作者的录像各提供了英文系统菜单中的 Save 选中边框。预先固定三个校准帧和三个留验帧后，试验修改了边框四角的 13 个像素。在第一份录像的 657 秒锚点，720p 轮廓交并比从 90.89% 升至 91.98%。在另一位作者 1116.079 秒的留验帧，720p 从 82.73% 降至 81.80%，1080p 从 84.61% 降至 83.79%。Web 和 Android TV 均复现了下降，两次重复截图的波动均为零。交付版本恢复了原边框。[第一份录像](https://www.youtube.com/watch?v=S26lUv598_o&t=657s) · [独立录像](https://www.youtube.com/watch?v=dv9axuULtdA&t=1116s) · [冻结的采样帧](../../tests/nes/fixtures/switch-menu/focus.json) · [双平台试验](https://github.com/JC6/BattleCity/actions/runs/45913081159)
+
+### 四向炮弹与玩家炮口
+
+英文 Switch 实录提供了八次可独立辨认的发射，每个方向两次，各保留六个连续采集帧。向上、向下弹体均为 3×4，向右、向左均为 4×3。沿用上一轮灰色阈值，46/48 帧与正式卡带的十个可见像素逐格相同。向下的一发有两帧在同一侧各多一个边缘像素，灰度阈值从 60 提至 70 后，两帧均吻合。第二次向下发射的六帧在原阈值下全部吻合。三档阈值、原片时间、坐标及裁图均可离线复核。[原片向上](https://www.youtube.com/watch?v=S26lUv598_o&t=352s) · [向右](https://www.youtube.com/watch?v=S26lUv598_o&t=350s) · [向下](https://www.youtube.com/watch?v=S26lUv598_o&t=354s) · [向左](https://www.youtube.com/watch?v=S26lUv598_o&t=368s) · [采样方法与试验](../../tests/nes/fixtures/switch-shells/README.md)
+
+从车身单独读取炮管轴线，八次 Switch 发射的炮弹中心都与炮管相齐。交付版的初级玩家坦克向上时弹体在炮管左侧一格，向左时弹体在炮管下方一格。绘制试验将这两处偏移降至零。同一 Web 核心重播中性结局时，试验使三个事件的模拟时刻分别改变 1.12、1.12 和 107.27 微秒。正式版重放的 179 个事件与原始记录逐字节相同。交付使用通过五条结局逐事件检查的卡带。[运行中读取炮管](../../tests/nes/shell_barrels.lua) · [试验完整事件](../../tests/nes/fixtures/switch-shells/trial-neutral.csv) · [最新离线对照](../../build/battlecity/switch-parity-review/Switch-TV-Comparison.html)
+
+另抽查同一英文原片 544.893 至 648.330 秒的六个时刻，可见战斗、第二关开场和普通结算。其中的分数使用小字。另一份英文实机评测描述了按固定间隔回退的体验，未记录连续两次按键和落点。英文 Switch 的无人操作演示、隐藏留言进出、大号数字 2、3、4、7 和能定位到具体声道的尾音仍缺可逐项核对的材料。本轮本机 ADB 未发现可用的实体电视。[第二关与结算](https://www.youtube.com/watch?v=S26lUv598_o&t=648s) · [英文 Switch 评测](https://eshopperreviews.com/2024/08/02/namco-museum-archives-vol-2-for-nintendo-switch-review/) · [电视设备目录](https://www.browserstack.com/docs/app-automate/smart-tv/getting-started)
