@@ -12,10 +12,10 @@ FOCUS_FIXTURE=FIXTURE.with_name('focus.json')
 TARGETS={'empty-slot','picture-icons'}
 
 
-def measure(run,previous,destination):
+def measure(run,previous,destination,*,retained_focus=False,focus_round=None):
     references=json.loads(FIXTURE.read_text())
-    floor=(run/'tv-device-results/floor/clock.json').is_file()
-    targets={'save-focus'} if floor else TARGETS
+    floor=(run/'tv-device-results/floor/clock.json').is_file() if focus_round is None else focus_round
+    targets=set() if retained_focus else {'save-focus'} if floor else TARGETS
     if floor:
         focus=json.loads(FOCUS_FIXTURE.read_text())
         assert len(focus)==6 and len({r['video'] for r in focus if r['role']=='validation'})==2
@@ -36,6 +36,7 @@ def measure(run,previous,destination):
                 assert len(bits)==(Y-y)*(X-x)
                 target={(x+i%(X-x),y+i//(X-x)) for i,b in enumerate(bits) if b}
                 scores=[]
+                samples=[]
                 for version in ('previous','current'):
                     for suffix in ('','-repeat'):
                         if platform=='Web':
@@ -45,14 +46,16 @@ def measure(run,previous,destination):
                             folder=run/'tv-device-results/menu-samples'/str(height)/version
                             file=folder/f'{scene}{suffix}.png'
                         pixels=observed(file,region,height)
+                        samples.append(pixels)
                         scores.append(len(pixels&target)/len(pixels|target))
                 old,old_repeat,new,new_repeat=scores
                 delta=new-old
                 noise=max(abs(old-old_repeat),abs(new-new_repeat))
+                same_focus=not retained_focus or region!='save-focus' or samples[0]==samples[1]==samples[2]==samples[3]
                 rows.append(dict(platform=platform,height=height,region=region,role=ref['role'],
                                  video=ref['video'],seconds=ref['seconds'],previous=old,current=new,
                                  previous_repeat=old_repeat,current_repeat=new_repeat,noise=noise,
-                                 passed=delta>noise if region in targets else delta>=-noise))
+                                 passed=(delta>noise if region in targets else delta>=-noise) and same_focus))
     with destination.open('w',newline='') as f:
         w=csv.DictWriter(f,rows[0]);w.writeheader();w.writerows(rows)
     assert len(references)==(34 if floor else 28) and len(rows)==4*len(references)

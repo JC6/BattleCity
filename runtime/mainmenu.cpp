@@ -173,17 +173,7 @@ void button(mame_ui_manager &ui,render_target &t,std::string_view text,float x,f
     chamfer(c,x,y,w,.061f,.013f,blue);
     chamfer(c,x+.012f,y+.005f,w-.024f,.051f,.010f,rgb_t::black());
     label(ui,t,text,x,y+.003f,w,.043f);
-    if (focused) {
-        brackets(c,x,y,w,.061f);
-        if (text=="Save") {
-            // Short gaps in the four cyan corner strokes on the 720-line menu grid.
-            struct gap { int x,y,width; };
-            constexpr gap gaps[]={{496,109,2},{503,109,1},{786,113,1},{490,166,2},
-                                  {788,166,2},{496,170,2},{502,170,1},{782,170,1},{774,174,1}};
-            for (auto const &g : gaps)
-                box(c,x+(g.x/1280.f-.389f),y+(g.y/720.f-.164f),g.width/1280.f,1.f/720.f,blue);
-        }
-    }
+    if (focused) brackets(c,x,y,w,.061f);
 }
 
 void footer(mame_ui_manager &ui,render_target &t,bool slots=false, bool settings_help=false)

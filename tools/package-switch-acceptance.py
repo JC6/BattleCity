@@ -107,10 +107,20 @@ def package(run,previous,out,identity,arm_dir=None,signer=None,reference_arm=Non
     study=ROOT/'tests/nes/fixtures/switch-terminal'
     visual=rows(study/'audap-visual.csv')[0]
     audio=rows(study/'audap-audio.csv')[0]
-    measured=measure(run,previous,out/'menu-sizes.csv')
+    trial=run/'focus-trial'
+    retained=(trial/'identity.json').is_file()
+    if retained:
+        trial_id=json.loads((trial/'identity.json').read_text())
+        assert str(trial_id['run']).isdigit() and re.fullmatch('[a-f0-9]{40}',trial_id['revision'])
+        experiment=measure(trial,previous,out/'focus-trial.csv',focus_round=True)
+        rejected=[r for r in experiment if r['region']=='save-focus' and r['role']!='calibration' and not r['passed']]
+        assert rejected, 'The experimental focus passed. A rollback would need separate justification.'
+    measured=measure(run,previous,out/'menu-sizes.csv',retained_focus=retained)
     failed=[r for r in measured if r['role']!='calibration' and not r['passed']]
     floor=(tv/'floor/clock.json').is_file()
     if floor:
+        for case in ('neutral','record','skip-over','coop-stage18','coop-stage42'):
+            assert rows(run/f'web-clock-and-endings/web-{case}/events.csv')==rows(tv/f'timing/tv-{case}/events.csv'),case
         from tv_floor_report import sections as floor_sections
         swap=floor_sections(run)
         controls=control_samples(run,out/'menu-controls.csv')
@@ -128,6 +138,13 @@ def package(run,previous,out,identity,arm_dir=None,signer=None,reference_arm=Non
           f'<p>锚点及留验共 {sum(r["role"]!="calibration" for r in measured)} 项，其中 {len(failed)} 项未达到预设条件。逐项结果见数据包。</p>',
           '<h2>回归</h2>',f'<p>35 个独立关卡，连续 70 关（{loop[0]["reference_updates"]} 次更新），两个浏览器的旧存档升级，以及电视旧存档升级。</p>',
           table(('浏览器','刷新模式','轮次','游戏速度','PCM 速度'),[[r['engine'],r['cadence'],r['run'],f"{r['speed']:.2%}",f"{r['audioSpeed']:.2%}"] for r in clocks])]
+    if retained:
+        html.extend(['<h3>已撤回的 Save 焦点试验</h3>',
+                     f"<p>试验运行 {trial_id['run']}，提交 {escape(trial_id['revision'])}。"
+                     "候选四角在独立留验帧出现退步。交付包恢复上版四角，并逐像素复核两端、两档屏高的焦点掩模。</p>",
+                     table(('平台','屏高','录像时间（秒）','原版','试验','重复波动'),
+                           [[r['platform'],r['height'],r['seconds'],f"{r['previous']:.3%}",f"{r['current']:.3%}",
+                             f"{r['noise']:.3%}"] for r in rejected])])
     for scene in ('system-menu','screen-settings'):
         for h in (720,1080):
             html.append(picture(run/f'web-clock-and-endings/screens/{scene}-{h}.png',f'Web · {scene} · {h}p'))
@@ -147,6 +164,13 @@ def package(run,previous,out,identity,arm_dir=None,signer=None,reference_arm=Non
     with ZipFile(archive,'w',ZIP_DEFLATED,compresslevel=6) as z:
         for f in (out/'menu-sizes.csv',run/'presentation-frames.csv',run/'presentation-cost.csv',FIXTURE,*([FOCUS_FIXTURE,out/'menu-controls.csv'] if floor else [])):
             add_evidence(z,f.name,source=f)
+        if retained:
+            for f in (out/'focus-trial.csv',trial/'identity.json'):
+                add_evidence(z,'focus-trial/'+f.name,source=f)
+            for folder in (trial/'web-clock-and-endings/screens',trial/'tv-device-results/menu-samples'):
+                for f in sorted(folder.rglob('*.png')):
+                    if f.name.startswith(('system-menu','screen-settings')):
+                        add_evidence(z,'focus-trial/'+str(f.relative_to(trial)),source=f)
         for folder in [tv,run/'web-clock-and-endings',run/'campaign-loop',*sorted(run.glob('stage-replay-*')),*sorted(run.glob('upgrade-*'))]:
             for f in sorted(folder.rglob('*')):
                 if f.is_file() and f.name not in ('artifact.json','emulator.log','logcat.txt','device.log'):

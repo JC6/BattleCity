@@ -59,6 +59,21 @@ jobs:
           run-id: ${{ steps.runs.outputs.previous }}
           name: web-clock-and-endings
           path: inputs/previous/web-clock-and-endings
+      - name: Fetch the rejected focus experiment for releases with the restored menu
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TESTED: ${{ steps.runs.outputs.tested }}
+        run: |
+          branch=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TESTED" --jq .head_branch)
+          if [[ "$branch" == validation/switch-parity-floor-release-* ]]; then
+            trial=45913081159
+            folder=inputs/current/focus-trial
+            mkdir -p "$folder"
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$trial" --jq '{run: .id, revision: .head_sha}' > "$folder/identity.json"
+            jq -e '.revision=="0010063f79f8c3a8dec25bae16e441e7010219e6"' "$folder/identity.json"
+            gh run download "$trial" --name tv-device-results --dir "$folder/tv-device-results"
+            gh run download "$trial" --name web-clock-and-endings --dir "$folder/web-clock-and-endings"
+          fi
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Recheck hashes, device receipts, regressions and menu samples
         env:

@@ -185,3 +185,11 @@ audap 的英文合集录像在 7:13–10:53 连续展示《坦克大战》。第
 按画面限定音轨搜索区间后，结束音乐最佳对齐点为 626.890 秒，频谱相似度为 0.8129，通过原有 0.70 门槛。以峰值的 2.4% 为阈值，首次持续 100 毫秒低于阈值的起点，录像为 1.62 秒，复刻为 1.58 秒。以 0.6% 和 1.2% 测量时，录像在测量区间内均未达到持续静音条件。此次结果为 40 毫秒差异增加了一份独立样本，现有混合音轨仍无法定位到具体声道。[音轨测量](../../tests/nes/fixtures/switch-terminal/audap-audio.csv) · [复测脚本](../../tests/nes/switch_terminal_sample.py)
 
 本轮按 13 组检索词得到 100 个去重视频条目。官方日版宣传片、英语发行预告和较高播放量的评论提供合集与画面线索。掌机拍摄能看到实机和玩家，另有录像全程展示日版合集。在抽查片段中未取得英文合集连续两次肩键回退的输入和对应落点、完整的无输入待机区间、隐藏留言的进入与退出，以及大号数字 2、3、4、7 的新增证据。[发行方说明](https://www.bandainamcoent.com/games/namco-museum-archives-vol-2) · [官方日版宣传片](https://www.youtube.com/watch?v=qWgP_TVWLA0) · [掌机录像](https://www.youtube.com/watch?v=b-wahHxs4D0) · [英文合集评论](https://www.youtube.com/watch?v=b6MitTs0gZg)
+
+### 待机、回退和纪录画面的补查
+
+Cheaper Gamer 的 Switch 合集录像在 8:02 转入《坦克大战》。可见标题上卷、选择单人和第一关实战，录像画面没有同步按键记录。取样时约 5,491 次观看。ChakaalStarr 的英文合集实录在 33:02 进入游戏，画面明确标有 LT 打开菜单、LB 回退。第二关失败后玩家在结算期间打开系统菜单并退出。negative1 的第 35 关片段显示普通击毁结算，随后回到第一关。这三段均未增加可核定两次回退落点、无输入待机、隐藏留言进出、大号纪录数字 2、3、4、7 或结算尾音的新证据。[Switch 合集片段](https://www.youtube.com/watch?v=FQS7wANiHXg&t=482s) · [英文合集按键和开场](https://www.youtube.com/watch?v=7RPJ98T8pdI&t=1982s) · [第二关退出](https://www.youtube.com/watch?v=7RPJ98T8pdI&t=2393s) · [第 35 关片段](https://www.youtube.com/watch?v=Le-wx784vYU&t=14s)
+
+发行方列出存档、重播和回退功能，公开说明没有给出《坦克大战》连续两次按键的逐帧落点。[发行方产品页](https://www.bandainamcoent.com/games/namco-museum-archives-vol-2)
+
+本机 ADB 检查没有连接电视。BrowserStack 文档列出的 Shield TV Pro 2019 使用 Android 11，Firebase 的设备目录将 Google TV Amati 标为虚拟设备。此次核查未取得可免费使用的 Android TV 14 及以上 ARM64 电视实机。[BrowserStack 电视设备](https://www.browserstack.com/docs/app-automate/smart-tv/getting-started) · [Firebase 设备目录](https://firebase.google.com/docs/test-lab/android/available-testing-devices)
