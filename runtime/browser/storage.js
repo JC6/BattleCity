@@ -25,11 +25,14 @@ Module.preRun.push(function () {
 
 // Stage whole slots (state, thumbnail and optional lock) before exposing them.
 function copyCompatibleSlots() {
-    const old = Module.compatibleSaveId, current = Module.cartridgeId;
-    if (!/^[a-f0-9]{64}$/.test(old) || !/^[a-f0-9]{64}$/.test(current) || old === current) return false;
-    const prior = '/local/states/' + old + '/nes';
+    const current = Module.cartridgeId;
+    if (!/^[a-f0-9]{64}$/.test(current)) return false;
     const target = '/local/states/' + current;
-    if (!FS.analyzePath(prior).exists || FS.analyzePath(target).exists) return false;
+    if (FS.analyzePath(target).exists) return false;
+    const old = Module.compatibleSaveIds.split(' ').find(id =>
+        /^[a-f0-9]{64}$/.test(id) && id !== current && FS.analyzePath('/local/states/'+id+'/nes').exists);
+    if (!old) return false;
+    const prior = '/local/states/' + old + '/nes';
     const slots = [1,2,3,4].map(n => n+'.sta').filter(n => FS.analyzePath(prior+'/'+n).exists);
     if (!slots.length) return false;
     const temp = '/local/states/.upgrade-'+current;

@@ -127,19 +127,25 @@ public final class GameActivity extends SDLActivity {
     }
 
     private void copyCompatibleSlots(File root, String current) throws IOException {
-        String previous = null;
+        java.util.Map<String, String> parents = new java.util.HashMap<>();
         try (InputStream input = getAssets().open("save-compatibility.tsv")) {
             String table = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.US_ASCII);
             for (String line : table.split("\n")) {
                 String[] ids = line.split(" ");
-                if (ids.length == 2 && ids[0].equals(current) && ids[1].matches("[0-9a-f]{64}")) previous = ids[1];
+                if (ids.length == 2 && ids[0].matches("[0-9a-f]{64}") && ids[1].matches("[0-9a-f]{64}"))
+                    parents.put(ids[0], ids[1]);
             }
         }
-        if (previous == null || previous.equals(current)) return;
         java.nio.file.Path states = root.toPath().resolve("states");
-        java.nio.file.Path source = states.resolve(previous).resolve("nes");
         java.nio.file.Path target = states.resolve(current);
-        if (!Files.isDirectory(source) || Files.exists(target)) return;
+        if (Files.exists(target)) return;
+        String previous = current;
+        java.nio.file.Path source;
+        do {
+            previous = parents.remove(previous);
+            if (previous == null || previous.equals(current)) return;
+            source = states.resolve(previous).resolve("nes");
+        } while (!Files.isDirectory(source));
         java.nio.file.Path temp = Files.createTempDirectory(states, ".upgrade-");
         java.nio.file.Path saves = temp.resolve("nes");
         Files.createDirectory(saves);

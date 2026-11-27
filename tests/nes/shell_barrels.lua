@@ -8,7 +8,19 @@ for line in io.lines(assert(os.getenv("BATTLECITY_LABELS"))) do
     local value,name=line:match("^al (%x+) %._([%w_]+)$")
     if name then addr[name]=tonumber(value,16) end
 end
-local pose,launch=0,0
+local cases = {}
+for slot = 0,2 do
+    for grade = 0,3 do
+        for direction = 0,3 do
+            for tread = 0,1 do
+                for _,scene in ipairs({"open","forest","edge","crowded"}) do
+                    cases[#cases+1] = {slot=slot, grade=grade, direction=direction, tread=tread, scene=scene}
+                end
+            end
+        end
+    end
+end
+local pose,launch=1,0
 local prepared=false
 local owner=nil
 barrel_hooks={}
@@ -34,19 +46,35 @@ barrel_hooks[#barrel_hooks+1]=bus:install_write_tap(addr.shots,addr.shots+31,"sh
     owner=nil
 end)
 read(addr.render_tanks,function()
-    if pose==8 then return end
+    local case=cases[pose]
+    if not case then return end
     for i=0,7 do bus:write_u8(addr.tanks+13*i+3,0) end
-    local slot=pose<4 and 0 or 2
+    local slot=case.slot
     local a=addr.tanks+13*slot
-    bus:write_u8(a,80);bus:write_u8(a+1,80);bus:write_u8(a+2,pose%4)
-    bus:write_u8(a+3,1);bus:write_u8(a+4,1);bus:write_u8(a+5,0);bus:write_u8(a+10,0);bus:write_u8(a+7,0);bus:write_u8(a+9,0)
-    bus:write_u8(addr.used_sprites,0);bus:write_u8(addr.shield_sprites,0)
-    bus:write_u8(addr.tread+slot,0)
+    local xy=case.scene=="edge" and 192 or 80
+    bus:write_u8(a,xy);bus:write_u8(a+1,xy);bus:write_u8(a+2,case.direction)
+    bus:write_u8(a+3,1);bus:write_u8(a+4,1);bus:write_u8(a+10,0);bus:write_u8(a+9,0)
+    bus:write_u8(a+5,slot==2 and case.grade or 0)
+    bus:write_u8(a+7,slot<2 and case.grade or 0)
+    bus:write_u8(addr.combat_frame,0)
+    bus:write_u8(addr.used_sprites,case.scene=="crowded" and 244 or 0)
+    bus:write_u8(addr.shield_sprites,case.scene=="forest" and (1<<slot) or 0)
+    bus:write_u8(addr.has_trees,case.scene=="forest" and 1 or 0)
+    if case.scene=="forest" then bus:write_u8(addr.board+5*13+5,0x45) end
+    bus:write_u8(addr.tread+slot,8*case.tread)
     prepared=true
 end)
 read(addr.draw_shots,function()
     if not prepared then return end
-    assert(bus:read_u8(addr.used_sprites)==16,"body must occupy four OAM entries")
+    local case=cases[pose]
+    local first=case.scene=="crowded" and 244 or 0
+    local oam={}
+    for address=first,bus:read_u8(addr.used_sprites)-1 do
+        oam[#oam+1]=string.format("%02x",bus:read_u8(0x200+address))
+    end
+    print(string.format("BATTLECITY_POSE %d %d %d %d %s %s",case.slot,case.grade,
+                        case.direction,case.tread,case.scene,table.concat(oam)))
+    if case.grade==0 and case.scene=="open" and case.tread==0 then
     local front,axes=-1000,{}
     for sprite=0,3 do
         local base=0x200+sprite*4
@@ -59,20 +87,21 @@ read(addr.draw_shots,function()
                 if (plane&(1<<((attr&64)~=0 and x or 7-x)))~=0 then
                     local px=bus:read_u8(base+3)+x-96
                     local py=bus:read_u8(base)+1+y-96
-                    local distance=({-py,px,py,-px})[pose%4+1]
+                    local distance=({-py,px,py,-px})[case.direction+1]
                     if distance>front then front=distance;axes={} end
-                    if distance==front then axes[#axes+1]=(pose%2==0 and px or py) end
+                    if distance==front then axes[#axes+1]=(case.direction%2==0 and px or py) end
                 end
             end
         end
     end
     assert(#axes==1,"barrel tip must be one pixel wide")
-    print(string.format("BATTLECITY_BARREL %s %d %d",pose<4 and "player" or "enemy",pose%4,axes[1]))
+    print(string.format("BATTLECITY_BARREL %s %d %d",({"player","player2","enemy"})[case.slot+1],case.direction,axes[1]))
+    end
     prepared=false
     pose=pose+1
 end)
 barrel_result=emu.add_machine_frame_notifier(function()
-    if launch==4 and pose==8 then
+    if launch==4 and pose>#cases then
         print("BATTLECITY_BARRELS_OK")
         machine:exit()
     end

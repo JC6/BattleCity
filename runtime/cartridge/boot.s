@@ -135,7 +135,7 @@ flush_video:
     sta $4014
     ldx #0
 :   cpx _dirty_count
-    beq @curtain
+    beq flush_curtain
     lda _dirty_high,x
     sta $2006
     lda _dirty_low,x
@@ -144,10 +144,10 @@ flush_video:
     sta $2007
     inx
     bne :-
-@curtain:
+flush_curtain:
     ldx _curtain_pair
     bne :+
-    jmp @done
+    jmp flush_done
 :   txa
     and #$1f
     tax
@@ -158,41 +158,62 @@ flush_video:
     sta $2006
     bit _curtain_pair
     bpl :+
-    jmp @close_top
+    jmp flush_close_top
 :
     .repeat 32,i
       lda _dirty_high+i
       sta $2007
     .endrepeat
-    jmp @bottom
-@close_top:
-    lda #14
-    .repeat 32
-      sta $2007
+    jmp flush_bottom
+; The closing curtain reuses one row writer. Store the pose tables in the
+; released space and pin flush_finished so later timing-sensitive code stays put.
+shutter_space:
+pose_tiles:
+    ; Up/right/down/left. Bit 7 selects the first-upgrade quadrant remap.
+    .byte 16,4,0,20,$90,$94,$90,$94
+    .repeat 6,k
+        .byte 16*(k+2),16*(k+2)+4,16*(k+2),16*(k+2)+4
     .endrepeat
-@bottom:
+    .assert >pose_tiles = >(pose_tiles+31), lderror, "pose lookup crosses a page"
+grade_one_tiles: .incbin "grade-one.bin"
+flush_bottom:
     lda bottom_hi,x
     sta $2006
     lda bottom_lo,x
     sta $2006
     bit _curtain_pair
     bpl :+
-    jmp @close_bottom
+    jmp flush_close_bottom
 :
     .repeat 32,i
       lda _dirty_low+i
       sta $2007
     .endrepeat
-    jmp @finished
-@close_bottom:
-    lda #14
+    jmp flush_finished
+    shutter_span = 410
+    close_writer_size = 116
+    .res shutter_span - (*-shutter_space) - close_writer_size, $ea
+flush_close_top:
+flush_close_bottom:
+    ; The successful dirty-count comparison left carry set. Address writes preserve
+    ; it. Keeping the fill value in Y saves the second load when uploading row two.
+    ldy #14
+flush_fill_row:
     .repeat 32
-      sta $2007
+        sty $2007
     .endrepeat
-@finished:
+    bcc flush_finished
+    clc
+    lda bottom_hi,x
+    sta $2006
+    lda bottom_lo,x
+    sta $2006
+    jmp flush_fill_row
+    .assert *-shutter_space = shutter_span, error, "shutter layout"
+flush_finished:
     lda #0
     sta _curtain_pair
-@done:
+flush_done:
     lda #$88
     ldx _title_scroll
     beq :+
@@ -1887,27 +1908,30 @@ _draw_tank:
 @body:
     asl
     asl
-    asl
-    asl
+    ora _tanks+2,y
+    tay
+    lda pose_tiles,y
+    bpl @ordinary
+    jmp draw_grade_one
+@ordinary:
     ora _tread,x
     sta tank_tile
-    lda _tanks+2,y
-    cmp #2
-    bcc :+
+    tya
+    and #2
+    beq :+
     lda #$c0
     sta flip
-:   lda _tanks+2,y
-    and #1
-    asl
-    asl
-    ora tank_tile
-    sta tank_tile
+:   ; Nine cycles keep both facing paths and the next opcode at their release offsets.
+    pha
+    pla
+    nop
     cpx #2
     bcs draw_quad
     lda _shield_sprites
     and slot_bits,x
     beq draw_quad
     jsr draw_quad
+@shield:
     lda #0
     sta flip
     lda _combat_frame
@@ -1919,6 +1943,7 @@ _draw_tank:
     lda #2
     sta tank_attr
     jmp draw_quad
+player_shield = @shield
 .export _draw_bonus
 .import _bonus, _bonus_x, _bonus_y, _bonus_points
 _draw_bonus:
@@ -2318,3 +2343,40 @@ demo_parts:
     .byte $00,$00,$00,$1e,$12,$a0,$05,$a0,$05,$5a,$5a,$00,$00
     .byte $00,$00,$00,$0f,$00,$a0,$05,$a0,$05,$b0,$07,$00,$00
     .byte $00,$00,$00,$d2,$1e,$e8,$4d,$a0,$05,$a0,$05,$00,$00
+
+.segment "POSES"
+; draw_quad clips at the OAM limit and resolves foliage per quadrant. Remap
+; only the body entries it actually emitted, then render the shield normally.
+draw_grade_one:
+    and #$7f
+    ora _tread,x
+    sta tank_tile
+    tya
+    and #2
+    beq :+
+    lda #$c0
+    sta flip
+:
+    lda _shield_sprites
+    and slot_bits,x
+    pha
+    lda _used_sprites
+    pha
+    jsr draw_quad
+    pla
+    tax
+@tile:
+    cpx _used_sprites
+    bcs @done
+    ldy $0201,x
+    lda grade_one_tiles-16,y
+    sta $0201,x
+    txa
+    adc #4      ; CPX fell through with carry clear
+    tax
+    bne @tile
+@done:
+    pla
+    beq :+
+    jmp player_shield
+:   rts

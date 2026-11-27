@@ -105,7 +105,16 @@ else
     cp "$repo/LICENSE" "$repo/runtime/cartridge/NOTICE" "$repo/runtime/Menu-Font-LICENSE.txt" "$out/site/licenses/"
     cp "$tree/battlecity.js" "$tree/battlecity.wasm" "$repo/runtime/android/src/main/res/drawable-nodpi/"battle_{surround,stars,symbols}.jpg "$out/site/"
     cartridge_hash=$(sha256sum < "$rom")
-    predecessor=$(awk -v current="${cartridge_hash%% *}" '$1 == current {print $2}' "$repo/runtime/cartridge/save-compatibility.tsv")
-    sed -e "s/@SAVE_PREDECESSOR@/$predecessor/g" -e "s/@CARTRIDGE_SHA256@/${cartridge_hash%% *}/g" "$repo/runtime/browser/index.html" > "$out/site/index.html"
+    predecessors=$(awk -v current="${cartridge_hash%% *}" '
+        NF == 2 && $1 !~ /^#/ { parent[$1] = $2 }
+        END {
+            while (current in parent) {
+                if (seen[current]++) exit 1
+                current = parent[current]
+                printf "%s%s", sep, current
+                sep = " "
+            }
+        }' "$repo/runtime/cartridge/save-compatibility.tsv")
+    sed -e "s/@SAVE_PREDECESSORS@/$predecessors/g" -e "s/@CARTRIDGE_SHA256@/${cartridge_hash%% *}/g" "$repo/runtime/browser/index.html" > "$out/site/index.html"
     (cd "$out/site" && python3 -m zipfile -c "$out/battlecity-web.zip" index.html battlecity.js battlecity.wasm battle_{surround,stars,symbols}.jpg licenses)
 fi

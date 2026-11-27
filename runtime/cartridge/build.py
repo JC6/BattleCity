@@ -29,7 +29,7 @@ LETTERS = {
 }
 
 
-def art(logo_map):
+def art(logo_map, grade_one=None):
     bank = bytearray(8192)
     assets=(ROOT/'web/src/game/pixel-assets.ts').read_text()
 
@@ -147,6 +147,7 @@ def art(logo_map):
         for q in range(4):
             x,y = 8*(q&1),8*(q>>1)
             tile(index+q,[row[x:x+8] for row in rows[y:y+8]])
+    basic_poses = []
     for kind in range(8):
         for tread in range(2):
             rows = [list(row) for row in (player if kind < 4 else enemy)]
@@ -162,6 +163,27 @@ def art(logo_map):
                             rows[y][x],rows[y+1][x]=rows[y+1][x],rows[y][x]
             square(256+kind*16+tread*8,rows)
             square(260+kind*16+tread*8,list(zip(*rows[::-1])))
+            if kind == 0:
+                basic_poses.append(rows)
+    # Every first-upgrade quadrant already exists in the basic or second-upgrade
+    # bank. Preserve their physical indices before repurposing the 16 duplicates.
+    def sprite(index):
+        start = (256 + index) * 16
+        return bank[start:start+16]
+
+    mapping = []
+    for i in range(16):
+        matches = [tile for tile in (i, 32+i) if sprite(tile) == sprite(16+i)]
+        if not matches:
+            raise ValueError(f'no CHR equivalent for first-upgrade quadrant {i}')
+        mapping.append(matches[0])
+    if grade_one is not None:
+        grade_one.extend(mapping)
+    for tread, up in enumerate(basic_poses):
+        index = 272 + 8*tread
+        right = list(zip(*up[::-1]))
+        square(index, [row[1:]+['0'] for row in up])
+        square(index+4, right[::-1])  # hardware flips both axes when facing left
     # White spawn flash measured at both stage-one spawn points on Switch.
     # Each list gives the horizontal radius by distance from the middle row.
     star_radii = ((4,1,0,0,0), (5,2,1,0,0,0),
@@ -270,7 +292,9 @@ def build(output, labels=None):
     with tempfile.TemporaryDirectory() as temp:
         work = Path(temp)
         logo_map=bytearray()
-        (work/'art.chr').write_bytes(art(logo_map))
+        grade_one=bytearray()
+        (work/'art.chr').write_bytes(art(logo_map,grade_one))
+        (work/'grade-one.bin').write_bytes(grade_one)
         (work/'logo.bin').write_bytes(logo_map)
         (work/'levels.bin').write_bytes(catalogue())
         (work/'audio.inc').write_text(compile_audio(ROOT/'web/src/platform/audio-cues.ts'))

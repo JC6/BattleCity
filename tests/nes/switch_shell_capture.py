@@ -193,17 +193,40 @@ def measure(cartridge,out,receipt=None,fixture=FIXTURE):
 def barrel_offsets(log, shell_oam, rom):
     lines=log.read_text()
     if 'BATTLECITY_BARRELS_OK' not in lines: raise ValueError('incomplete barrel capture')
-    launches={int(i):(int(x),int(y)) for i,x,y in re.findall(r'^BATTLECITY_LAUNCH (\d) (-?\d+) (-?\d+)$',lines,re.M)}
-    axes={(kind,int(i)):int(value) for kind,i,value in re.findall(r'^BATTLECITY_BARREL (player|enemy) (\d) (\d+)$',lines,re.M)}
+    launches = {}
+    axes = {}
+    for line in lines.splitlines():
+        parts = line.split()
+        if parts[:1] == ['BATTLECITY_LAUNCH']:
+            i, x, y = map(int, parts[1:])
+            if i in launches:
+                raise ValueError(f'duplicate launch direction {i}')
+            launches[i] = (x, y)
+        elif parts[:1] == ['BATTLECITY_BARREL']:
+            kind, i, value = parts[1:]
+            key = kind, int(i)
+            if key in axes:
+                raise ValueError(f'duplicate barrel capture {key}')
+            axes[key] = int(value)
+    actors = ('player', 'player2', 'enemy') if ('player2', 0) in axes else ('player', 'enemy')
+    if set(launches) != set(range(4)) or set(axes) != {(kind, i) for kind in actors for i in range(4)}:
+        raise ValueError('incomplete barrel directions')
     result={}
     for i,tile,attr,x,y in shell_oam:
         shape=tile_pixels(rom,tile,attr,x,y)
         cross_axis=i%2
         coords=[p[cross_axis] for p in shape]
         center=launches[i][cross_axis]+(min(coords)+max(coords))/2
-        for kind in ('player','enemy'):
+        for kind in actors:
             result[kind,i]=center-axes[kind,i]
     return result
+
+
+def verify_player_axes(offsets):
+    for kind in ('player', 'player2'):
+        for i, direction in enumerate(DIRECTIONS):
+            if offsets.get((kind, i)) != 0:
+                raise ValueError(f'{kind} {direction} muzzle offset: {offsets.get((kind, i))}')
 
 
 def report(cartridge, directory, receipt=None, barrels=None):
@@ -216,6 +239,11 @@ def report(cartridge, directory, receipt=None, barrels=None):
         barrels=FIXTURE/'accepted-barrels.txt'
     oam=read_oam(receipt if receipt and receipt.is_file() else FIXTURE/'accepted-oam.txt')
     offsets=barrel_offsets(barrels,oam,rom)
+    current = hashlib.sha256(rom).hexdigest() != ACCEPTED_ROM
+    if current:
+        verify_player_axes(offsets)
+        from tank_poses import verify
+        pose_count = verify(rom, barrels)
     # The two faint extra pixels are in the source recording. The 70-level
     # extraction of the same frames resolves their ambiguity independently.
     for row in rows:
@@ -250,10 +278,15 @@ def report(cartridge, directory, receipt=None, barrels=None):
                   '<p>运行 45915496575 的卡带中，初级玩家坦克朝上、朝左时炮弹中心分别在炮管左方一格和下方一格。'
                   '试验将朝上的车身左移一格，并把朝左的车身改为水平镜像。'
                   '同一交付 Web 核心分别加载两张卡带后重播中性结局。正式版的 179 个事件与留档逐字节相同。'
-                  '试验保住了事件与帧号，改变了三个事件在帧内的执行时间，交付继续采用原卡带。</p>',
+                  '试验保住了事件与帧号，改变了三个事件在帧内的执行时间，该次试验未进入交付。</p>',
                   table(('事件序号','显示帧','事件','基准模拟秒','试验模拟秒'),diff),
                   '<p>数据包附有试验补丁、固定输入下的完整事件序列、裁图和验收基线。'
                   '两次向上和两次向左的发射分别来自同一段录像中的不同时间。</p>'])
+    if current:
+        parts.extend(['<h3>本次交付的双人炮口与精灵</h3>',
+                      f'<p>两位初级玩家的四向炮口偏移均为 0 格。{pose_count} 组精灵像素、位置、'
+                      '调色板和前后景优先级通过检查，覆盖两帧履带、升级、树林、护盾、边缘及精灵占满。'
+                      '实录取样只覆盖上表中的发射，其余姿态以已交付卡带为对照。</p>'])
     return parts
 
 
