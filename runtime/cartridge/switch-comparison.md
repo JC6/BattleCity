@@ -193,3 +193,7 @@ Cheaper Gamer 的 Switch 合集录像在 8:02 转入《坦克大战》。可见�
 发行方列出存档、重播和回退功能，公开说明没有给出《坦克大战》连续两次按键的逐帧落点。[发行方产品页](https://www.bandainamcoent.com/games/namco-museum-archives-vol-2)
 
 本机 ADB 检查没有连接电视。BrowserStack 文档列出的 Shield TV Pro 2019 使用 Android 11，Firebase 的设备目录将 Google TV Amati 标为虚拟设备。此次核查未取得可免费使用的 Android TV 14 及以上 ARM64 电视实机。[BrowserStack 电视设备](https://www.browserstack.com/docs/app-automate/smart-tv/getting-started) · [Firebase 设备目录](https://firebase.google.com/docs/test-lab/android/available-testing-devices)
+
+### Save 选中边框的独立留验
+
+两位作者的录像各提供了英文系统菜单中的 Save 选中边框。预先固定三个校准帧和三个留验帧后，试验修改了边框四角的 13 个像素。在第一份录像的 657 秒锚点，720p 轮廓交并比从 90.89% 升至 91.98%。在另一位作者 1116.079 秒的留验帧，720p 从 82.73% 降至 81.80%，1080p 从 84.61% 降至 83.79%。Web 和 Android TV 均复现了下降，两次重复截图的波动均为零。交付版本恢复了原边框。[第一份录像](https://www.youtube.com/watch?v=S26lUv598_o&t=657s) · [独立录像](https://www.youtube.com/watch?v=dv9axuULtdA&t=1116s) · [冻结的采样帧](../../tests/nes/fixtures/switch-menu/focus.json) · [双平台试验](https://github.com/JC6/BattleCity/actions/runs/45913081159)

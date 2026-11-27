@@ -14,11 +14,19 @@ Web 解压后通过 HTTP 打开，按 Enter 启动。标题滚动时可按 Enter
 
 ## 复验
 
+本地交付的 ARM64 正式版和候选版均沿用了上一版本的签名证书。已核对包名、版本号和所有非签名条目的 SHA-256，两个 APK 的应用内容分别与本轮云端构建一致。Web、两个 x86 APK、卡带、调试标签、离线报告和原始测量包均与云端清单逐字节相同。[Android TV 正式版](build/battlecity/BattleCity-TV.apk) · [Web](build/battlecity/BattleCity-Web.zip) · [离线报告](build/battlecity/Switch-TV-Comparison.html) · [原始测量包](build/battlecity/Switch-TV-Measurements.zip) · [本地校验清单](build/battlecity/SHA256SUMS) · [CI 原包清单](build/battlecity/45915496575/SHA256SUMS) · [云端 APK 签名核验](https://github.com/JC6/BattleCity/actions/runs/45917105691)
+
+Android TV 正式包使用 SDL。1080p x86 电视模拟器在同一 1195×960 窗口交替进行三轮测试。缓存复制实测 44.38–44.83 帧/秒，直接清屏为 44.62–44.71 帧/秒，低于 59.498 帧/秒的实时门槛。六个窗口提交的 8,038 帧都有系统显示回执。四阶段截图逐像素一致，均验证了移动方块旧位置的复原。以上为模拟器纯色画面测量。实体 ARM64 电视实战帧率仍待测。[本轮验收](https://github.com/JC6/BattleCity/actions/runs/45915496575)
+
+Chromium 与 WebKit 使用本轮交付的 Web 包，在原生调度、60 Hz 和 120 Hz 下各测三次。18 个窗口的游戏速度为实时的 99.959%–100.045%，系统 PCM 为 99.923%–100.077%。两种浏览器均成功恢复上一版带写保护的双人存档。[本轮验收](https://github.com/JC6/BattleCity/actions/runs/45915496575)
+
+Save 边框的试验在另一位作者的 Switch 录像上出现退步，交付版恢复了原边框。Web 与 Android TV 的 84 项锚点和留验比较、16 项相邻菜单焦点比较全部通过。五条结局合计 830 个事件，两端记录逐字节相同。[录像与测量方法](runtime/cartridge/switch-comparison.md) · [试验版验收](https://github.com/JC6/BattleCity/actions/runs/45913081159)
+
 终局计分画面增加了 3 个 NES 帧。零击毁和十击毁的固定输入均测得从 TOTAL 数字出现到 GAME OVER 为 2.379 秒。五段英文 Switch 录像为 2.367–2.417 秒。Web 与 Android TV 支持从上一张卡带复制已有存档、预览和写保护。[英文 Switch 对照](runtime/cartridge/switch-comparison.md)
 
 Web 和 Android TV 使用同一张卡带。Chromium 与 WebKit 的 18 个游戏和音频计时窗口均通过。两个浏览器和电视默认版均从上一版恢复了带缩略图和写保护的双人存档。35 关单关回放和 70 关连续战役均通过。英文 Switch 屏摄确认了双人第 18 关刷新纪录和第 42 关保留旧纪录两条结局。第 18 关记录了 178 个结局事件，第 42 关记录了 161 个。每个事件在 Web 与默认电视版的帧号和值都相同。[双人录像与采样方法](runtime/cartridge/switch-comparison.md)
 
-空存档槽徽标和画面设置图标按英文 Switch 录像校准。Web 与 Android TV 均使用原生 720p 和 1080p 截图。以下数值是与主参考轮廓的像素交并比。72 项锚点与留验比较均达到各自的重复截图误差门槛。[离线验收报告](build/battlecity/Switch-TV-Comparison.html) · [逐帧记录和截图](build/battlecity/Switch-TV-Measurements.zip)
+空存档槽徽标和画面设置图标按英文 Switch 录像校准。Web 与 Android TV 均使用原生 720p 和 1080p 截图。以下数值是与主参考轮廓的像素交并比。72 项锚点与留验比较均达到各自的重复截图误差门槛。[离线验收报告](build/stage-validation/tv-swap/ci/45840031317/validated-delivery/Switch-TV-Comparison.html) · [逐帧记录和截图](build/stage-validation/tv-swap/ci/45840031317/validated-delivery/Switch-TV-Measurements.zip)
 
 | 平台 | 输出 | 空存档槽 | 画面设置图标 |
 | --- | --- | --- | --- |
@@ -29,11 +37,11 @@ Web 和 Android TV 使用同一张卡带。Chromium 与 WebKit 的 18 个游戏�
 
 Chromium 和 WebKit 的 18 个计时窗口中，游戏速度为实时的 99.982%–100.018%，系统 PCM 为 99.947%–100.050%。两种浏览器均通过键盘、存档保护、重新载入和从上一版升级的验收。[双平台验收](https://github.com/JC6/BattleCity/actions/runs/45840031317) · [独立键盘复测](https://github.com/JC6/BattleCity/actions/runs/45844855487)
 
-Android TV 默认使用 SDL 软件渲染。API 34 的 x86 电视模拟器对 1195×960 的 EGL 窗口进行了 18 次测量，整帧复制后分别执行普通交换和 KHR 变化矩形交换。三种场景的系统回执匹配数与提交数为 23,262/23,262。带提示的 9,311 次交换中，9,308 次只提交局部矩形。六组移动方块截图均验证旧位置复原。[离线验收报告](build/battlecity/Switch-TV-Comparison.html) · [逐帧记录和截图](build/battlecity/Switch-TV-Measurements.zip)
+Android TV 默认使用 SDL 软件渲染。API 34 的 x86 电视模拟器对 1195×960 的 EGL 窗口进行了 18 次测量，整帧复制后分别执行普通交换和 KHR 变化矩形交换。三种场景的系统回执匹配数与提交数为 23,262/23,262。带提示的 9,311 次交换中，9,308 次只提交局部矩形。六组移动方块截图均验证旧位置复原。[离线验收报告](build/stage-validation/tv-swap/ci/45840031317/validated-delivery/Switch-TV-Comparison.html) · [逐帧记录和截图](build/stage-validation/tv-swap/ci/45840031317/validated-delivery/Switch-TV-Measurements.zip)
 
 普通战斗中，普通交换和变化矩形交换的实际显示帧率中位数分别为 41.86 和 41.81 帧/秒。带提示的普通战斗与连续爆炸的游戏速度中位数分别为 69.57%、70.67%，系统 PCM 分别为 68.96%、70.42%。候选路径未达到晋级所需的 99%–101% 实时门槛。实体 ARM64 电视的速度与端到端延迟仍待测量。[双平台验收](https://github.com/JC6/BattleCity/actions/runs/45840031317)
 
-本地交付的两个 ARM64 安装包沿用上一版的签名，可覆盖升级。本地校验清单列出重新签名后的 SHA-256。离线 HTML 直接嵌入电视原始截图，本地与 GitHub 独立生成的 HTML 和测量 ZIP 均逐字节相同。[四包签名核验](https://github.com/JC6/BattleCity/actions/runs/45846472783) · [报告独立复建](https://github.com/JC6/BattleCity/actions/runs/45906402534)
+此前根目录交付的两个 ARM64 安装包沿用该版的本地签名，可覆盖升级。本地校验清单列出重新签名后的 SHA-256。离线 HTML 直接嵌入电视原始截图，本地与 GitHub 独立生成的 HTML 和测量 ZIP 均逐字节相同。[四包签名核验](https://github.com/JC6/BattleCity/actions/runs/45846472783) · [报告独立复建](https://github.com/JC6/BattleCity/actions/runs/45906402534)
 
 上一轮在 1080p Android TV 模拟器对同一候选 APK 做了两次独立冷启动。全分辨率窗口缓冲的游戏速度为实时的 59.76%–60.86%，系统 PCM 输出为 59.63%–60.82%，共 0/6 个窗口同时达到实时与逐帧提交门槛。系统放大的 256×240 小缓冲测得游戏速度 99.76%–99.96%。上一轮每次启动均对八个场景核对 NES 帧、2 KiB RAM、57,344 个原生像素中心、壁纸和全图重复截图误差。该轮 Android TV 默认使用 SDL 软件渲染，这条路径在同一模拟器上的游戏速度为实时的 44.29%–56.82%。旧版双人存档、缩略图与写保护已通过覆盖安装和恢复测试。[上轮验收与原始记录](https://github.com/JC6/BattleCity/actions/runs/45394628713)
 
