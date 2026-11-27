@@ -39,8 +39,9 @@ jobs:
         shell: bash
         run: |
           if [[ -z "$TESTED" ]]; then
-            [[ "$GITHUB_REF_NAME" =~ ^validation/switch-report-([0-9]+)-([0-9]+)$ ]]
+            [[ "$GITHUB_REF_NAME" =~ ^validation/switch-report-([0-9]+)-([0-9]+)(-([0-9]+))?$ ]]
             TESTED=${BASH_REMATCH[1]} PREVIOUS=${BASH_REMATCH[2]}
+            echo "upgrade_from=${BASH_REMATCH[4]:-}" >> "$GITHUB_OUTPUT"
           fi
           [[ "$TESTED" =~ ^[0-9]+$ && "$PREVIOUS" =~ ^[0-9]+$ && "$TESTED" != "$PREVIOUS" ]]
           revision=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TESTED" --jq .head_sha)
@@ -74,6 +75,46 @@ jobs:
             gh run download "$trial" --name tv-device-results --dir "$folder/tv-device-results"
             gh run download "$trial" --name web-clock-and-endings --dir "$folder/web-clock-and-endings"
           fi
+      - uses: actions/download-artifact@v4
+        if: steps.runs.outputs.upgrade_from != ''
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.runs.outputs.upgrade_from }}
+          name: game-web
+          path: inputs/replay/previous
+      - uses: actions/setup-node@v6
+        if: steps.runs.outputs.upgrade_from != ''
+        with:
+          node-version: '24'
+      - name: Replay the WebKit upgrade with the exact archived packages
+        if: steps.runs.outputs.upgrade_from != ''
+        env:
+          TESTED: ${{ steps.runs.outputs.tested }}
+          UPGRADE_FROM: ${{ steps.runs.outputs.upgrade_from }}
+          BATTLECITY_UPGRADE_URL: http://127.0.0.1:8765/
+        run: |
+          set -euo pipefail
+          cp -r inputs/current/game-web inputs/replay/current
+          cp -r inputs/current/cartridge inputs/replay/cartridge
+          (cd inputs/replay && sha256sum -c ../current/upgrade-webkit/packages.sha256)
+          site="$RUNNER_TEMP/replay-site"
+          mkdir -p "$site/previous" "$RUNNER_TEMP/upgrade-webkit/screens"
+          python3 -m zipfile -e inputs/replay/current/BattleCity-Web.zip "$site"
+          python3 -m zipfile -e inputs/replay/previous/BattleCity-Web.zip "$site/previous"
+          npm ci --prefix web
+          (cd web && npx playwright install --with-deps webkit)
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory "$site" &
+          server=$!
+          trap 'kill "$server"' EXIT
+          curl --retry 8 --retry-connrefused -fsS "$BATTLECITY_UPGRADE_URL" -o /dev/null
+          export BATTLECITY_CAPTURE_DIR="$RUNNER_TEMP/upgrade-webkit/screens"
+          node tests/nes/browser-game.cjs "${BATTLECITY_UPGRADE_URL}previous/" inputs/replay/cartridge/game.lbl webkit controls | tee "$RUNNER_TEMP/upgrade-webkit/upgrade-webkit.log"
+          old=inputs/current/upgrade-webkit
+          cp "$old/packages.sha256" "$RUNNER_TEMP/upgrade-webkit/"
+          cp "$old/upgrade-webkit.log" "$RUNNER_TEMP/upgrade-webkit/original-attempt.log"
+          printf 'replay=%s tested=%s upgrade_from=%s\n' "$GITHUB_RUN_ID" "$TESTED" "$UPGRADE_FROM" > "$RUNNER_TEMP/upgrade-webkit/replay.txt"
+          mv "$old" inputs/replay/original-observations
+          mv "$RUNNER_TEMP/upgrade-webkit" "$old"
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Recheck hashes, device receipts, regressions and menu samples
         env:

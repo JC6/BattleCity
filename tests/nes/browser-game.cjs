@@ -630,14 +630,23 @@ async function verify(engine, suite) {
         await page.waitForFunction(() => window.checkpoints?.filter(p=>p.kind==='save').length >= 3);
         const lastSave = await page.evaluate(() => checkpoints.filter(p=>p.kind==='save').at(-1).stamp);
         await page.waitForFunction(stamp => checkpoints.filter(p=>p.kind==='save').at(-1).stamp > stamp, lastSave);
-        // Two short physical keyboard edges. Waiting for full menu animations
-        // between taps would allow a new one-second checkpoint to intervene.
-        for (let step=0; step<2; step++) {
-            await page.keyboard.press('r',{delay:75});
-            await page.waitForTimeout(75);
+        // Hold each real key edge until the core reports restoring RAM. WebKit
+        // can advance several host timers between two emulated input samples.
+        const priorLoads = await page.evaluate(() => checkpoints.filter(p=>p.kind==='load').length);
+        const rewindBit = 1 << menuKeys.indexOf('r');
+        for (let step=1; step<=2; step++) {
+            await page.keyboard.down('r');
+            try {
+                await page.waitForFunction(count => checkpoints.filter(p=>p.kind==='load').length >= count,
+                    priorLoads + step);
+            } finally {
+                await page.keyboard.up('r');
+            }
+            const frame = await page.evaluate(() => window.presentationFrame);
+            await page.waitForFunction(([before, bit]) => window.presentationFrame > before && !(window.menuKeysHeld & bit),
+                [frame, rewindBit]);
         }
-        await page.waitForFunction(() => checkpoints.filter(p=>p.kind==='load').length>=2);
-        const loads = await page.evaluate(() => checkpoints.filter(p=>p.kind==='load').slice(-2));
+        const loads = await page.evaluate(count => checkpoints.filter(p=>p.kind==='load').slice(count), priorLoads);
         assert.equal(loads.length, 2);
         assert.ok(loads.every(p=>p.match===1) && loads[1].stamp < loads[0].stamp, JSON.stringify(await page.evaluate(() => checkpoints.slice(-20))));
         const restored = await page.evaluate(() => gameState.y1);
